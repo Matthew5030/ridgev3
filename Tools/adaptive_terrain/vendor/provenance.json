@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/mapbox/martini/f9a7a96b583affff6f9196b9f816a7ee980c5751/index.js",
+    "file": "martini.mjs",
+    "sha256": "4df72465a6d168d419ad41593bbeea72025f0be083b01ce16372b071e316430c"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/mapbox/martini/f9a7a96b583affff6f9196b9f816a7ee980c5751/LICENSE",
+    "file": "MARTINI-LICENSE",
+    "sha256": "c6a01684eb9061a00589d483e9cf9ea5a82b3e8270f9992501ceb79f32753fb5"
+  }
+]

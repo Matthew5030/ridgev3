@@ -1,0 +1,21 @@
+.DS_Store
+**/.DS_Store
+
+# Local Xcode state and build products
+DerivedData/
+build/
+.build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Local Python environment and generated preparation outputs
+.venv/
+__pycache__/
+*.py[cod]
+Tools/PreparedPacks/
+Tools/reports/
+Tools/source-cache/
+
+# Bundled maps/heightfields are tracked with Git LFS; app artwork is regular Git.
