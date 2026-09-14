@@ -92,13 +92,13 @@ struct ExploreView: View {
 
     private var atlas: some View {
         OfflineAtlasView(atlas: store.atlas, entries: atlasEntries, savedEntries: store.entries.filter(\.installed),
-                         focus: focus, selecting: selecting, selectedBounds: $bounds, draggingSelection: $draggingSelection,
+                         focus: focus, selecting: selecting, selectedBounds: selectionBinding, draggingSelection: $draggingSelection,
                          admittedBounds: lastValidBounds, selectionAllowed: proposal?.canOpen ?? false,
                          requiredBounds: expanding?.bounds, route: expanding == nil ? [] : store.activeRoute?.points.map(\.coordinate) ?? [],
                          routeSegments: expanding == nil ? [] : store.activeRoute?.segments.map { $0.points.map(\.coordinate) } ?? [],
                          onViewport: { viewport = $0 })
             .overlay(alignment: .topLeading) {
-                Label(selecting ? "Drag a rectangle · Adjust its corners" : "Browse the map · Choose your area", systemImage: selecting ? "rectangle.dashed" : "hand.draw")
+                Label(selecting ? (bounds == nil ? "Draw an area · Or tap two corners" : "Tap to move · Drag corners to resize") : "Browse the map · Choose your area", systemImage: selecting ? "rectangle.dashed" : "hand.draw")
                     .font(.system(size: 11, weight: .medium)).padding(11).background(RidgeTheme.panel.opacity(0.94), in: Capsule()).padding(12).allowsHitTesting(false)
             }
             .overlay(alignment: .bottomLeading) {
@@ -140,7 +140,9 @@ struct ExploreView: View {
                 Button("Cancel") { store.cancelPreparation() }.font(.subheadline.weight(.semibold))
             } else if selecting {
                 if let bounds {
-                    let shown = proposal?.preview?.bounds ?? bounds
+                    let shown = refreshing ? bounds : proposal?.preview?.bounds ?? bounds
+                    Text(proposal?.preview?.name ?? "Checking selected location…")
+                        .font(.system(size: 13, weight: .medium)).lineLimit(1)
                     HStack {
                         Label(String(format: "%.1f × %.1f km", shown.widthMeters / 1000, shown.depthMeters / 1000), systemImage: "rectangle.dashed")
                         Spacer()
@@ -149,18 +151,21 @@ struct ExploreView: View {
                     HStack(spacing: 18) {
                         Button("Smaller", systemImage: "minus.magnifyingglass") { resize(0.8) }
                         Button("Larger", systemImage: "plus.magnifyingglass") { resize(1.25) }
+                        Button("Draw new", systemImage: "rectangle.dashed") { selectionBinding.wrappedValue = nil; lastValidBounds = nil }
                         Spacer(minLength: 0)
                     }.font(.system(size: 12, weight: .medium))
-                    if refreshing {
-                        Label("Checking area…", systemImage: "hourglass").font(.caption).foregroundStyle(RidgeTheme.muted)
-                    } else if let reason = proposal?.reason {
-                        Text(reason).font(.system(size: 12)).foregroundStyle(RidgeTheme.orange).fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Same sharp map")
-                            .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
-                        Text(proposal?.saved != nil ? "Already saved on this device." : "Source data is on this device. No download needed.")
-                            .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
-                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        if refreshing {
+                            Label("Checking area…", systemImage: "hourglass").font(.caption).foregroundStyle(RidgeTheme.muted)
+                        } else if let reason = proposal?.reason {
+                            Text(reason).font(.system(size: 12)).foregroundStyle(RidgeTheme.orange).fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Same sharp map")
+                                .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
+                            Text(proposal?.saved != nil ? "Already saved on this device." : "Source data is on this device. No download needed.")
+                                .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
+                        }
+                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                     Button { openSelection() } label: {
                         HStack { Image(systemName: proposal?.saved != nil ? "mountain.2" : "square.and.arrow.down"); Text(expanding != nil ? "Save & return to 3D" : proposal?.saved != nil ? "Open in 3D" : "Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 16)
                     }.buttonStyle(RidgeButtonStyle()).disabled(refreshing || proposal?.canOpen != true || busy)
@@ -196,14 +201,27 @@ struct ExploreView: View {
                     Button { query = ""; focusOn(entry.manifest.bounds) } label: { Label(entry.manifest.name, systemImage: "mountain.2").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
                 }
                 ForEach(Array(Dictionary(grouping: places, by: \.name).compactMap { $0.value.first }.sorted { $0.name < $1.name }.prefix(6)), id: \.name) { place in
-                    Button { query = ""; focus = AtlasFocus(point: place.coordinate, scale: 1_000_000) } label: { Label(place.name, systemImage: "mappin").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
+                    Button {
+                        query = ""
+                        if selecting, let bounds { selectionBinding.wrappedValue = AtlasAreaPlanner.recentered(bounds, on: place.coordinate) }
+                        focus = AtlasFocus(point: place.coordinate, scale: 1_000_000)
+                    } label: { Label(place.name, systemImage: "mappin").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
                 }
                 if areas.isEmpty && places.isEmpty { Text("No matching places in the offline atlas.").font(.footnote).padding(12) }
             }
         }.background(RidgeTheme.panel).padding(.horizontal, 18)
     }
 
-    private func focusOn(_ bounds: GeoBounds) { focus = AtlasFocus(point: bounds.center, scale: 600_000, bounds: Self.padded(bounds, factor: 1.25)) }
+    private var selectionBinding: Binding<GeoBounds?> {
+        Binding(get: { bounds }, set: { value in
+            guard bounds != value else { return }
+            bounds = value; proposal = nil; lastValidBounds = nil; refreshing = value != nil
+        })
+    }
+    private func focusOn(_ area: GeoBounds) {
+        if selecting, let bounds { selectionBinding.wrappedValue = AtlasAreaPlanner.recentered(bounds, on: area.center) }
+        focus = AtlasFocus(point: area.center, scale: 600_000, bounds: Self.padded(area, factor: 1.25))
+    }
     private func selectCentre() {
         guard let viewport else { return }
         bounds = Self.padded(viewport, factor: 0.5)
@@ -246,7 +264,9 @@ struct ExploreView: View {
         proposal = result; refreshing = false
         if result.canOpen {
             lastValidBounds = result.preview?.bounds
-            if !draggingSelection, let snapped = result.preview?.bounds, self.bounds != snapped { self.bounds = snapped }
+            // Keep the user's footprint separate from outward storage snapping.
+            // Feeding snapped bounds back into the next move adds another row
+            // and column on each drag, eventually selecting the whole source.
         }
     }
     private func openSelection() {
@@ -339,7 +359,10 @@ struct OfflineAtlasView: View {
                         if gestureCenter == nil { gestureCenter = center }
                         if let start = gestureCenter { center = CGPoint(x: min(1, max(0, start.x - value.translation.width / scale)), y: min(0.94, max(0.06, start.y - value.translation.height / scale))) }
                     }
-                }.onEnded { _ in gestureCenter = nil; dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size) })
+                }.onEnded { value in
+                    if selecting { dragSelection(value, size: geometry.size) }
+                    gestureCenter = nil; dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size)
+                })
                 .simultaneousGesture(MagnifyGesture().onChanged { value in
                     guard !selecting else { return }
                     if gestureScale == nil { gestureScale = scale }; scale = min(4_000_000, max(350, (gestureScale ?? scale) * value.magnification))
@@ -347,7 +370,9 @@ struct OfflineAtlasView: View {
                 .simultaneousGesture(SpatialTapGesture().onEnded { event in
                     if selecting {
                         let point = coordinate(at: event.location, size: geometry.size)
-                        if let anchor = tapAnchor { selectedBounds = area(from: anchor, to: point); tapAnchor = nil }
+                        if let bounds = selectedBounds {
+                            selectedBounds = AtlasAreaPlanner.recentered(bounds, on: point); tapAnchor = nil
+                        } else if let anchor = tapAnchor { selectedBounds = area(from: anchor, to: point); tapAnchor = nil }
                         else { tapAnchor = point }
                         return
                     }
@@ -384,7 +409,7 @@ struct OfflineAtlasView: View {
                     if !Task.isCancelled { images = rendered }
                 }
                 .accessibilityLabel(selecting ? "Area selection map" : "Offline atlas")
-                .accessibilityHint(selecting ? "Drag a rectangle or tap two opposite corners. Drag a corner to resize, or drag inside to move. Use the centre selection and size buttons as an alternative." : "Drag to browse, pinch to zoom, or choose a place using search.")
+                .accessibilityHint(selecting ? "Tap to move the selected area here. Drag a corner to resize, or drag inside to move. Choose Draw new to draw another rectangle or tap its two opposite corners." : "Drag to browse, pinch to zoom, or choose a place using search.")
                 .overlay(alignment: .bottomTrailing) {
                     VStack(spacing: 8) {
                         RoundControl(symbol: "plus", label: "Zoom atlas in") { scale = min(4_000_000, scale * 1.8); reportViewport(geometry.size) }

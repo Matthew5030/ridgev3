@@ -13,6 +13,17 @@ struct AtlasAreaProposal: Sendable {
 }
 
 enum AtlasAreaPlanner {
+    /// Move the chosen footprint with a place tap, preserving its size. Coverage
+    /// admission happens afterwards; never silently keep the previous location.
+    static func recentered(_ bounds: GeoBounds, on point: GeoPoint) -> GeoBounds {
+        let latitudeSpan = bounds.maxLatitude - bounds.minLatitude
+        let longitudeSpan = bounds.maxLongitude - bounds.minLongitude
+        let south = min(85 - latitudeSpan, max(-85, point.latitude - latitudeSpan / 2))
+        let west = min(180 - longitudeSpan, max(-180, point.longitude - longitudeSpan / 2))
+        return GeoBounds(minLatitude: south, minLongitude: west,
+                         maxLatitude: south + latitudeSpan, maxLongitude: west + longitudeSpan)
+    }
+
     /// Older saves can have a shorter horizon. Re-selecting the same primary
     /// rectangle should prepare the wider scene instead of reopening that crop.
     static func reusable(_ saved: RegionManifest, for preview: RegionManifest, spacing: Int) -> Bool {

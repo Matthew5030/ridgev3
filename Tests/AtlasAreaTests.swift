@@ -81,6 +81,34 @@ private struct AreaFailure: Error, CustomStringConvertible { let description: St
         store.closeTerrain(); store.openAtlasArea(reopen)
         while store.activeTerrain == nil || store.isPreparing { try await Task.sleep(for:.milliseconds(20)); guard Date() < deadline else { throw AreaFailure(description:"Reopen timed out") } }
         try check(store.activeTerrain?.manifest.id == installed.id, "Open saved area preserves identity")
+        let firstHeights = store.activeTerrain!.heights
+        let secondPoint = source.bounds.point(u: 12.5/16, v: 3.5/16)
+        let moved = AtlasAreaPlanner.recentered(preview.bounds, on: secondPoint)
+        try check(moved.center.distance(to: secondPoint) < 0.001, "A place tap moves the footprint to the tapped coordinate")
+        try check(abs((moved.maxLatitude - moved.minLatitude) - (preview.bounds.maxLatitude - preview.bounds.minLatitude)) < 1e-10,
+                  "Moving an area preserves the chosen span")
+        var movingFootprint = requested
+        for i in 0..<30 {
+            movingFootprint = AtlasAreaPlanner.recentered(movingFootprint, on: source.bounds.point(u: i.isMultiple(of: 2) ? 0.25 : 0.7, v: 0.5))
+            let checked = AtlasAreaPlanner.propose(bounds: movingFootprint, entries: [entry], context: context)
+            try check(checked.preview!.grid!.columns <= 2 && checked.preview!.grid!.rows <= 2,
+                      "Repeated moves keep the user's footprint small while storage rounds outward")
+        }
+        let second = AtlasAreaPlanner.propose(bounds: moved, entries: [entry, saved], context: context)
+        try check(second.canOpen && second.saved == nil && second.preview?.id != preview.id,
+                  "A second location cannot reuse the first location's saved area")
+        store.closeTerrain(); store.openAtlasArea(second)
+        let secondDeadline = Date().addingTimeInterval(45)
+        while store.activeTerrain == nil || store.isPreparing {
+            guard Date() < secondDeadline, store.errorMessage == nil else { throw AreaFailure(description: store.errorMessage ?? "Second location timed out") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try check(store.activeTerrain?.manifest.bounds == second.preview?.bounds && store.activeTerrain?.manifest.bounds.contains(secondPoint) == true,
+                  "Opening a moved selection loads the second geographic footprint")
+        try check(store.activeTerrain!.heights != firstHeights, "Different selected locations load different native height samples")
+        let unavailableMove = AtlasAreaPlanner.recentered(preview.bounds, on: source.bounds.point(u: 1.5, v: 1.5))
+        let outside = AtlasAreaPlanner.propose(bounds: unavailableMove, entries: [entry, saved], context: context)
+        try check(!outside.canOpen && outside.saved == nil, "Moving beyond coverage rejects the new location instead of opening the old save")
         print("PASS atlas rectangle journey: \(assertions) assertions")
     }
 }
