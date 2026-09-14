@@ -71,11 +71,15 @@ enum AreaCropper {
         return result
     }
 
-    static func prepare(directory: URL, manifest: RegionManifest, selection: AreaSelection, spacing: Int) throws -> PreparedCrop {
+    static func prepare(directory: URL, manifest: RegionManifest, selection: AreaSelection, spacing: Int,
+                        cartographySourceID: String? = nil) throws -> PreparedCrop {
         try PackStore.validate(manifest)
         let plan = try plan(manifest, selection)
         let context = TerrainBudget.currentContext()
         var result = preview(manifest: manifest, selection: selection, spacing: spacing, context: context)
+        if result.cartography != nil {
+            result.cartographySourceID = cartographySourceID ?? manifest.cartographySourceID
+        }
         let allowance = TerrainBudget.allowance(for: result, spacing: spacing, context: context)
         guard allowance.allowed, let sourceLevel = manifest.levels.first(where: { $0.spacing == spacing }),
               let window = plan.windows[spacing], let selectedLevel = result.levels.first(where: { $0.spacing == spacing }) else {
@@ -185,7 +189,7 @@ enum AreaCropper {
 
         // The atlas is a separate, fixed geographic grid. Retain complete cells
         // and their neighbour gutters byte-for-byte at every terrain spacing.
-        if let atlas = result.cartography {
+        if let atlas = result.cartography, result.cartographySourceID == nil {
             for texture in atlas.allTextures {
                 try Task.checkCancellation()
                 let url = try verifiedAsset(texture.file, directory: directory, bytes: texture.byteCount, sha256: texture.sha256)

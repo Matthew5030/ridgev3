@@ -200,8 +200,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             do {
                 if waitForRelease { await waitForTerrainRelease() }
                 try Task.checkCancellation()
+                let sourceID = cartographySourceID(for: source)
                 let worker = Task.detached(priority: .userInitiated) {
-                    try AreaCropper.prepare(directory: source.directory, manifest: source.manifest, selection: selection, spacing: spacing)
+                    try AreaCropper.prepare(directory: source.directory, manifest: source.manifest, selection: selection, spacing: spacing,
+                                            cartographySourceID: sourceID)
                 }
                 let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                 defer { try? FileManager.default.removeItem(at: crop.directory) }
@@ -432,7 +434,11 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                 var openedID = entry.id
                 if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil) {
                     preparationLabel = "Preparing selected area"
-                    let worker = Task.detached(priority: .userInitiated) { try AreaCropper.prepare(directory: entry.directory, manifest: entry.manifest, selection: selection, spacing: spacing) }
+                    let sourceID = cartographySourceID(for: entry)
+                    let worker = Task.detached(priority: .userInitiated) {
+                        try AreaCropper.prepare(directory: entry.directory, manifest: entry.manifest, selection: selection, spacing: spacing,
+                                                cartographySourceID: sourceID)
+                    }
                     let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                     defer { try? FileManager.default.removeItem(at: crop.directory) }
                     try Task.checkCancellation()
@@ -459,6 +465,14 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     }
 
     private func updateProgress(_ value: Double, operationID token: UUID) { if token == operationID { progress = value } }
+
+    private func cartographySourceID(for entry: PackEntry) -> String? {
+        if let sourceID = entry.manifest.cartographySourceID { return sourceID }
+        guard entry.manifest.cartography != nil, let bundledRoot = PackStore.bundledRoot else { return nil }
+        let source = entry.directory.standardizedFileURL.path
+        let root = bundledRoot.standardizedFileURL.path
+        return source == root || source.hasPrefix(root + "/") ? entry.id : nil
+    }
     func cancelPreparation() {
         operation?.cancel()
         // Extension owns its cancellation recovery and must finish reopening

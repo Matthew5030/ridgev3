@@ -2,6 +2,13 @@
 
 14 September 2026 (earlier checks retained). Xcode 26.6; iOS 26.5 simulators. Deployment target iOS 18.
 
+## Fast area selection — 14 September
+
+- Production profiling found that each selection copied, installed and reopened all 3,136 cartography cells needed by the fixed 15 km horizon. This cost was effectively constant: 1 × 1, 4 × 4 and 8 × 8 terrain selections each took approximately 12.8 seconds on the development Mac. The rectangle calculation itself took approximately 17 ms; no network transfer was involved.
+- Saved areas cut from the signed application bundle now reference that immutable cartography source. Terrain, surrounding heightfields, routes and graphs remain owned by the saved area. Imported packs continue to copy and verify their image payloads because they are mutable and untrusted. Loading a bundled reference validates its atlas metadata and forms the known bundle URLs without re-reading and hashing all 6,272 native/preview files.
+- The same end-to-end profile now measures **0.491 s** for 1 × 1 cells, **0.500 s** for 4 × 4 and **0.545 s** for 8 × 8, including prepare, install and reopen. The native and preview map metadata, URLs and pixels are unchanged. A real simulator selection entered interactive 3D within the first 0.8-second observation window; a larger saved-area replacement did the same.
+- Regression checks passed: packs **77 assertions**, cartography crop/install/reuse/reference/rollback **27 assertions**, extensions **68 assertions**, and real crop coverage **118,281 assertions**. The latter includes all 256 original cells, native terrain samples and source-map pixel/orientation comparisons. The optimized Debug simulator build succeeded and both initial selection and expansion opened in 3D. A saved reference also adopts compatible cartography from a later bundle build, so map-pack refreshes do not strand existing terrain saves.
+
 ## Wider surroundings and gentler haze — 14 September
 
 - Daylight follow-up: a texture-free Metal sky triangle renders soft blue daylight, with a broad sun glow and slightly warmer/brighter slope lighting. Haze samples the same camera-oriented sky colour, keeping the edge blend coherent through camera movement. No new terrain or texture allocations are required by the sky.

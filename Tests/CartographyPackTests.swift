@@ -93,6 +93,36 @@ private struct AtlasPackFailure: Error, CustomStringConvertible { let descriptio
         try check((originalAttributes[.systemFileNumber] as? NSNumber) == (overlapAttributes[.systemFileNumber] as? NSNumber), "Overlapping saved areas share identical map storage")
         let sourceAttributes = try fm.attributesOfItem(atPath: crop.directory.appendingPathComponent(mapFile).path)
         try check((sourceAttributes[.systemFileNumber] as? NSNumber) != (originalAttributes[.systemFileNumber] as? NSNumber), "Mutable imported/source files are never linked into saved areas")
+
+        let borrowedCrop = try AreaCropper.prepare(directory: sourceURL, manifest: source, selection: selected, spacing: 1,
+                                                   cartographySourceID: source.id)
+        defer { try? fm.removeItem(at: borrowedCrop.directory) }
+        try check(borrowedCrop.manifest.cartographySourceID == source.id, "Bundled crops record their immutable map source")
+        try check(!fm.fileExists(atPath: borrowedCrop.directory.appendingPathComponent(mapFile).path), "Bundled map cells are not copied into a terrain crop")
+        try check(borrowedCrop.manifest.totalBytes < crop.manifest.totalBytes,
+                  "Borrowed bundled maps are not charged as duplicate installed storage")
+        let borrowedRoot = temporary.appendingPathComponent("Borrowed")
+        let borrowedStore = PackStore(root: borrowedRoot, bundledDirectory: bundle)
+        try await borrowedStore.install(from: borrowedCrop.directory, manifest: borrowedCrop.manifest, spacing: 1) { _ in }
+        let borrowed = try await borrowedStore.load(id: borrowedCrop.manifest.id)
+        try check(borrowed.cartography?.metadata == firstAtlas, "A saved crop resolves the exact bundled map metadata")
+        try check(borrowed.cartography?.imageURLs.first?.deletingLastPathComponent().standardizedFileURL.path == sourceURL.standardizedFileURL.path,
+                  "A saved crop reads immutable map cells directly from the application bundle")
+        try check(!fm.fileExists(atPath: borrowed.directory.appendingPathComponent(mapFile).path), "A saved crop stores no duplicate bundled map files")
+        var refreshedReference = borrowedCrop.manifest
+        refreshedReference.id = "refreshed-map-reference"
+        refreshedReference.cartography?.tiles[0].image.sha256 = String(repeating: "0", count: 64)
+        try await borrowedStore.install(from: borrowedCrop.directory, manifest: refreshedReference, spacing: 1) { _ in }
+        let refreshed = try await borrowedStore.load(id: refreshedReference.id)
+        try check(refreshed.cartography?.metadata == firstAtlas, "A bundle update refreshes a saved area's independent map metadata")
+        var missingReference = borrowedCrop.manifest
+        missingReference.id = "missing-map-reference"; missingReference.cartographySourceID = "missing-source"
+        do {
+            try await borrowedStore.install(from: borrowedCrop.directory, manifest: missingReference, spacing: 1) { _ in }
+            throw AtlasPackFailure(description: "Missing bundled map reference was accepted")
+        } catch let error as AtlasPackFailure { throw error }
+          catch { assertions += 1 }
+
         let bad = crop.directory.appendingPathComponent(firstAtlas!.tiles[0].image.file)
         var corrupt = full; corrupt[corrupt.count - 1] ^= 1; try corrupt.write(to: bad)
         do { try await store.install(from: crop.directory, manifest: crop.manifest, spacing: 1) { _ in }; throw AtlasPackFailure(description: "Corrupt replacement was accepted") }

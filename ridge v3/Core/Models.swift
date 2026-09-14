@@ -113,10 +113,14 @@ struct RegionManifest: Codable, Hashable, Identifiable, Sendable {
     var detailTextures: [MapTexture]? = nil
     var horizon: TerrainHorizon? = nil
     var cartography: CartographyAtlas? = nil
+    /// A trusted bundled source can provide immutable map cells to saved crops.
+    /// Terrain, horizon and routes remain owned by the saved area.
+    var cartographySourceID: String? = nil
     var totalBytes: Int64 {
         let layers = horizon?.layers ?? []
-        let maps = cartography.map { [$0.totalBytes] }
+        let maps = cartographySourceID == nil ? cartography.map { [$0.totalBytes] }
             ?? (textures + (detailTextures ?? []) + layers.flatMap(\.textures)).map(\.byteCount)
+            : []
         let sizes = (levels + layers.flatMap(\.levels)).map(\.byteCount) + maps + [graphByteCount ?? 0]
         return sizes.reduce(0) { sum, size in
             let result = sum.addingReportingOverflow(max(0, size))

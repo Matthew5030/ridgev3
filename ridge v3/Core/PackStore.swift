@@ -97,6 +97,12 @@ actor PackStore {
         var manifest = manifest
         manifest.horizon = TerrainBudget.selectedHorizon(for: manifest, spacing: spacing)
         try Self.useIndependentCartography(&manifest)
+        if manifest.cartographySourceID != nil {
+            guard let borrowed = try compatibleBundledCartography(for: manifest) else {
+                throw RidgeError.message("The bundled map referenced by this area is unavailable.")
+            }
+            manifest.cartography = borrowed.0
+        }
         let allowance = TerrainBudget.allowance(for: manifest, spacing: spacing)
         guard allowance.allowed, let level = manifest.levels.first(where: { $0.spacing == spacing }) else {
             throw RidgeError.message(allowance.reason ?? "This resolution is not available.")
@@ -116,9 +122,9 @@ actor PackStore {
         var files: [(String, Int64, String)] = [(level.file, level.byteCount, level.sha256)]
         files += manifest.textures.map { ($0.file, $0.byteCount, $0.sha256) }
         files += Self.horizonFiles(manifest)
-        files += Self.cartographyFiles(manifest)
+        if manifest.cartographySourceID == nil { files += Self.cartographyFiles(manifest) }
         if let name = manifest.graphFile, let bytes = manifest.graphByteCount, let hash = manifest.graphSHA256 { files.append((name, bytes, hash)) }
-        let atlasImages = Dictionary(uniqueKeysWithValues: (manifest.cartography?.allTextures ?? []).map { ($0.file, $0) })
+        let atlasImages = Dictionary(uniqueKeysWithValues: (manifest.cartographySourceID == nil ? manifest.cartography?.allTextures ?? [] : []).map { ($0.file, $0) })
         // Saved areas own immutable assets. Hard links let overlapping areas
         // share identical map bytes; deleting either area leaves the other intact.
         let reusable = reusableMaps(hashes: Set(atlasImages.values.map(\.sha256)))
@@ -169,18 +175,18 @@ actor PackStore {
 
     func load(id: String, spacing: Int? = nil) throws -> LoadedTerrain {
         guard let manifest = try installedManifest(id: id) else { throw RidgeError.message("Save this area offline before opening it.") }
-        return try decode(manifest: manifest, directory: root.appendingPathComponent(id), spacing: spacing,
-                          supplementalCartography: compatibleBundledCartography(for: manifest))
+        return try decode(manifest: manifest, directory: root.appendingPathComponent(id), spacing: spacing)
     }
 
     private func decode(manifest: RegionManifest, directory: URL, spacing: Int?,
                         supplementalCartography: (CartographyAtlas, URL)? = nil) throws -> LoadedTerrain {
         try Self.validate(manifest)
+        let resolvedCartography = try supplementalCartography ?? compatibleBundledCartography(for: manifest)
         let selected = spacing ?? manifest.defaultSpacing
         let budgetContext = TerrainBudget.currentContext()
         var manifest = manifest
-        let cartographyDirectory = supplementalCartography?.1 ?? directory
-        if let atlas = supplementalCartography?.0 { manifest.cartography = atlas }
+        let cartographyDirectory = resolvedCartography?.1 ?? directory
+        if let atlas = resolvedCartography?.0 { manifest.cartography = atlas }
         manifest.horizon = TerrainBudget.selectedHorizon(for: manifest, spacing: selected, context: budgetContext)
         try Self.useIndependentCartography(&manifest)
         let allowance = TerrainBudget.allowance(for: manifest, spacing: selected, context: budgetContext)
@@ -224,7 +230,9 @@ actor PackStore {
             horizon = LoadedHorizon(near: try metadata.near.map { try decodeBackdrop($0, manifest: manifest, directory: directory) },
                                     far: try metadata.far.map { try decodeBackdrop($0, manifest: manifest, directory: directory) })
         } else { horizon = nil }
-        let cartography = try manifest.cartography.map { try decodeCartography($0, directory: cartographyDirectory) }
+        let cartography = try manifest.cartography.map {
+            try decodeCartography($0, directory: cartographyDirectory, trustedBundled: resolvedCartography != nil)
+        }
         return LoadedTerrain(manifest: manifest, level: level, heights: heights, textureURLs: textures, graph: graph, directory: directory, budgetContext: budgetContext, horizon: horizon, cartography: cartography)
     }
 
@@ -257,13 +265,15 @@ actor PackStore {
     /// its heights, route association or saved files. Only a matching grid with
     /// complete local coverage qualifies; this never fetches a remote asset.
     private func compatibleBundledCartography(for manifest: RegionManifest) throws -> (CartographyAtlas, URL)? {
-        guard manifest.cartography == nil, let bundledDirectory, let grid = manifest.grid else { return nil }
+        guard let bundledDirectory, let grid = manifest.grid,
+              manifest.cartography == nil || manifest.cartographySourceID != nil else { return nil }
         if bundledCartography == nil {
             let data = try Data(contentsOf: bundledDirectory.appendingPathComponent("catalog.json"))
             bundledCartography = try decoder.decode([RegionManifest].self, from: data).filter { $0.cartography != nil }
         }
         let coverage = manifest.horizon?.layers.last?.bounds ?? manifest.bounds
         for source in bundledCartography ?? [] {
+            if let sourceID = manifest.cartographySourceID, source.id != sourceID { continue }
             guard source.grid?.gridID == grid.gridID, source.grid?.worldTileID == grid.worldTileID,
                   let atlas = source.cartography?.cropped(to: coverage) else { continue }
             try Self.validate(source)
@@ -272,9 +282,20 @@ actor PackStore {
         return nil
     }
 
-    private func decodeCartography(_ atlas: CartographyAtlas, directory: URL) throws -> LoadedCartography {
+    private func decodeCartography(_ atlas: CartographyAtlas, directory: URL, trustedBundled: Bool = false) throws -> LoadedCartography {
         try atlas.validate()
         var images: [URL] = [], previews: [URL] = []
+        if trustedBundled {
+            // These immutable resources are inside the signed application
+            // bundle and were validated when the build's source pack was made.
+            // Avoid thousands of filesystem reads every time a saved area opens.
+            images.reserveCapacity(atlas.tiles.count); previews.reserveCapacity(atlas.tiles.count)
+            for tile in atlas.tiles {
+                images.append(directory.appendingPathComponent(tile.image.file))
+                previews.append(directory.appendingPathComponent(tile.preview.file))
+            }
+            return LoadedCartography(metadata: atlas, imageURLs: images, previewURLs: previews)
+        }
         for tile in atlas.tiles {
             try Task.checkCancellation()
             let image = try Self.asset(tile.image.file, in: directory)
@@ -397,6 +418,9 @@ actor PackStore {
         }
         if !m.textures.isEmpty { try validateTextureLayer(m.textures, bounds: m.bounds, maximumCount: 8) }
         if let atlas = m.cartography { try atlas.validate(covering: m.horizon?.layers.last?.bounds ?? m.bounds) }
+        if let sourceID = m.cartographySourceID {
+            guard safeName(sourceID), m.cartography != nil else { throw RidgeError.message("The bundled map reference is invalid.") }
+        }
         if let details = m.detailTextures { try validateTextureLayer(details, bounds: m.bounds, maximumCount: 32) }
         if let horizon = m.horizon {
             guard !horizon.layers.isEmpty else { throw RidgeError.message("The surrounding terrain metadata is empty.") }
@@ -435,7 +459,7 @@ actor PackStore {
     }
 
     private static func cartographyFiles(_ manifest: RegionManifest) -> [(String, Int64, String)] {
-        (manifest.cartography?.allTextures ?? []).map { ($0.file, $0.byteCount, $0.sha256) }
+        (manifest.cartographySourceID == nil ? manifest.cartography?.allTextures ?? [] : []).map { ($0.file, $0.byteCount, $0.sha256) }
     }
 
     private static func validateTextureLayer(_ textures: [MapTexture], bounds: GeoBounds, maximumCount: Int) throws {
