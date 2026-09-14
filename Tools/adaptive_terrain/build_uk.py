@@ -33,7 +33,7 @@ def seed_cache(database,builds,downloads):
     db.execute('CREATE TABLE IF NOT EXISTS cache (id TEXT, sourceSHA TEXT, compilerSHA TEXT, private TEXT, public TEXT, directory TEXT, PRIMARY KEY(id,sourceSHA,compilerSHA))')
     if db.execute('SELECT COUNT(*) FROM cache').fetchone()[0]:return db
     private={}
-    for path in list(builds.glob('*-adaptive-0p5/manifest.json'))+list((builds/'scottish-adaptive-builds').glob('*-adaptive-0p5/manifest.json')):
+    for path in list(builds.glob('*/manifest.json'))+list((builds/'scottish-adaptive-builds').glob('*-adaptive-0p5/manifest.json')):
         raw=path.read_bytes();private[sha(raw)]=path
     catalog=json.loads((downloads/'adaptive-catalog.json').read_text())
     for entry in catalog['sources']:
@@ -114,6 +114,8 @@ def main():
     if background['requiredReader']!='int16-heightfield-zlib-v1':raise ValueError('Expected separately labelled coarse background')
     if a.background.parent.parent.resolve()!=a.downloads.parent.resolve():raise ValueError('Background must share the download root')
     background_reference=dict(path='/'+a.background.parent.name+'/'+a.background.name,sha256=sha(background_raw),byteCount=len(background_raw),terrainBytes=background['byteCount'],requiredReader=background['requiredReader'],quality=background['quality'])
+    imported_path=a.build/'imported-sections.json'
+    if imported_path.exists() and json.loads(imported_path.read_bytes())['compilerSHA256']!=compiler_hash:raise ValueError('Imported sections use a different compiler')
     identity=dict(planSHA256=sha(raw_plan),compilerSHA256=compiler_hash,backgroundSHA256=sha(background_raw))
     identity_path=a.build/'build-inputs.json'
     if identity_path.exists() and json.loads(identity_path.read_text())!=identity:raise ValueError('Changed frozen build inputs: use a new build directory')
@@ -134,6 +136,7 @@ def main():
     catalog=json.loads(catalog_path.read_text()) if catalog_path.exists() else dict(schemaVersion=1,id=plan['id'],name='United Kingdom adaptive terrain',contentKind='adaptive-terrain-grid',requiredReader='rat1-zlib-range-v1',surfaceToleranceMetres=.5,sourceSpacingMetres=1,scope='Prepared detailed terrain only; explicit gaps remain. Separate from normal app catalogue.',partitions=[])
     catalog['background']=background_reference
     catalog['officialSurveyCoverage']=plan['officialSurveyCoverage']
+    catalog['sourceSelectionPolicy']=plan.get('sourceSelectionPolicy',{})
     catalog['totalGridSections']=len(plan['partitions'])
     catalog['expectedDetailedSections']=sum(t['chunkCount']>0 for t in plan['partitions'])
     catalog['quality']='0.5 m maximum measured surface error against prepared 1 m samples; not absolute survey accuracy. Official EA footprints exclude unsupported detail. Coarse background is a separate layer.'

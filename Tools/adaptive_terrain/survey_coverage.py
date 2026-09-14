@@ -7,7 +7,8 @@ some boundary chunks rather than accepting interpolated samples beyond a survey.
 import hashlib
 import json
 from pathlib import Path
-from pyproj import Transformer
+from pyproj import Transformer,datadir
+from pyproj.transformer import TransformerGroup
 from shapely import prepare, make_valid
 from shapely.geometry import shape, box
 from shapely.ops import unary_union
@@ -26,7 +27,7 @@ def requires_ea_coverage(manifest):
 class SurveyCoverage:
     margin_metres = 2
 
-    def __init__(self, root):
+    def __init__(self, root, coordinate_grids=None, *, transformer=None):
         root = Path(root)
         raw_index = (root / 'index.json').read_bytes()
         index = json.loads(raw_index)
@@ -63,9 +64,21 @@ class SurveyCoverage:
             raise ValueError('Incomplete survey catalogue')
         self.polygons = polygons
         self.tree = STRtree(polygons)
-        self.project = Transformer.from_crs(4326, 27700, always_xy=True)
+        grid_hash=None
+        if transformer is not None:
+            self.project=transformer
+            operation='Explicit transformer (synthetic tests)'
+        else:
+            if coordinate_grids is None:raise ValueError('Supply the official local OSTN15 coordinate grid')
+            grid=Path(coordinate_grids)/'uk_os_OSTN15_NTv2_OSGBtoETRS.tif'
+            grid_hash=hashlib.sha256(grid.read_bytes()).hexdigest()
+            datadir.append_data_dir(str(coordinate_grids))
+            transforms=TransformerGroup(4326,27700,always_xy=True)
+            if not transforms.best_available:raise ValueError('OSTN15 transformation unavailable')
+            self.project=Transformer.from_crs(4326,27700,always_xy=True)
+            operation=transforms.transformers[0].description
         self.provenance = dict(source=index['source'], indexSHA256=hashlib.sha256(raw_index).hexdigest(),
-                               featureCount=len(ids), repairedGeometries=repaired, geometryPolicy='GEOS make_valid linework; preserve original edges and even-odd holes, no outward buffering.', editingInfo=index['editingInfo'],
+                               featureCount=len(ids), coordinateGridSHA256=grid_hash, preferredCoordinateOperation=operation, repairedGeometries=repaired, geometryPolicy='GEOS make_valid linework; preserve original edges and even-odd holes, no outward buffering.', editingInfo=index['editingInfo'],
                                attribution=index['attribution'], license=index['license'],
                                policy='Full projected chunk envelope plus 2 m interpolation support must lie inside the union of official 2022 1 m DTM footprints.')
 

@@ -38,7 +38,7 @@ def main():
     report=dict(complete=True,id=catalog['id'],totals=totals,sections=sections,sourceCounts=source_counts,
                 maximumMeasuredErrorMetres=maximum_error,compressedSourceSavingsPercent=savings,
                 withinSectionSeams=totals['withinSectionSeams'],crossSectionSeams=status['crossSectionSeams'],
-                background=background,officialSurveyCoverage=plan['officialSurveyCoverage'],
+                background=background,officialSurveyCoverage=plan['officialSurveyCoverage'],sourceSelectionPolicy=plan['sourceSelectionPolicy'],coastalSourceValidation=json.loads((a.build/'coast-source-validation.json').read_bytes()),
                 rejectedUnsupportedEACandidates=plan['rejectedEACandidates'],
                 coveredPolygonKm2=plan['coveredPolygonKm2'],
                 coverageNote='The UK administrative polygon includes territorial water. Detailed coverage is not nationwide. Coarse background fills context only; it is not 1 m LiDAR.',
@@ -64,7 +64,8 @@ map textures and routing data are separate.
     for source,count in source_counts.items():text+=f'- {source}: {count:,} chunks.\n'
     text+=f'''
 The official EA footprint check excluded {plan['rejectedEACandidates']:,}
-unsupported candidates from the old prepared inventory. It requires the whole
+unsupported candidates from the old prepared inventory. Source ownership rules
+also suppress {plan['sourceSelectionPolicy']['suppressedFallbackCandidates']:,} incompatible fallback candidates on the repaired Welsh coast. It requires the whole
 chunk plus interpolation support inside the survey footprint and preserves
 holes. Welsh and Scottish preparation retain their own explicit NoData policy.
 The previous unfiltered UK catalogue was withdrawn.

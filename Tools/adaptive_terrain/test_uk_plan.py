@@ -1,4 +1,5 @@
 import hashlib
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -10,6 +11,7 @@ from shapely.geometry import box, mapping
 HERE=Path(__file__).resolve().parent
 
 
+@unittest.skipUnless(os.environ.get('RIDGE_COORDINATE_GRIDS'),'Set RIDGE_COORDINATE_GRIDS to the official OSTN15 directory')
 class UKPlanTests(unittest.TestCase):
     def fixture(self):
         temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup);root=Path(temporary.name)
@@ -26,8 +28,8 @@ class UKPlanTests(unittest.TestCase):
             raw=json.dumps(manifest).encode();path.write_bytes(raw);path.with_name('COMPLETE.json').write_text(json.dumps(dict(manifestSHA256=hashlib.sha256(raw).hexdigest())))
         return root
 
-    def run_plan(self,root):
-        return subprocess.run([sys.executable,str(HERE/'plan_uk.py'),'--output',str(root/'out'),'--source',str(root/'england'),'--source',str(root/'wales'),'--boundary',str(root/'boundary.json'),'--world-grid',str(root/'world.json'),'--ea-coverage',str(root/'coverage'),'--workers','1'],capture_output=True,text=True)
+    def run_plan(self,root,reverse=False,extra=()):
+        return subprocess.run([sys.executable,str(HERE/'plan_uk.py'),'--output',str(root/'out'),'--source',str(root/('wales' if reverse else 'england')),'--source',str(root/('england' if reverse else 'wales')),'--boundary',str(root/'boundary.json'),'--world-grid',str(root/'world.json'),'--ea-coverage',str(root/'coverage'),'--workers','1','--coordinate-grids',os.environ['RIDGE_COORDINATE_GRIDS'],*extra],capture_output=True,text=True)
 
     def test_unsupported_primary_uses_valid_fallback(self):
         root=self.fixture();result=self.run_plan(root);self.assertEqual(result.returncode,0,result.stderr)
@@ -35,6 +37,17 @@ class UKPlanTests(unittest.TestCase):
         self.assertEqual(selection['chunkCount'],1);self.assertEqual(selection['rejectedEACandidates'],1);self.assertEqual(selection['rejectedWithoutFallback'],0)
         self.assertIn('/wales/',selection['chunks'][0]['source'])
         self.assertEqual(selection['selectedBySource'],{'wales':1})
+
+    def test_primary_nodata_is_not_filled_from_an_inconsistent_survey(self):
+        root=self.fixture();path=root/'wales/tiles/10/1/1/manifest.json'
+        d=json.loads(path.read_bytes());d['parents'][0]['precisionChildren'][0]['lods']=[]
+        raw=json.dumps(d).encode();path.write_bytes(raw);path.with_name('COMPLETE.json').write_text(json.dumps(dict(manifestSHA256=hashlib.sha256(raw).hexdigest())))
+        policy=root/'policy.json';policy.write_text(json.dumps(dict(description='Keep primary coastal source consistent',rules=[dict(sourceRoot=str(root/'wales'),crs='EPSG:27700',bounds=[0,0,700000,1300000])])))
+        result=self.run_plan(root,reverse=True,extra=['--source-policy',str(policy)])
+        self.assertEqual(result.returncode,0,result.stderr)
+        plan=json.loads((root/'out/plan.json').read_bytes())
+        self.assertEqual(plan['chunkCount'],0)
+        self.assertEqual(plan['sourceSelectionPolicy']['suppressedFallbackCandidates'],1)
 
     def test_changed_prepared_manifest_is_refused(self):
         root=self.fixture();path=root/'wales/tiles/10/1/1/manifest.json';path.write_bytes(path.read_bytes()+b' ')

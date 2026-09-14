@@ -5,6 +5,10 @@ import tempfile
 import unittest
 from shapely.geometry import box, mapping, MultiPolygon
 from survey_coverage import SurveyCoverage, requires_ea_coverage
+from pyproj import Transformer
+
+def load_coverage(root):
+    return SurveyCoverage(root,transformer=Transformer.from_crs(4326,27700,always_xy=True))
 
 
 class SurveyTests(unittest.TestCase):
@@ -20,11 +24,11 @@ class SurveyTests(unittest.TestCase):
     def test_adjacent_footprints_cover_a_chunk_together(self):
         from pyproj import Transformer
         x,y=Transformer.from_crs(4326,27700,always_xy=True).transform(-1.5095,53.0005)
-        survey=SurveyCoverage(self.fixture([box(x-200,y-200,x,y+200),box(x,y-200,x+200,y+200)]))
+        survey=load_coverage(self.fixture([box(x-200,y-200,x,y+200),box(x,y-200,x+200,y+200)]))
         self.assertTrue(survey.accepts(survey.for_bounds(self.bounds),self.bounds))
 
     def test_hole_and_interpolation_margin_are_excluded(self):
-        survey=SurveyCoverage(self.fixture([box(0,0,700000,1300000)]));envelope=survey.envelope(self.bounds)
+        survey=load_coverage(self.fixture([box(0,0,700000,1300000)]));envelope=survey.envelope(self.bounds)
         x,y=envelope.centroid.coords[0]
         with_hole=envelope.difference(box(x-1,y-1,x+1,y+1))
         self.assertFalse(survey.accepts(with_hole,self.bounds))
@@ -32,17 +36,17 @@ class SurveyTests(unittest.TestCase):
         self.assertTrue(survey.accepts(envelope,self.bounds))
 
     def test_nested_arcgis_shells_retain_holes(self):
-        root=self.fixture([MultiPolygon([box(0,0,100,100),box(25,25,75,75)])]);survey=SurveyCoverage(root)
+        root=self.fixture([MultiPolygon([box(0,0,100,100),box(25,25,75,75)])]);survey=load_coverage(root)
         self.assertEqual(survey.provenance['repairedGeometries'],1)
         self.assertFalse(survey.polygons[0].covers(box(49,49,51,51)))
 
     def test_corrupt_snapshot_is_refused(self):
         root=self.fixture([box(0,0,100,100)]);(root/'part.json').write_bytes(b'changed')
-        with self.assertRaisesRegex(ValueError,'checksum'):SurveyCoverage(root)
+        with self.assertRaisesRegex(ValueError,'checksum'):load_coverage(root)
 
     def test_incomplete_snapshot_is_refused(self):
         root=self.fixture([box(0,0,100,100)]);p=root/'index.json';d=json.loads(p.read_text());d['featureCount']=2;p.write_text(json.dumps(d))
-        with self.assertRaisesRegex(ValueError,'Incomplete'):SurveyCoverage(root)
+        with self.assertRaisesRegex(ValueError,'Incomplete'):load_coverage(root)
 
     def test_ea_filter_is_not_applied_to_welsh_or_scottish_sources(self):
         self.assertTrue(requires_ea_coverage({'sourceKey':'england'}))

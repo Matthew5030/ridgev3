@@ -94,13 +94,13 @@ existing local Docker server, port 8787. `NATIONAL-PARKS.md` and
 The whole-UK inventory now applies the official EA 2022 DTM survey footprints
 before accepting EA-derived source chunks. The earlier prepared availability
 flags incorrectly admitted terrain outside those footprints. The corrected
-plan retains 589,402 native chunks in 342 grid sections and excludes 213,141
+plan retains 589,443 native chunks in 342 grid sections and excludes 213,027
 unsupported candidates. All known constant −0.3 m chunks are excluded.
 
 The footprint snapshot contains 21,380 checksum-locked features. GEOS linework
 repairs invalid nested rings without outward buffering; acceptance requires the
 full projected chunk envelope plus 2 m interpolation support within the survey
-union. Six footprint tests and three planner tests cover holes, adjoining
+union. Six footprint tests and four planner tests cover holes, adjoining
 surveys, checksums, incomplete snapshots and valid fallback selection.
 
 Comparing all 15 existing park publications against the corrected selection
@@ -123,3 +123,24 @@ until all planned sections pass. The first corrected HTTP range test and a
 later 28-section test passed, including full local container hashes, background
 descriptor checks, private-file exclusion and write refusal. Final totals will
 be recorded after the full build and download verification finish.
+
+
+### South Wales join correction
+
+A cross-source audit found nine mismatching native edges between the older EA
+fallback and the Welsh source, including one 44 m difference at a coastal edge.
+The same immutable Welsh COG reproduced the existing reference exactly and
+supplied 78 complete coastal chunks that the earlier whole-parent rule had
+lost. The corrected section uses 78 Welsh chunks and 240 EA chunks on the
+separate Somerset shore. Its 613 shared native edges, including the northern
+neighbour, agree exactly. The source ownership policy suppresses incompatible
+fallbacks where the Welsh source has gaps.
+
+The corrected UK revision is `uk-adaptive-0p5-v3`. Survey checks now require the
+local official OSTN15 coordinate grid. All 83 already completed sections had
+unchanged source selections and were imported after full container checksum
+verification. Three import regression tests pass, including changed selections
+and damaged containers. The following pilot reached 84 sections and passed
+actual HTTP range, decoded-hash, background-descriptor and access-control
+checks at the new URLs. This is still an in-progress country-wide build; final
+whole-UK totals remain pending.

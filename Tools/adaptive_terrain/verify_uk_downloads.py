@@ -12,7 +12,7 @@ def sha(data):return hashlib.sha256(data).hexdigest()
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('server');p.add_argument('--output',type=Path,required=True);p.add_argument('--local',type=Path);p.add_argument('--require-complete',action='store_true');p.add_argument('--dataset',default='uk-adaptive-0p5-v2');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('server');p.add_argument('--output',type=Path,required=True);p.add_argument('--local',type=Path);p.add_argument('--require-complete',action='store_true');p.add_argument('--dataset',default='uk-adaptive-0p5-v3');a=p.parse_args()
     if not re.fullmatch(r'[a-zA-Z0-9_-]+',a.dataset):p.error('Invalid dataset path')
     base=a.server.rstrip('/')+'/'+a.dataset+'/';codec=CompactCodec()
     def get(path,headers=None,limit=20*1024*1024):

@@ -401,7 +401,7 @@ mesh; decoded geometry still needs the app's memory admission limit.
 
 There are two different terrain assets:
 
-- `uk-adaptive-0p5-v2/catalog.json`: detailed adaptive sections. The 0.5 m
+- `uk-adaptive-0p5-v3/catalog.json`: detailed adaptive sections. The 0.5 m
   tolerance is measured against the prepared 1 m heightfield, not absolute
   survey accuracy. `buildComplete` distinguishes an in-progress catalogue.
 - `uk-coarse-background-v2/background.json`: separately labelled coarse global
@@ -433,28 +433,31 @@ conservative at survey boundaries. Welsh COG and Scottish source preparation
 retain their own explicit NoData policy.
 
 The original unfiltered UK publication was withdrawn. The corrected build uses
-new immutable URLs ending in `v2`. The UK administrative polygon includes
+new immutable URLs ending in `v3`. The intermediate v2 catalogue was replaced before completion after identifying a south Wales source join. The UK administrative polygon includes
 territorial water, so its polygon coverage percentage must not be presented as
 a percentage of UK land with LiDAR.
 
 ```sh
 python Tools/adaptive_terrain/download_ea_coverage.py /external/ea-2022-coverage
 python Tools/adaptive_terrain/plan_uk.py \
-  --output /external/uk-build-v2 \
+  --output /external/uk-build-v3 \
+  --source /external/welsh-coast-native \
   --source /external/england-wales-native \
   --source /external/earlier-parks-native \
   --source /external/scottish-native \
   --boundary /path/to/uk-boundary.geojson \
   --world-grid /path/to/world-grid.json \
-  --ea-coverage /external/ea-2022-coverage
+  --ea-coverage /external/ea-2022-coverage \
+  --coordinate-grids /external/scotland-dtm/coordinate-grids \
+  --source-policy /external/uk-build-v3/source-policy.json
 python Tools/adaptive_terrain/build_uk_background.py \
-  --build /external/uk-build-v2 \
+  --build /external/uk-build-v3 \
   --source-lock /path/to/uk-bulk.lock.json \
   --source-root /path/to/mapping/sources \
   --output /external/downloads/uk-coarse-background-v2
 python Tools/adaptive_terrain/build_uk.py \
-  --build /external/uk-build-v2 \
-  --downloads /external/downloads/uk-adaptive-0p5-v2 \
+  --build /external/uk-build-v3 \
+  --downloads /external/downloads/uk-adaptive-0p5-v3 \
   --background /external/downloads/uk-coarse-background-v2/background.json \
   --work /local/scratch/uk \
   --compiler /path/to/adaptive-compiler \
@@ -462,10 +465,10 @@ python Tools/adaptive_terrain/build_uk.py \
   --reuse-downloads /external/downloads \
   --workers 10
 python Tools/adaptive_terrain/verify_uk_downloads.py http://localhost:8787 \
-  --local /external/downloads/uk-adaptive-0p5-v2 \
-  --require-complete --output /external/uk-build-v2/http-validation.json
+  --local /external/downloads/uk-adaptive-0p5-v3 \
+  --require-complete --output /external/uk-build-v3/http-validation.json
 python Tools/adaptive_terrain/verify_uk_background.py http://localhost:8787 \
-  --output /external/uk-build-v2/background-http-validation.json
+  --output /external/uk-build-v3/background-http-validation.json
 ```
 
 Resume with the same build command. Plan, selection, compiler and background
@@ -483,3 +486,63 @@ not re-advertise the old source. The old payload bytes remain available for
 private audit; known-invalid source revisions can be withdrawn by the server.
 North York Moors uses `north-york-moors-adaptive-0p5-coverage-v2` after the UK
 survey-footprint check; its previous URL returns 410.
+
+
+### Consistent coastal sources and corrected build plans
+
+The final UK source list uses the local official OSTN15 grid for its survey
+checks, matching the coordinate conversion used to prepare the native samples.
+The grid file is `uk_os_OSTN15_NTv2_OSGBtoETRS.tif`; its recorded SHA-256 is
+`5d6ed64d2119952c4c559fa1fccbc594b6520fc3ec3ef2fc10be13202c4384fa`.
+Supply its containing directory with `--coordinate-grids`. The planner refuses
+to silently substitute the less precise transformation.
+
+The older preparation discarded a whole 4 × 4 group when any child lacked
+coverage. On the south Wales coast this left valid Welsh chunks missing, and an
+older EA fallback produced mismatched joins. `prepare_welsh_coast.py` uses the
+original mapping project's sampler and the same immutable Welsh COG, reproduces
+a retained reference byte-for-byte, then accepts complete children individually.
+It recovered 78 chunks in `z10-x502-y341`. The final section contains those Welsh
+chunks plus 240 EA chunks on the separate Somerset shore. Missing Welsh data
+stays missing inside the declared Welsh source envelope; an incompatible
+fallback must not fill it. The native-source audit checked 613 shared edges
+across this section and its northern neighbour, all exactly equal.
+
+The retained corrected build contains `source-policy.json`, which binds the
+Welsh source root to its published COG envelope in EPSG:27700. A policy file has
+`description` and `rules`; each rule declares `sourceRoot`, `crs: "EPSG:27700"`,
+and `[west, south, east, north]` `bounds`. Ownership only applies to sections
+actually present in that source root. Priority runs in `--source` order. Valid
+children from the owner are admitted; its incomplete children suppress later
+fallback candidates within the envelope. This prevents switching surveys at an
+arbitrary native-chunk edge.
+
+```sh
+python Tools/adaptive_terrain/prepare_welsh_coast.py \
+  --mapping-root /path/to/original/mapping \
+  --source-manifest /path/to/native/tiles/10/502/340/manifest.json \
+  --reference-selection /path/to/retained/z10-x502-y340.json \
+  --reference-id z10-x502-y340-c04-11-p03-03 \
+  --output /external/welsh-coast-native
+```
+
+When correcting a frozen source list, make a new build plan and stop the earlier
+worker before importing its completed sections:
+
+```sh
+python Tools/adaptive_terrain/import_uk_sections.py \
+  --previous-build /external/previous-uk-build \
+  --previous-downloads /external/downloads/previous-uk-revision \
+  --build /external/uk-build-v3 \
+  --downloads /external/downloads/uk-adaptive-0p5-v3
+```
+
+Import checks the source-selection identity, compiler, independent validation
+and full container checksum. Unchanged sections are hard-linked into the new
+revision; changed selections are left for rebuilding. Seam evidence from
+unfinished sections is removed. All 83 sections completed before this UK
+correction matched and were retained. Frozen earlier plans and bytes remain
+available for private audit.
+
+For planner integration tests, set `RIDGE_COORDINATE_GRIDS` to the same local
+OSTN15 directory. The synthetic footprint tests need no survey downloads.

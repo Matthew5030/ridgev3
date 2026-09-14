@@ -87,7 +87,7 @@ selects one preferred encoding per landscape.
 
 ### Whole-UK terrain assets
 
-The server also exposes `/uk-adaptive-0p5-v2/catalog.json` and
+The server also exposes `/uk-adaptive-0p5-v3/catalog.json` and
 `/uk-coarse-background-v2/background.json`. The former lists independently
 validated adaptive grid sections, with chunk byte ranges inside each
 `terrain.ratpack`; the latter supplies separately labelled coarse background
