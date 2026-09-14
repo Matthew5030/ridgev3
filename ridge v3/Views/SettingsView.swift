@@ -6,7 +6,6 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
-    @State private var showParkTest = false
     private var savedCount: Int { store.entries.filter(\.installed).count }
     private var sources: [SourceCredit] {
         let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas land outlines from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
@@ -33,9 +32,6 @@ struct SettingsView: View {
                 storageSection
                 estimatesSection
                 attributionSection
-                if store.activeTerrain == nil && FileManager.default.fileExists(atPath: URL.documentsDirectory.appendingPathComponent("EryriAdaptiveTest/manifest.json").path) {
-                    Button("Eryri adaptive terrain") { showParkTest = true }.buttonStyle(.bordered)
-                }
                 HStack {
                     Image(systemName: "mountain.2").font(.system(size: 15, weight: .medium))
                     Text("RIDGE").font(.system(size: 13, weight: .black, design: .rounded)).tracking(3)
@@ -44,7 +40,6 @@ struct SettingsView: View {
                 }.foregroundStyle(RidgeTheme.muted).padding(.vertical, 12)
             }.padding(24).padding(.top, 12)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
-            .fullScreenCover(isPresented: $showParkTest) { AdaptiveParkTestView() }
             .task(id: store.entries.filter(\.installed).map(\.id).joined(separator: ",")) {
                 var total: Int64 = 0
                 do {

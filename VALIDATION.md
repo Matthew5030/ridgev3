@@ -2,6 +2,10 @@
 
 14 September 2026 (earlier checks retained). Xcode 26.6; iOS 26.5 simulators. Deployment target iOS 18.
 
+## Normal app flow only — 14 September
+
+- Removed the adaptive experiment shortcuts, full-screen presentations and alternate launch path. Explore, Settings and app launch now lead only into the normal app. Prepared experiment data is retained on disk; this UI cleanup does not enlarge the normal terrain coverage.
+
 ## Visible tile selection and atlas navigation — 14 September
 
 - Source cell boundaries are visible at useful zoom levels. A first tap chooses exactly one cell. Drawing and resizing select complete cells; moving a block preserves its row/column count. Partially overlapping requests clamp to prepared edges, while a tap outside prepared data clears the selection instead of opening the prior area. The panel reports rows, columns and selected cell count.

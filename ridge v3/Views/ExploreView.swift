@@ -13,7 +13,6 @@ struct ExploreView: View {
     var expanding: RegionManifest? = nil
     var expansionFocus: GeoPoint? = nil
     var onFinish: (() -> Void)? = nil
-    var onOpenAdaptive: (() -> Void)? = nil
     @Environment(\.scenePhase) private var scenePhase
     @State private var query = ""
     @State private var focus = AtlasFocus(point: GeoPoint(latitude: 53.6, longitude: -3.4), scale: 7400)
@@ -28,9 +27,6 @@ struct ExploreView: View {
     private var spacing: Int { expanding?.defaultSpacing ?? 4 }
     private var atlasEntries: [PackEntry] { store.selectableEntries.sorted { $0.manifest.name < $1.manifest.name } }
     private var busy: Bool { store.isPreparing || store.extensionInProgress }
-    private var adaptiveParkAvailable: Bool {
-        onOpenAdaptive != nil && FileManager.default.fileExists(atPath: URL.documentsDirectory.appendingPathComponent("EryriAdaptiveTest/manifest.json").path)
-    }
     private var proposalID: String { "\(String(describing: bounds))-\(draggingSelection)-\(budgetRevision)-\(store.entries.map { $0.id + String($0.installed) }.joined(separator: ","))" }
 
     var body: some View {
@@ -105,12 +101,6 @@ struct ExploreView: View {
             .overlay(alignment: .bottomLeading) {
                 if !selecting {
                     HStack(spacing: 8) {
-                        if adaptiveParkAvailable {
-                            Button { onOpenAdaptive?() } label: {
-                                Label("Eryri adaptive", systemImage: "mountain.2.fill").font(.system(size: 12, weight: .semibold))
-                                    .padding(12).foregroundStyle(RidgeTheme.paper).background(RidgeTheme.forest.opacity(0.96), in: Capsule())
-                            }.buttonStyle(.plain)
-                        }
                         ForEach(Array(atlasEntries.prefix(3))) { entry in
                             Button { focusOn(entry.manifest.bounds) } label: {
                                 Label(entry.manifest.name, systemImage: "mountain.2").font(.system(size: 12, weight: .semibold))
@@ -183,16 +173,6 @@ struct ExploreView: View {
                 }
             } else {
                 Text("Find a place, draw an area and explore it in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
-                if adaptiveParkAvailable {
-                    Button { onOpenAdaptive?() } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack { Image(systemName: "mountain.2.fill"); Text("Explore Eryri adaptive"); Spacer(); Image(systemName: "arrow.right") }
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Choose a fixed area from the complete offline park source.")
-                                .font(.system(size: 11)).foregroundStyle(RidgeTheme.paper.opacity(0.75))
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                    }.buttonStyle(RidgeButtonStyle())
-                }
                 Button { selecting = true; query = "" } label: { Label("Select area", systemImage: "rectangle.dashed").frame(maxWidth: .infinity) }.buttonStyle(RidgeButtonStyle())
                 Text("Marked areas have prepared terrain. Shaded areas are saved offline.").font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
             }
