@@ -1,6 +1,13 @@
-# Offline adaptive terrain experiment
+# Offline adaptive terrain tools
 
-A bounded, reproducible two-tile comparison around Crib Goch. This tool writes only to its output directory. It neither edits source data nor changes the iOS app.
+Reusable park compilation, coverage auditing and compact static downloads, plus
+the original Crib Goch comparison lab. These tools keep source data read-only
+and do not change the iOS renderer. Start with
+[park builds and downloads](#reusable-park-builds-and-compact-downloads) for the
+current batch workflow, or [RAT1](#compact-rat1-topology-format) for the compact
+format. The first sections below document the original lab.
+
+## Original two-tile comparison
 
 Requirements: Python 3 with the packages in `requirements.txt`, and Node.js. From the Xcode project directory:
 
@@ -128,17 +135,255 @@ and `compactBytes`. The native reader seeks and reads one chunk at a time during
 the initial load, then retains every GPU buffer. This is not runtime streaming.
 The package and individual chunk layouts are both supported by the diagnostic.
 
-Copy the packaged folder to the app's `Documents/EryriAdaptiveTest`, then use
-**Settings → Eryri adaptive · full park stress test** with no ordinary 3D area
-open. It is a geometry-only diagnostic with relief colouring, not a routable map
+The separate Eryri diagnostic entry points have been removed from the normal
+app at the user's request. The historical package was transferred into
+`Documents/EryriAdaptiveTest`; it is not part of the normal download flow. It is a geometry-only diagnostic with relief colouring, not a routable map
 pack. The increased-memory-limit entitlement requests additional memory on
 supported devices; the test still checks `os_proc_available_memory` and a
 512 MiB reserve before loading. Devices without sufficient allowance refuse the
 whole scene rather than silently reducing detail. Simulator uses an explicit
 1 GiB verification budget because it does not provide the iOS memory reading.
 
-For development, launch with `--eryri-stress-test --eryri-auto-test`.
+Historical diagnostic runs used `--eryri-stress-test --eryri-auto-test`; these
+entry points are not part of the normal app flow.
 `Documents/EryriStressResult.json` records the device allowance, load progress,
 full resident result, and first completed GPU frame (or GPU error). A successful
 small Simulator fixture verifies the loader/shader only; it is not an iPad or
 whole-park performance result. The normal fixed-scene planner is unchanged.
+
+
+## Reusable park builds and compact downloads
+
+The same unchanged 0.5 m compiler now accepts any park feature from the existing
+prepared national-parks boundary collection. `build_park.py` derives the park ID
+and title from `collectionID` and `displayName`; use `--id` and `--name` to override.
+`--plan-only` computes actual native coverage and chunk count without compiling.
+It does not acquire new LiDAR. Missing prepared source is reported explicitly.
+
+For example, with a Lake District feature saved as `lake-district.geojson`:
+
+```sh
+python build_park.py --source /path/to/precision/product \
+  --fallback /path/to/earlier/product \
+  --boundary /path/to/lake-district.geojson \
+  --output /external/build/lake-district-adaptive-0p5 \
+  --compiler /tmp/ridge-park-mesh --workers 3
+python verify_park.py /external/build/lake-district-adaptive-0p5
+python publish_adaptive.py /external/build/lake-district-adaptive-0p5 \
+  '/Volumes/MLB_EXT_4TB/Ridge Sources' --workers 3
+python report_park.py /external/build/lake-district-adaptive-0p5 \
+  --published '/Volumes/MLB_EXT_4TB/Ridge Sources/lake-district-adaptive-0p5'
+```
+
+`publish_adaptive.py` requires an independent validation report matching the
+exact source manifest. It checks all source and mesh hashes, then writes one
+zlib level-6 compressed RAT1 file per native chunk (reconstructing RME1 exactly). It round-trips every compressed
+file before publishing `adaptive.json`. The index includes geographic bounds,
+compressed and decoded byte lengths and SHA-256 hashes, triangle counts, packed
+and expanded buffer sizes, and original source attribution/licensing metadata.
+Source paths, compiler caches and build reports are not served.
+
+Compression is lossless. It reduces disk/transfer bytes; it does not reduce the
+resident mesh buffer. The report compares compressed adaptive geometry with
+both raw and equally compressed original heightfields. It separately reports
+triangle savings versus a native 1 m grid. It does not imply that mesh files
+must always be smaller than heightfields or that maps are included.
+
+Published source IDs are immutable. Use a new `--id` and build output directory
+for a revised dataset. Completed chunks resume after interrupted builds.
+`adaptive.json` and `/adaptive-catalog.json` are published only after completion.
+Normal `/catalog.json` remains for sources the current app can read.
+
+**These are terrain assets, not complete normal-app map packs.** The app does
+not yet consume `rme1-zlib-v1`. No adaptive experiment entry point is restored.
+The next integration must connect these bounded chunk downloads to the normal
+textured scene, route-height sampling, memory admission and expansion logic.
+Map textures and walking graphs are separate and must retain their own quality.
+
+Run the compiler/publisher regression checks in the same experiment venv:
+
+```sh
+RIDGE_PARK_COMPILER=/tmp/ridge-park-mesh python test_adaptive_publish.py
+```
+
+They check a real compiled plane with the independent mesh verifier, compression
+round-trips, provenance, metadata hashes, damaged source/mesh rejection,
+validation-to-manifest matching, immutable revisions, catalogue recovery and
+NoData rejection.
+
+
+### Whole national-park collection
+
+`build_collection.py` accepts the existing FeatureCollection. It first measures
+coverage for each park, then compiles, independently verifies, compresses and
+reports each eligible park. Zero-coverage parks are recorded as awaiting source,
+not published as empty or fake terrain. Individual park failures are retained in
+`collection-status.json` and do not hide results from the other parks.
+
+```sh
+python Tools/adaptive_terrain/build_collection.py \
+  --boundaries /path/to/national-parks.geojson \
+  --source /path/to/precision/product --fallback /path/to/earlier/product \
+  --output '/Volumes/MLB_EXT_4TB/Ridge Experiments' \
+  --downloads '/Volumes/MLB_EXT_4TB/Ridge Sources' \
+  --work-directory /tmp/ridge-national-parks-work \
+  --compiler /tmp/ridge-park-mesh --jobs 1 --workers 6
+```
+
+Run once with `--plan-only` to write `collection-plan.json`. `--exclude` accepts
+park keys already handled by an existing build job. An optional local work
+directory keeps small intermediate mesh files on the faster internal disk. Only
+after publication and copying matching audit records to the external build
+folder does the runner remove its temporary `meshes` cache. The losslessly
+compressed downloads are the durable geometry. Completed publications are reused.
+Use a work directory with enough space for one uncompressed park; increasing
+`--jobs` increases both scratch storage and drive contention.
+
+`verify_park.py BUILD --published DOWNLOAD` audits the durable compressed files
+directly, including all hashes and seams, so the temporary raw mesh cache is not
+required for a later check. New builds measure the compressed-source baseline
+while SHA-verified source bytes are already in memory; legacy builds measure it
+during publication. The compiler and the 0.5 m acceptance criterion are unchanged.
+
+`report_collection.py BUILD_ROOT DOWNLOAD_ROOT` writes `NATIONAL-PARKS.md` and
+`NATIONAL-PARKS.json`, with coverage, download sizes, triangle savings, totals and
+explicit missing-source parks. `verify_adaptive_downloads.py SERVER --output FILE`
+checks actual HTTP metadata, representative/extreme chunks, lossless decoding,
+byte-range responses, private-file exclusion and the separation of catalogues.
+
+## Compact RAT1 topology format
+
+The preferred download encoding is now **RAT1 + zlib**, advertised as
+`rat1-zlib-v1`. It represents the same finished 0.5 m adaptive mesh. It changes
+neither triangle count nor source heights. The encoder reconstructs the entire
+original RME1 file and compares it byte-for-byte before accepting a chunk.
+
+RME1 explicitly stores x/y coordinates and three indices per triangle. For
+these canonical RTIN meshes that information can instead be reconstructed from
+a compact subdivision tree. RAT1 stores those decisions plus the original
+vertex heights. This makes transfer/storage much smaller without asking the
+app to rerun adaptive error analysis. Decoding builds the same precomputed mesh;
+its geometry-memory requirement is unchanged.
+
+Build the standalone codec and Python shared library:
+
+```sh
+sh Tools/adaptive_terrain/build_compact_codec.sh
+```
+
+The default library is `/tmp/libridge_compact_mesh.dylib` on macOS, or `.so` on
+Linux. Override with `RIDGE_COMPACT_LIBRARY`. `publish_adaptive.py` now defaults
+to `--codec rat1`; `--codec rme1` retains the older explicit format. Existing
+published IDs remain immutable. `repack_adaptive.py OLD_SOURCE DOWNLOAD_ROOT`
+creates a new `-compact-v1` source, preserving the old URLs. The catalogue offers
+only the preferred encoding of each landscape, rather than overlapping copies.
+
+### Binary payload before zlib
+
+All integer and floating-point fields are little endian:
+
+| Offset | Type | Meaning |
+| ---: | --- | --- |
+| 0 | 4 ASCII bytes | `RAT1` |
+| 4 | UInt32 | Reconstructed vertex count |
+| 8 | UInt32 | Reconstructed triangle count |
+| 12 | UInt32 | Reconstructed RME1 index width: 2 or 4 bytes |
+| 16 | UInt32 | Native grid width: 513 |
+| 20 | Float32 | Original source height scale |
+| 24 | Float32 | Original source height offset |
+| 28 | UInt32 | Subdivision decision bit count |
+| 32 | Bytes | Decision bits, least-significant bit first within each byte |
+| After decision bytes | Int16 × vertex count | Original source heights in canonical vertex order |
+
+The decision-byte length is `(bitCount + 7) / 8`. Starting triangles are
+`[(0,0),(512,512),(512,0)]` and `[(512,512),(0,0),(0,512)]`. Traverse in that order.
+For a triangle `(a,b,c)`, if `abs(a.x-c.x)+abs(a.y-c.y) > 1`, consume one bit.
+Zero emits the triangle; one visits `(c,a,mid(a,b))`, then
+`(b,c,mid(a,b))`. Unit triangles emit directly without consuming a bit.
+
+Restore every pair of unit-cell triangles to the same native NE–SW diagonal
+used by `park_mesh.cpp`, preserving their array positions. Enumerate vertices
+by first occurrence while visiting the final triangle array and its corners.
+The stored height sequence matches that order. This reconstructs the original
+RME1 byte sequence, including vertex/index order and the retained source scale.
+`compact_mesh.cpp` contains the encoder and decoder and is usable independently
+of Python; `compact_codec.py` calls it in memory for bounded parallel work.
+The RTIN topology follows MARTINI (Mapbox, 2019); retain the included
+[`vendor/MARTINI-LICENSE`](vendor/MARTINI-LICENSE) when redistributing these tools.
+
+The decoder validates grid/count limits, exact payload length, bit consumption,
+triangle count and vertex count. A reader must also verify compressed and
+reconstructed hashes and admit the *decoded geometry* against its memory budget.
+The index records `topologyByteCount`/`topologySHA256` for the inflated RAT1 bytes;
+`decodedByteCount`/`decodedSHA256` describe the reconstructed RME1 mesh. Packed
+and expanded geometry costs remain separate from download bytes.
+
+Regression tests include a completely detailed 513-square checkerboard with
+32-bit indices, a simplified plane with 16-bit indices, damaged/truncated
+headers, noncanonical triangle-order rejection, publication and direct
+verification from compressed topology, and immutable legacy repacking with
+one preferred catalogue entry. Real-park encoding repeats the exact mesh
+round-trip check for every chunk, not just the test samples.
+
+### Reusing an existing concatenated mesh package
+
+Both `verify_park.py` and `publish_adaptive.py` accept `--mesh-package FOLDER`.
+The package index must match every private chunk's hash, byte length and bounds.
+A shared file descriptor with positional reads avoids reopening thousands of
+small files. This reuses the historical Eryri package without recomputing its
+adaptive meshes. Source provenance and independent checks are retained.
+
+## Scottish source preparation
+
+The supplied precision products contain no native Scottish park inputs. The
+additional source workflow audits the official Scottish public-sector LiDAR
+bucket, downloads selected DTMs with ETag/length/SHA-256 checks, and prepares
+compatible native chunks. It uses phases 1–6 and the national LiDAR programme's
+DTM folders. It does not claim to inventory every Scottish survey. Download
+footprint estimates are upper bounds; actual valid-data coverage is measured
+only after inspecting and sampling the rasters.
+
+```sh
+python -m pip install rasterio==1.5.1
+python Tools/adaptive_terrain/scottish_dtm.py audit \
+  --boundaries /external/park-boundaries --output /external/scotland-audit.json
+python Tools/adaptive_terrain/scottish_dtm.py download \
+  --audit /external/scotland-audit.json --output /external/scotland-dtm
+```
+
+Place the official PROJ grid `uk_os_OSTN15_NTv2_OSGBtoETRS.tif` from
+<https://cdn.proj.org/uk_os_OSTN15_NTv2_OSGBtoETRS.tif> in a coordinate-grid
+folder. The September 2026 build used SHA-256
+`5d6ed64d2119952c4c559fa1fccbc594b6520fc3ec3ef2fc10be13202c4384fa`.
+The preparation script records the grid hash and selected transformation and
+refuses a lower-accuracy fallback when the best transformation is unavailable.
+
+```sh
+python Tools/adaptive_terrain/prepare_scottish_sources.py \
+  --sources /external/scotland-dtm/sources.json \
+  --boundaries /external/park-boundaries \
+  --coordinate-grids /external/coordinate-grids \
+  --output /external/scottish-park-precision/version
+```
+
+The TIFFs must be north-up British National Grid DTMs at 1 m or finer. A 10 ppm
+allowance handles georeferencing roundoff in historic nominal 1 m files; it does
+not admit coarser surveys. A virtual 1 m BNG mosaic joins valid source rasters,
+with finer sources taking priority. Bilinear sampling on that continuous mosaic
+avoids clamping each TIFF separately at its edge. All mosaic reads use fixed
+512-pixel blocks, so neighbouring chunks cannot get slightly different
+resampling results at the same coordinate and then quantise to different
+heights. A bounded 64-block cache reuses these reads. Sampling onto Ridge's existing
+geographic grid adds reprojection/interpolation and 0.1 m height quantisation;
+the adaptive 0.5 m criterion applies to this **prepared surface**, not to absolute
+survey accuracy. NoData is never filled. Every native chunk with missing samples
+is excluded, even if its filename footprint intersects the park.
+
+Original source URLs, checksums, licensing, transformation and preparation are
+retained. Frozen input fingerprints protect resumable preparation from mixing
+changed source versions. Feed the prepared product into `build_park.py`, then
+use the same independent seam/surface verification and compact publication.
+`test_scottish_sources.py` checks adjacent raster seams, missing data, finer-source
+priority, resolution rejection, checksum-verified download resume, and identical
+shared coordinates queried from different windows using synthetic georeferenced
+rasters. The window test reproduces a real Scottish source seam failure.

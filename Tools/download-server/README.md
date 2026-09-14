@@ -68,3 +68,19 @@ The read-only bind mount and port configuration follow the [Docker Compose
 service reference](https://docs.docker.com/reference/compose-file/services/).
 The iOS app uses [NSAllowsLocalNetworking](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking)
 and a local-network usage description for explicit LAN downloads.
+
+
+## Precomputed adaptive terrain
+
+`/adaptive-catalog.json` lists independently compressed adaptive terrain chunks.
+This is separate from `/catalog.json`, because the current normal app does not
+yet support the adaptive mesh readers. It must not offer these as regular map packs.
+Each source exposes `adaptive.json`, `mesh-*.rat.zlib` (or legacy `mesh-*.rmesh.zlib`), `boundary.geojson` and
+`coverage-gaps.geojson`. Downloads are static files; there is no live meshing.
+The publisher and format are documented in
+[the adaptive tools](../adaptive_terrain/README.md#reusable-park-builds-and-compact-downloads).
+
+The preferred RAT1 encoding losslessly reconstructs the same RME1 geometry from
+subdivision decisions and heights. It reduces transfer bytes, not the resident
+geometry budget. Repacked legacy URLs remain valid; the adaptive catalogue
+selects one preferred encoding per landscape.
