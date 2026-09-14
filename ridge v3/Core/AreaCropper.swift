@@ -11,6 +11,33 @@ struct PreparedCrop: Sendable {
 }
 
 enum AreaCropper {
+    /// This is also the download plan. It mirrors the exact bounded windows
+    /// below, so the renderer can remain completely unaware of networking.
+    static func sourceAssets(manifest: RegionManifest, preview: RegionManifest, spacing: Int) -> [SourceAsset] {
+        guard let source = manifest.tiledTerrain, let grid = manifest.grid,
+              let primary = preview.levels.first(where: { $0.spacing == spacing }) else { return [] }
+        var assets: [String: SourceAsset] = [:]
+        let layers = [(preview.bounds, primary)] + (preview.horizon?.layers ?? []).compactMap { layer in layer.levels.first.map { (layer.bounds, $0) } }
+        for (bounds, level) in layers {
+            let intervals = 512 / level.spacing
+            let uv = manifest.bounds.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
+            let x = Int((uv.u * Double(grid.columns * intervals)).rounded()), y = Int((uv.v * Double(grid.rows * intervals)).rounded())
+            let left = min(grid.columns - 1, max(0, x / intervals)), right = min(grid.columns - 1, max(0, (x + level.width - 1) / intervals))
+            let top = min(grid.rows - 1, max(0, y / intervals)), bottom = min(grid.rows - 1, max(0, (y + level.height - 1) / intervals))
+            for row in top...bottom {
+                for column in left...right {
+                    if let stored = source.cells[row * grid.columns + column].levels.filter({ $0.spacing <= level.spacing }).max(by: { $0.spacing < $1.spacing }) {
+                        assets[stored.file] = SourceAsset(file: stored.file, byteCount: stored.byteCount, sha256: stored.sha256)
+                    }
+                }
+            }
+        }
+        for image in preview.cartography?.allTextures ?? [] { assets[image.file] = SourceAsset(file: image.file, byteCount: image.byteCount, sha256: image.sha256) }
+        for graph in source.graphs where intersection(graph.bounds, preview.bounds) != nil {
+            assets[graph.file] = SourceAsset(file: graph.file, byteCount: graph.byteCount, sha256: graph.sha256)
+        }
+        return assets.values.sorted { $0.file < $1.file }
+    }
     private struct Window {
         var x: Int, y: Int, width: Int, height: Int
     }
@@ -28,6 +55,7 @@ enum AreaCropper {
             var invalid = manifest; invalid.levels = []; return invalid
         }
         var result = manifest
+        result.tiledTerrain = nil
         result.bounds = plan.bounds
         result.grid = plan.grid
         result.detailTextures = nil
@@ -56,7 +84,7 @@ enum AreaCropper {
             return cropped
         }
         result.places = manifest.places.filter { plan.bounds.contains($0.coordinate) }
-        result.horizon = previewHorizon(manifest.horizon, selectedBounds: plan.bounds)
+        result.horizon = previewHorizon(manifest.horizon, selectedBounds: plan.bounds, atlas: manifest.cartography)
         if let atlas = manifest.cartography {
             result.cartography = atlas.cropped(to: result.horizon?.layers.last?.bounds ?? plan.bounds)
             guard result.cartography != nil else { result.levels = []; return result }
@@ -72,11 +100,19 @@ enum AreaCropper {
     }
 
     static func prepare(directory: URL, manifest: RegionManifest, selection: AreaSelection, spacing: Int,
-                        cartographySourceID: String? = nil) throws -> PreparedCrop {
+                        cartographySourceID: String? = nil, downloadedPreview: RegionManifest? = nil) throws -> PreparedCrop {
         try PackStore.validate(manifest)
         let plan = try plan(manifest, selection)
         let context = TerrainBudget.currentContext()
         var result = preview(manifest: manifest, selection: selection, spacing: spacing, context: context)
+        if let downloadedPreview {
+            guard downloadedPreview.bounds == result.bounds else { throw RidgeError.message("The download does not match the selected area.") }
+            // Memory can fall during a download. Retain at most the downloaded
+            // horizon; never expand the file requirements during preparation.
+            result.horizon = downloadedPreview.horizon
+            result.horizon = TerrainBudget.selectedHorizon(for: result, spacing: spacing, context: context)
+            result.cartography = manifest.cartography?.cropped(to: result.horizon?.layers.last?.bounds ?? result.bounds)
+        }
         if result.cartography != nil {
             result.cartographySourceID = cartographySourceID ?? manifest.cartographySourceID
         }
@@ -91,10 +127,14 @@ enum AreaCropper {
         defer { if !complete { try? FileManager.default.removeItem(at: output) } }
         try Task.checkCancellation()
 
+        let heights: Data
+        if manifest.tiledTerrain != nil {
+            heights = try tiledHeights(manifest, directory: directory, spacing: spacing, window: window)
+        } else {
         let terrainURL = try verifiedAsset(sourceLevel.file, directory: directory, bytes: sourceLevel.byteCount, sha256: sourceLevel.sha256)
         let input = try FileHandle(forReadingFrom: terrainURL)
         defer { try? input.close() }
-        var heights = Data(); heights.reserveCapacity(Int(selectedLevel.byteCount))
+        var croppedHeights = Data(); croppedHeights.reserveCapacity(Int(selectedLevel.byteCount))
         for row in 0..<window.height {
             try Task.checkCancellation()
             let offset = (Int64(window.y + row) * Int64(sourceLevel.width) + Int64(window.x)) * 2
@@ -102,7 +142,9 @@ enum AreaCropper {
             guard let data = try input.read(upToCount: window.width * 2), data.count == window.width * 2 else {
                 throw RidgeError.message("The source terrain ended inside the selected area.")
             }
-            heights.append(data)
+            croppedHeights.append(data)
+        }
+            heights = croppedHeights
         }
         let usable = heights.withUnsafeBytes { raw in
             stride(from: 0, to: raw.count, by: 2).contains { Int(Int16(littleEndian: raw.loadUnaligned(fromByteOffset: $0, as: Int16.self))) != manifest.noDataValue }
@@ -155,36 +197,50 @@ enum AreaCropper {
             result.textures.append(cropped)
         }
 
+        var graphSources = manifest.tiledTerrain?.graphs.filter { intersection($0.bounds, plan.bounds) != nil } ?? []
         if let file = manifest.graphFile, let count = manifest.graphByteCount, let checksum = manifest.graphSHA256 {
+            graphSources = [TerrainSourceGraph(file: file, byteCount: count, sha256: checksum, bounds: manifest.bounds)]
+        }
+        var selectedNodes: [WalkingNode] = [], selectedEdges: [WalkingEdge] = []
+        for record in graphSources {
             try Task.checkCancellation()
-            let url = try verifiedAsset(file, directory: directory, bytes: count, sha256: checksum)
+            let url = try verifiedAsset(record.file, directory: directory, bytes: record.byteCount, sha256: record.sha256)
             let graph = try JSONDecoder().decode(WalkingGraph.self, from: Data(contentsOf: url, options: .mappedIfSafe))
             let originalIDs = Set(graph.nodes.map(\.id))
             guard graph.nodes.count <= 200_000, graph.edges.count <= 500_000, originalIDs.count == graph.nodes.count,
-                  graph.nodes.allSatisfy({ $0.coordinate.isValid && $0.elevation.isFinite && manifest.bounds.contains($0.coordinate) }),
+                  graph.nodes.allSatisfy({ $0.coordinate.isValid && $0.elevation.isFinite && record.bounds.contains($0.coordinate) }),
                   graph.edges.allSatisfy({ originalIDs.contains($0.from) && originalIDs.contains($0.to) && $0.distance.isFinite && $0.distance > 0 }) else {
                 throw RidgeError.message("The source walking graph is invalid.")
             }
-            let nodes = graph.nodes.filter { plan.bounds.contains($0.coordinate) }
-            let nodeIDs = Set(nodes.map(\.id))
-            let edges = graph.edges.filter { nodeIDs.contains($0.from) && nodeIDs.contains($0.to) }
-            if edges.contains(where: hasWalkingAccess) {
-                let used = Set(edges.flatMap { [$0.from, $0.to] })
-                let clipped = WalkingGraph(nodes: nodes.filter { used.contains($0.id) }, edges: edges)
-                let bytes = try JSONEncoder().encode(clipped)
-                try bytes.write(to: output.appendingPathComponent("graph.json"))
-                result.graphFile = "graph.json"; result.graphByteCount = Int64(bytes.count); result.graphSHA256 = hash(bytes)
-            } else {
-                // An empty or wholly ineligible cropped graph must advertise
-                // manual planning instead of implying an offline walking network.
-                result.graphFile = nil; result.graphByteCount = nil; result.graphSHA256 = nil
-            }
+            let nodes = graph.nodes.filter { plan.bounds.contains($0.coordinate) }, nodeIDs = Set(nodes.map(\.id))
+            selectedNodes += nodes
+            selectedEdges += graph.edges.filter { nodeIDs.contains($0.from) && nodeIDs.contains($0.to) }
+        }
+        guard selectedNodes.count <= 200_000, selectedEdges.count <= 500_000,
+              Set(selectedNodes.map(\.id)).count == selectedNodes.count else { throw RidgeError.message("The selected walking network exceeds its supported size or has duplicate identifiers.") }
+        // Only exact coincident source nodes are joined. Never invent a path
+        // between nearby but disconnected trails on opposite sides of a ridge.
+        var byCoordinate: [GeoPoint: Int] = [:], aliases: [Int: Int] = [:]
+        for node in selectedNodes {
+            if let id = byCoordinate[node.coordinate] { aliases[node.id] = id }
+            else { byCoordinate[node.coordinate] = node.id }
+        }
+        selectedEdges = selectedEdges.compactMap { edge in
+            var edge = edge; edge.from = aliases[edge.from] ?? edge.from; edge.to = aliases[edge.to] ?? edge.to
+            return edge.from == edge.to ? nil : edge
+        }
+        if selectedEdges.contains(where: hasWalkingAccess) {
+            let used = Set(selectedEdges.flatMap { [$0.from, $0.to] })
+            let clipped = WalkingGraph(nodes: selectedNodes.filter { aliases[$0.id] == nil && used.contains($0.id) }, edges: selectedEdges)
+            let bytes = try JSONEncoder().encode(clipped)
+            try bytes.write(to: output.appendingPathComponent("graph.json"))
+            result.graphFile = "graph.json"; result.graphByteCount = Int64(bytes.count); result.graphSHA256 = hash(bytes)
         } else { result.graphFile = nil; result.graphByteCount = nil; result.graphSHA256 = nil }
 
         if let horizon = result.horizon, let source = manifest.horizon {
             result.horizon = TerrainHorizon(
-                near: try horizon.near.map { try prepareBackdrop($0, source: source.near, directory: directory, output: output, prefix: "horizon-near", noDataValue: manifest.noDataValue) },
-                far: try horizon.far.map { try prepareBackdrop($0, source: source.far, directory: directory, output: output, prefix: "horizon-far", noDataValue: manifest.noDataValue) })
+                near: try horizon.near.map { try prepareBackdrop($0, source: source.near, directory: directory, output: output, prefix: "horizon-near", noDataValue: manifest.noDataValue, tiledSource: manifest.tiledTerrain == nil ? nil : manifest) },
+                far: try horizon.far.map { try prepareBackdrop($0, source: source.far, directory: directory, output: output, prefix: "horizon-far", noDataValue: manifest.noDataValue, tiledSource: manifest.tiledTerrain == nil ? nil : manifest) })
         }
 
         // The atlas is a separate, fixed geographic grid. Retain complete cells
@@ -215,20 +271,26 @@ enum AreaCropper {
         return PreparedCrop(manifest: result, directory: output)
     }
 
-    private static func previewHorizon(_ source: TerrainHorizon?, selectedBounds: GeoBounds) -> TerrainHorizon? {
+    private static func previewHorizon(_ source: TerrainHorizon?, selectedBounds: GeoBounds, atlas: CartographyAtlas?) -> TerrainHorizon? {
         guard let source else { return nil }
-        let near = source.near.flatMap { backdropPreview($0, selectedBounds: selectedBounds, marginMeters: 2_000) }
-        let far = source.far.flatMap { backdropPreview($0, selectedBounds: selectedBounds, marginMeters: 15_000) }
+        let near = source.near.flatMap { backdropPreview($0, selectedBounds: selectedBounds, marginMeters: 2_000, atlas: atlas) }
+        let far = source.far.flatMap { backdropPreview($0, selectedBounds: selectedBounds, marginMeters: 15_000, atlas: atlas) }
         return near == nil && far == nil ? nil : TerrainHorizon(near: near, far: far)
     }
 
-    private static func backdropPreview(_ source: TerrainBackdrop, selectedBounds: GeoBounds, marginMeters: Double) -> TerrainBackdrop? {
+    private static func backdropPreview(_ source: TerrainBackdrop, selectedBounds: GeoBounds, marginMeters: Double, atlas: CartographyAtlas?) -> TerrainBackdrop? {
         guard source.bounds.isValid, !source.levels.isEmpty else { return nil }
         let gridX = source.levels.map { $0.width - 1 }.reduce(0, gcd)
         let gridY = source.levels.map { $0.height - 1 }.reduce(0, gcd)
         guard gridX >= 1, gridY >= 1 else { return nil }
-        let latMargin = marginMeters / source.bounds.depthMeters * (source.bounds.maxLatitude - source.bounds.minLatitude)
-        let lonMargin = marginMeters / source.bounds.widthMeters * (source.bounds.maxLongitude - source.bounds.minLongitude)
+        var latMargin = marginMeters / source.bounds.depthMeters * (source.bounds.maxLatitude - source.bounds.minLatitude)
+        var lonMargin = marginMeters / source.bounds.widthMeters * (source.bounds.maxLongitude - source.bounds.minLongitude)
+        if let atlas, atlas.sourceOnly == true {
+            let latSpan = atlas.latitudeEdges[0] - atlas.latitudeEdges[min(62, atlas.rows)]
+            let lonSpan = atlas.longitudeEdges[min(62, atlas.columns)] - atlas.longitudeEdges[0]
+            latMargin = min(latMargin, max(0, (latSpan - selectedBounds.maxLatitude + selectedBounds.minLatitude) / 2))
+            lonMargin = min(lonMargin, max(0, (lonSpan - selectedBounds.maxLongitude + selectedBounds.minLongitude) / 2))
+        }
         let padded = GeoBounds(minLatitude: max(source.bounds.minLatitude, selectedBounds.minLatitude - latMargin),
                                minLongitude: max(source.bounds.minLongitude, selectedBounds.minLongitude - lonMargin),
                                maxLatitude: min(source.bounds.maxLatitude, selectedBounds.maxLatitude + latMargin),
@@ -270,13 +332,23 @@ enum AreaCropper {
     }
 
     private static func prepareBackdrop(_ preview: TerrainBackdrop, source: TerrainBackdrop?, directory: URL, output: URL,
-                                        prefix: String, noDataValue: Int) throws -> TerrainBackdrop {
+                                        prefix: String, noDataValue: Int, tiledSource: RegionManifest? = nil) throws -> TerrainBackdrop {
         guard let source, preview.levels.count == 1, let selected = preview.levels.first,
               let level = source.levels.first(where: { $0.spacing == selected.spacing }) else { throw RidgeError.message("The selected surrounding terrain is unavailable.") }
         let topLeft = source.bounds.uv(GeoPoint(latitude: preview.bounds.maxLatitude, longitude: preview.bounds.minLongitude))
         let x = Int((topLeft.u * Double(level.width - 1)).rounded())
         let y = Int((topLeft.v * Double(level.height - 1)).rounded())
         guard x >= 0, y >= 0, x + selected.width <= level.width, y + selected.height <= level.height else { throw RidgeError.message("The surrounding terrain crop lies outside its source.") }
+        if let tiledSource {
+            let bytes = try tiledHeights(tiledSource, directory: directory, spacing: selected.spacing,
+                                         window: Window(x: x, y: y, width: selected.width, height: selected.height))
+            let file = "\(prefix)-\(selected.spacing)m.bin"
+            try bytes.write(to: output.appendingPathComponent(file))
+            var result = preview, level = selected
+            level.file = file; level.sha256 = hash(bytes)
+            result.levels = [level]; result.textures = []
+            return result
+        }
         let url = try verifiedAsset(level.file, directory: directory, bytes: level.byteCount, sha256: level.sha256)
         let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
         let file = "\(prefix)-\(selected.spacing)m.bin", target = output.appendingPathComponent(file)
@@ -340,6 +412,9 @@ enum AreaCropper {
         try PackStore.validate(planningManifest)
         if let grid = manifest.grid {
             guard let aligned = grid.cellsSelection(selection), let cropped = grid.cropped(to: aligned) else { throw RidgeError.message("Select one or more original terrain tiles.") }
+            if let tiled = manifest.tiledTerrain, !tiled.covers(cropped, in: grid) {
+                throw RidgeError.message("Some selected tiles have no complete prepared LiDAR. Choose highlighted tiles.")
+            }
             let left = cropped.originColumn - grid.originColumn, top = cropped.originRow - grid.originRow
             var windows: [Int: Window] = [:]
             for level in manifest.levels {
@@ -420,11 +495,55 @@ enum AreaCropper {
         let height = Double(texture.height) * (bounds.maxLatitude - bounds.minLatitude) / (texture.bounds.maxLatitude - texture.bounds.minLatitude)
         return (max(1, Int(ceil(width - 1e-8))), max(1, Int(ceil(height - 1e-8))))
     }
+    /// Read just the intersecting cells at the nearest stored finer spacing.
+    /// Peak CPU storage is the admitted crop plus one small source tile.
+    private static func tiledHeights(_ manifest: RegionManifest, directory: URL, spacing: Int, window: Window) throws -> Data {
+        guard let source = manifest.tiledTerrain, let grid = manifest.grid,
+              [1, 2, 4, 8, 16, 32].contains(spacing), window.width > 0, window.height > 0,
+              window.width <= 16385, window.height <= 16385 else { throw RidgeError.message("Invalid source tile window.") }
+        let intervals = 512 / spacing
+        guard window.x >= 0, window.y >= 0, window.x + window.width <= grid.columns * intervals + 1,
+              window.y + window.height <= grid.rows * intervals + 1 else { throw RidgeError.message("The selected tiles lie outside this source.") }
+        var output = Data(count: window.width * window.height * 2)
+        output.withUnsafeMutableBytes { raw in
+            for i in 0..<(raw.count / 2) { raw.storeBytes(of: Int16(manifest.noDataValue).littleEndian, toByteOffset: i * 2, as: Int16.self) }
+        }
+        let left = min(grid.columns - 1, window.x / intervals), top = min(grid.rows - 1, window.y / intervals)
+        let right = min(grid.columns - 1, (window.x + window.width - 1) / intervals)
+        let bottom = min(grid.rows - 1, (window.y + window.height - 1) / intervals)
+        for row in top...bottom {
+            for column in left...right {
+                try Task.checkCancellation()
+                let cell = source.cells[row * grid.columns + column]
+                guard let level = cell.levels.filter({ $0.spacing <= spacing }).max(by: { $0.spacing < $1.spacing }) else { continue }
+                let url = try verifiedAsset(level.file, directory: directory, bytes: level.byteCount, sha256: level.sha256)
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                let factor = spacing / level.spacing
+                let x0 = max(window.x, column * intervals), x1 = min(window.x + window.width - 1, (column + 1) * intervals)
+                let y0 = max(window.y, row * intervals), y1 = min(window.y + window.height - 1, (row + 1) * intervals)
+                output.withUnsafeMutableBytes { destination in
+                    data.withUnsafeBytes { input in
+                        for y in y0...y1 {
+                            for x in x0...x1 {
+                                let index = ((y - row * intervals) * factor * level.width + (x - column * intervals) * factor) * 2
+                                let value = input.loadUnaligned(fromByteOffset: index, as: Int16.self)
+                                if Int(Int16(littleEndian: value)) != manifest.noDataValue {
+                                    destination.storeBytes(of: value, toByteOffset: ((y - window.y) * window.width + x - window.x) * 2, as: Int16.self)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return output
+    }
+
     private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     private static func verifiedAsset(_ file: String, directory: URL, bytes: Int64, sha256: String) throws -> URL {
         guard PackStore.safeName(file) else { throw RidgeError.message("Invalid source asset name.") }
         let root = directory.resolvingSymlinksInPath(), url = directory.appendingPathComponent(file).resolvingSymlinksInPath()
-        guard url.deletingLastPathComponent() == root else { throw RidgeError.message("A source file points outside this area.") }
+        guard url.deletingLastPathComponent().path == root.path else { throw RidgeError.message("A source file points outside this area.") }
         let actual = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
         guard actual == bytes else { throw RidgeError.message("A source file is incomplete. Import the original area again.") }
         let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
@@ -432,5 +551,19 @@ enum AreaCropper {
         while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty { try Task.checkCancellation(); checksum.update(data: data) }
         guard checksum.finalize().map({ String(format: "%02x", $0) }).joined() == sha256.lowercased() else { throw RidgeError.message("A source file failed its integrity check.") }
         return url
+    }
+}
+
+
+extension PackStore {
+    func downloadSelection(from entry: PackEntry, selection: AreaSelection, spacing: Int,
+                           progress: @Sendable (Double) async -> Void) async throws -> RegionManifest? {
+        guard entry.manifest.tiledTerrain != nil, let remote = entry.remoteSource else { return nil }
+        let preview = AreaCropper.preview(manifest: entry.manifest, selection: selection, spacing: spacing)
+        let allowance = TerrainBudget.allowance(for: preview, spacing: spacing)
+        guard allowance.allowed else { throw RidgeError.message(allowance.reason ?? "Select a smaller area.") }
+        try await SourceDownloads.ensure(AreaCropper.sourceAssets(manifest: entry.manifest, preview: preview, spacing: spacing),
+                                         at: entry.directory, remote: remote, progress: progress)
+        return preview
     }
 }

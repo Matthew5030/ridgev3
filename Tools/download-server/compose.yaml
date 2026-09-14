@@ -1,0 +1,28 @@
+name: ridge-downloads
+services:
+  downloads:
+    image: nginx:stable-alpine@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
+    user: "101:101"
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    ports:
+      - "${RIDGE_DOWNLOAD_PORT:-8787}:8787"
+    volumes:
+      - type: bind
+        source: ${RIDGE_SOURCE_DIRECTORY:-/Volumes/MLB_EXT_4TB/Ridge Sources}
+        target: /data
+        read_only: true
+      - type: bind
+        source: ./nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

@@ -6,6 +6,9 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
+    @AppStorage("ridge.downloadServer") private var serverAddress = ""
+    @State private var connectingServer = false
+    @State private var serverMessage: String?
     private var savedCount: Int { store.entries.filter(\.installed).count }
     private var sources: [SourceCredit] {
         let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas land outlines from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
@@ -28,6 +31,7 @@ struct SettingsView: View {
                 gestureSection
                 introduction
                 offlineSection
+                downloadServerSection
                 legendSection
                 storageSection
                 estimatesSection
@@ -40,6 +44,11 @@ struct SettingsView: View {
                 }.foregroundStyle(RidgeTheme.muted).padding(.vertical, 12)
             }.padding(24).padding(.top, 12)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
+            .onAppear {
+                if serverAddress.isEmpty, let remote = store.entries.compactMap(\.remoteSource).first {
+                    serverAddress = remote.deletingLastPathComponent().absoluteString
+                }
+            }
             .task(id: store.entries.filter(\.installed).map(\.id).joined(separator: ",")) {
                 var total: Int64 = 0
                 do {
@@ -111,6 +120,41 @@ struct SettingsView: View {
                 }
             }.padding(.horizontal, 15).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 19))
             }
+        }
+    }
+
+    private var downloadServerSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Eyebrow(text: "Download server")
+            Text("More terrain, when you need it.").font(.system(size: 23, weight: .regular, design: .serif))
+            Text("Connect to your local server to add its coverage to the map. Choose an area there, then download its terrain and maps. Saved areas open without the server.")
+                .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
+            TextField("http://your-mac.local:8787", text: $serverAddress)
+                .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                .padding(15).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityLabel("Download server address")
+            Button {
+                connectingServer = true; serverMessage = nil
+                Task { @MainActor in
+                    defer { connectingServer = false }
+                    do {
+                        guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                            throw RidgeError.message("Enter the download server’s address.")
+                        }
+                        let count = try await store.packs.connectSourceServer(url)
+                        await store.refresh()
+                        serverMessage = "Connected · \(count) terrain \(count == 1 ? "source" : "sources") available. Return to the map to choose your area."
+                    } catch { serverMessage = error.localizedDescription }
+                }
+            } label: {
+                HStack {
+                    if connectingServer { ProgressView().tint(RidgeTheme.forest) }
+                    Label(connectingServer ? "Connecting…" : "Connect and refresh coverage", systemImage: "externaldrive.connected.to.line.below")
+                }.font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).padding(15)
+                    .background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+            }.disabled(connectingServer || store.activeTerrain != nil || serverAddress.isEmpty)
+            if store.activeTerrain != nil { Text("Return to the map before changing download coverage.").font(.footnote).foregroundStyle(RidgeTheme.muted) }
+            if let serverMessage { Text(serverMessage).font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(3) }
         }
     }
 

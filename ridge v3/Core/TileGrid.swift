@@ -27,11 +27,12 @@ struct TerrainGrid: Codable, Hashable, Sendable {
     static let nativeIntervals = 512
 
     var isValid: Bool {
+        let side = gridID == "ridge-eryri-uniform-v1" ? 256 : Self.worldSide
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
         let validID: (String) -> Bool = { !$0.isEmpty && $0.count <= 100 && $0 != "." && $0 != ".." && $0.unicodeScalars.allSatisfy { allowed.contains($0) } }
         return validID(gridID) && validID(worldTileID) && originColumn >= 0 && originRow >= 0
-            && columns >= 1 && rows >= 1 && columns <= Self.worldSide && rows <= Self.worldSide
-            && originColumn <= Self.worldSide - columns && originRow <= Self.worldSide - rows
+            && columns >= 1 && rows >= 1 && columns <= side && rows <= side
+            && originColumn <= side - columns && originRow <= side - rows
     }
 
     func selection(column: Int, row: Int) -> AreaSelection? {

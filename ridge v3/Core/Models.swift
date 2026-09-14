@@ -89,6 +89,38 @@ struct LoadedHorizon: Sendable {
     var layers: [LoadedBackdrop] { [near, far].compactMap { $0 } }
 }
 
+/// Offline source storage. These records never become a resident terrain mesh.
+struct TerrainSourceCell: Codable, Hashable, Sendable {
+    var column: Int
+    var row: Int
+    var complete: Bool
+    var levels: [TerrainLOD]
+}
+
+struct TerrainSourceGraph: Codable, Hashable, Sendable {
+    var file: String
+    var byteCount: Int64
+    var sha256: String
+    var bounds: GeoBounds
+}
+
+struct TiledTerrainSource: Codable, Hashable, Sendable {
+    /// Dense metadata, northwest first. Empty levels mean absent source data.
+    var cells: [TerrainSourceCell]
+    var graphs: [TerrainSourceGraph]
+    var overview: MapTexture
+
+    func covers(_ selected: TerrainGrid, in source: TerrainGrid) -> Bool {
+        let left = selected.originColumn - source.originColumn, top = selected.originRow - source.originRow
+        guard left >= 0, top >= 0, left + selected.columns <= source.columns,
+              top + selected.rows <= source.rows, cells.count == source.columns * source.rows else { return false }
+        for row in top..<(top + selected.rows) {
+            for column in left..<(left + selected.columns) where !cells[row * source.columns + column].complete { return false }
+        }
+        return true
+    }
+}
+
 struct RegionManifest: Codable, Hashable, Identifiable, Sendable {
     var schemaVersion: Int
     var id: String
@@ -116,6 +148,7 @@ struct RegionManifest: Codable, Hashable, Identifiable, Sendable {
     /// A trusted bundled source can provide immutable map cells to saved crops.
     /// Terrain, horizon and routes remain owned by the saved area.
     var cartographySourceID: String? = nil
+    var tiledTerrain: TiledTerrainSource? = nil
     var totalBytes: Int64 {
         let layers = horizon?.layers ?? []
         let maps = cartographySourceID == nil ? cartography.map { [$0.totalBytes] }

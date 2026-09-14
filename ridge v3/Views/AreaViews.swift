@@ -21,6 +21,7 @@ struct AreaPreview: View {
         return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
             UIColor(red: 0.94, green: 0.94, blue: 0.86, alpha: 1).setFill(); renderer.fill(CGRect(origin: .zero, size: size))
             var maps = manifest.textures.map { ($0, 0) }
+            if let overview = manifest.tiledTerrain?.overview { maps = [(overview, 0)] }
             if maps.isEmpty, let atlas = manifest.cartography {
                 maps = atlas.tiles.compactMap { tile in
                     let bounds = tile.image.bounds

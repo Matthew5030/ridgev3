@@ -159,12 +159,12 @@ struct ExploreView: View {
                         } else {
                             Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Same sharp map")
                                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
-                            Text(proposal?.saved != nil ? "Already saved on this device." : "Source data is on this device. No download needed.")
+                            Text(proposal?.saved != nil ? "Already saved on this device." : proposal?.source?.remoteSource != nil ? "Missing files download from your local server. Saved files are reused." : "Source data is on this device. No download needed.")
                                 .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
                         }
                     }.frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                     Button { openSelection() } label: {
-                        HStack { Image(systemName: proposal?.saved != nil ? "mountain.2" : "square.and.arrow.down"); Text(expanding != nil ? "Save & return to 3D" : proposal?.saved != nil ? "Open in 3D" : "Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 16)
+                        HStack { Image(systemName: proposal?.saved != nil ? "mountain.2" : "square.and.arrow.down"); Text(expanding != nil ? "Save & return to 3D" : proposal?.saved != nil ? "Open in 3D" : proposal?.source?.remoteSource != nil ? "Download & open in 3D" : "Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 16)
                     }.buttonStyle(RidgeButtonStyle()).disabled(refreshing || proposal?.canOpen != true || busy)
                 } else {
                     Text("Tap a highlighted tile, or drag across several tiles. Two fingers move the map; pinch to zoom. Selection stops at available coverage.")
@@ -560,11 +560,15 @@ struct OfflineAtlasView: View {
         var seen: Set<String> = []
         for place in detailPlaces + atlas.places {
             guard seen.insert(place.id).inserted else { continue }
-            let p = screen(place.coordinate, size: size), box = CGRect(x: screen(place.coordinate, size: size).x - 45, y: screen(place.coordinate, size: size).y - 10, width: 90, height: 22)
-            guard CGRect(origin: .zero, size: size).contains(p), !occupied.contains(where: { $0.intersects(box) }) else { continue }
+            let p = screen(place.coordinate, size: size)
+            guard CGRect(origin: .zero, size: size).contains(p) else { continue }
+            let text = context.resolve(Text(place.name).font(.system(size: scale > 80_000 ? 13 : 10, weight: .medium)).foregroundStyle(RidgeTheme.muted))
+            let measured = text.measure(in: CGSize(width: 220, height: 24))
+            let box = CGRect(x: p.x, y: p.y - 2 - measured.height / 2, width: measured.width + 10, height: measured.height).insetBy(dx: -5, dy: -4)
+            guard !occupied.contains(where: { $0.intersects(box) }) else { continue }
             occupied.append(box)
             context.fill(Path(ellipseIn: CGRect(x: p.x - 1.5, y: p.y - 1.5, width: 3, height: 3)), with: .color(RidgeTheme.muted))
-            context.draw(Text(place.name).font(.system(size: scale > 80_000 ? 13 : 10, weight: .medium)).foregroundStyle(RidgeTheme.muted), at: CGPoint(x: p.x + 5, y: p.y - 2), anchor: .leading)
+            context.draw(text, in: CGRect(x: p.x + 5, y: p.y - 2 - measured.height / 2, width: measured.width, height: measured.height))
         }
     }
     private struct AreaCluster {
@@ -597,8 +601,27 @@ struct OfflineAtlasView: View {
         for entry in entries.sorted(by: { $0.manifest.bounds.areaSquareKilometers > $1.manifest.bounds.areaSquareKilometers }) where showsBounds(entry, size: size) {
             let rect = rectangle(entry.manifest.bounds, size: size)
             guard rect.intersects(viewport) else { continue }
-            context.fill(Path(rect), with: .color(RidgeTheme.lime.opacity(0.19)))
-            context.stroke(Path(rect), with: .color(RidgeTheme.forest.opacity(0.35)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            if let source = entry.manifest.tiledTerrain, let grid = entry.manifest.grid {
+                // Merge each row's available cells into runs. This shows real
+                // coverage at park scale without drawing thousands of outlines.
+                var coverage = Path()
+                for row in 0..<grid.rows {
+                    var column = 0
+                    while column < grid.columns {
+                        guard source.cells[row * grid.columns + column].complete else { column += 1; continue }
+                        let left = column
+                        while column < grid.columns, source.cells[row * grid.columns + column].complete { column += 1 }
+                        let a = entry.manifest.bounds.point(u: Double(left) / Double(grid.columns), v: Double(row) / Double(grid.rows))
+                        let b = entry.manifest.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
+                        let cellRect = rectangle(GeoBounds(minLatitude: b.latitude, minLongitude: a.longitude, maxLatitude: a.latitude, maxLongitude: b.longitude), size: size)
+                        if cellRect.intersects(viewport) { coverage.addRect(cellRect) }
+                    }
+                }
+                context.fill(coverage, with: .color(RidgeTheme.lime.opacity(0.30)))
+            } else {
+                context.fill(Path(rect), with: .color(RidgeTheme.lime.opacity(0.19)))
+                context.stroke(Path(rect), with: .color(RidgeTheme.forest.opacity(0.35)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
             if snapToTiles, let grid = entry.manifest.grid, cellsAreVisible(entry, size: size) {
                 var lines = Path()
                 for column in 0...grid.columns {

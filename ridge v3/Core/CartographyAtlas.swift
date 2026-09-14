@@ -23,6 +23,8 @@ struct CartographyAtlas: Codable, Hashable, Sendable {
     var latitudeEdges: [Double]
     /// Northwest first, then east across each row before moving south.
     var tiles: [CartographyTile]
+    /// Large disk catalogue only; cropped scenes retain the 64-cell GPU limit.
+    var sourceOnly: Bool? = nil
 
     static let maximumTiles = 4_096
     static let maximumAxisTiles = 64
@@ -193,11 +195,12 @@ struct CartographyAtlas: Codable, Hashable, Sendable {
     }
 
     private func validateAllocationMetadata() throws {
-        guard Self.validAllocationDimensions(columns: columns, rows: rows) else {
+        let axisLimit = sourceOnly == true ? 256 : Self.maximumAxisTiles
+        guard (1...axisLimit).contains(columns), (1...axisLimit).contains(rows) else {
             throw ValidationError("The cartography atlas has invalid grid dimensions.")
         }
         let count = columns.multipliedReportingOverflow(by: rows)
-        guard !count.overflow, count.partialValue <= Self.maximumTiles, tiles.count == count.partialValue,
+        guard !count.overflow, count.partialValue <= axisLimit * axisLimit, tiles.count == count.partialValue,
               longitudeEdges.count == columns + 1, latitudeEdges.count == rows + 1 else {
             throw ValidationError("The cartography atlas is incomplete or exceeds its tile limit.")
         }

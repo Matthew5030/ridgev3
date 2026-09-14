@@ -200,10 +200,15 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             do {
                 if waitForRelease { await waitForTerrainRelease() }
                 try Task.checkCancellation()
+                preparationLabel = source.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
+                let downloadedPreview = try await packs.downloadSelection(from: source, selection: selection, spacing: spacing) { [weak self] value in
+                    await self?.updateProgress(value, operationID: token)
+                }
+                preparationLabel = "Preparing selected terrain"; progress = 0
                 let sourceID = cartographySourceID(for: source)
                 let worker = Task.detached(priority: .userInitiated) {
                     try AreaCropper.prepare(directory: source.directory, manifest: source.manifest, selection: selection, spacing: spacing,
-                                            cartographySourceID: sourceID)
+                                            cartographySourceID: sourceID, downloadedPreview: downloadedPreview)
                 }
                 let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                 defer { try? FileManager.default.removeItem(at: crop.directory) }
@@ -433,11 +438,15 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                 activeTerrain = nil
                 var openedID = entry.id
                 if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil) {
-                    preparationLabel = "Preparing selected area"
+                    preparationLabel = entry.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
+                    let downloadedPreview = try await packs.downloadSelection(from: entry, selection: selection, spacing: spacing) { [weak self] value in
+                        await self?.updateProgress(value, operationID: token)
+                    }
+                    preparationLabel = "Preparing selected terrain"; progress = 0
                     let sourceID = cartographySourceID(for: entry)
                     let worker = Task.detached(priority: .userInitiated) {
                         try AreaCropper.prepare(directory: entry.directory, manifest: entry.manifest, selection: selection, spacing: spacing,
-                                                cartographySourceID: sourceID)
+                                                cartographySourceID: sourceID, downloadedPreview: downloadedPreview)
                     }
                     let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                     defer { try? FileManager.default.removeItem(at: crop.directory) }
@@ -468,6 +477,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
 
     private func cartographySourceID(for entry: PackEntry) -> String? {
         if let sourceID = entry.manifest.cartographySourceID { return sourceID }
+        if entry.manifest.tiledTerrain != nil { return entry.id }
         guard entry.manifest.cartography != nil, let bundledRoot = PackStore.bundledRoot else { return nil }
         let source = entry.directory.standardizedFileURL.path
         let root = bundledRoot.standardizedFileURL.path

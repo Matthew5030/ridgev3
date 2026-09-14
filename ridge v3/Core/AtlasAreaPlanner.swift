@@ -53,6 +53,7 @@ enum AtlasAreaPlanner {
         let uv = source.bounds.uv(point)
         let column = min(grid.columns - 1, max(0, Int(floor(uv.u * Double(grid.columns) + 1e-9))))
         let row = min(grid.rows - 1, max(0, Int(floor(uv.v * Double(grid.rows) + 1e-9))))
+        if let tiled = source.tiledTerrain, !tiled.cells[row * grid.columns + column].complete { return nil }
         let nw = source.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row) / Double(grid.rows))
         let se = source.bounds.point(u: Double(column + 1) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
         return GeoBounds(minLatitude: se.latitude, minLongitude: nw.longitude, maxLatitude: nw.latitude, maxLongitude: se.longitude)
@@ -109,6 +110,10 @@ enum AtlasAreaPlanner {
         if let grid = source.manifest.grid {
             guard let aligned = grid.cellsSelection(selection) else { result.reason = "This area could not be selected."; return result }
             selection = aligned
+            if let tiled = source.manifest.tiledTerrain, let selected = grid.cropped(to: aligned), !tiled.covers(selected, in: grid) {
+                result.reason = "Some selected tiles have no complete prepared LiDAR. Select the highlighted tiles; unshaded tiles are unavailable."
+                return result
+            }
         }
         var preview = AreaCropper.preview(manifest: source.manifest, selection: selection, spacing: spacing, context: context)
         guard !preview.levels.isEmpty else { result.reason = "This rectangle cannot be prepared from the available terrain."; return result }
