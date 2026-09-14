@@ -90,6 +90,22 @@ class AdaptivePublishingTests(unittest.TestCase):
         subprocess.run([sys.executable,str(HERE/'verify_park.py'),str(self.root),
                         '--published',str(out)],check=True,stdout=subprocess.DEVNULL)
 
+    def test_range_pack_preserves_chunks_and_rejects_corrupt_range(self):
+        original=(self.root/'fixture.rmesh').read_bytes()
+        out=self.publish(codec='rat1',packed=True,update_catalog=False)
+        index=json.loads((out/'adaptive.json').read_text());c=index['chunks'][0]
+        self.assertEqual(index['requiredReader'],'rat1-zlib-range-v1')
+        self.assertFalse((self.out/'adaptive-catalog.json').exists())
+        data=(out/c['path']).read_bytes();part=data[c['byteOffset']:c['byteOffset']+c['byteCount']]
+        self.assertEqual(publisher.digest(data),index['container']['sha256'])
+        self.assertEqual(CompactCodec().decode(zlib.decompress(part)),original)
+        (self.root/'fixture.rmesh').unlink()
+        command=[sys.executable,str(HERE/'verify_park.py'),str(self.root),'--published',str(out)]
+        subprocess.run(command,check=True,stdout=subprocess.DEVNULL)
+        (out/c['path']).write_bytes(data[:-1])
+        result=subprocess.run(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        self.assertNotEqual(result.returncode,0)
+
     def test_repeat_publish_recovers_missing_catalogue(self):
         out = self.publish()
         before = (out / 'adaptive.json').read_bytes()

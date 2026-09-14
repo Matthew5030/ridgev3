@@ -7,7 +7,7 @@ import argparse, concurrent.futures, hashlib, json, pathlib, subprocess, time, m
 from shapely.geometry import shape, box, mapping
 from shapely.ops import unary_union, transform
 from pyproj import Transformer
-P=argparse.ArgumentParser();P.add_argument('--source',type=pathlib.Path,required=True);P.add_argument('--fallback',type=pathlib.Path);P.add_argument('--boundary',type=pathlib.Path,required=True);P.add_argument('--output',type=pathlib.Path,required=True);P.add_argument('--compiler',type=pathlib.Path,required=True);P.add_argument('--workers',type=int,default=6);P.add_argument('--id');P.add_argument('--name');P.add_argument('--plan-only',action='store_true');a=P.parse_args()
+P=argparse.ArgumentParser();P.add_argument('--source',type=pathlib.Path,required=True);P.add_argument('--fallback',type=pathlib.Path);P.add_argument('--boundary',type=pathlib.Path,required=True);P.add_argument('--output',type=pathlib.Path,required=True);P.add_argument('--compiler',type=pathlib.Path,required=True);P.add_argument('--workers',type=int,default=6);P.add_argument('--id');P.add_argument('--name');P.add_argument('--plan-only',action='store_true');P.add_argument('--selection-manifest',type=pathlib.Path);a=P.parse_args()
 if not 1<=a.workers<=16:P.error('--workers must be between 1 and 16')
 a.output.mkdir(parents=True,exist_ok=True)
 lock=(a.output/'.build.lock').open('w')
@@ -26,27 +26,37 @@ west,south,east,north=park.bounds
 xs=range(math.floor((west+180)/360*1024),math.floor((east+180)/360*1024)+1)
 def tile_y(lat):return math.floor((1-math.asinh(math.tan(math.radians(lat)))/math.pi)/2*1024)
 ys=range(tile_y(north),tile_y(south)+1)
-for root in filter(None,[a.source,a.fallback]):
- for path in [root/f'tiles/10/{x}/{y}/manifest.json' for x in xs for y in ys]:
-  if not path.exists():continue
-  m=json.loads(path.read_text())
-  if not park.intersects(bbox(m['bounds'])):continue
-  complete=path.with_name('COMPLETE.json')
-  if complete.exists():
-   expected=json.loads(complete.read_text()).get('manifestSHA256')
-   if expected and hashlib.sha256(path.read_bytes()).hexdigest()!=expected:raise ValueError(f'Manifest checksum: {path}')
-  for parent in m['parents']:
-   if not park.intersects(bbox(parent['bounds'])):continue
-   if parent['status']!='available': unavailable.append({'tile':m['tileID'],'parent':parent['id'],'reason':parent.get('reasonCode'),'bounds':parent['bounds']})
-   for child in parent.get('precisionChildren',[]):
-    if not park.intersects(bbox(child['bounds'])):continue
-    levels=[l for l in child.get('lods',[]) if l['nominalSpacingMetres']==1]
-    if not levels:continue
-    level=levels[0];key=f"{m['tileID']}-{parent['id']}-{child['id']}"
-    if key in selected:continue
-    t=level['terrain']
-    if (t['width'],t['height'],t['scaleMetres'],t['sampleFormat'],t['byteOrder'])!=(513,513,.1,'int16','little-endian'):raise ValueError('Unsupported source format')
-    selected[key]={'id':key,'bounds':child['bounds'],'source':str(path.parent/'parents'/parent['id']/level['path']),'sourceSHA256':level['sha256'],'sourceByteCount':level['byteCount']}
+selection=None
+if a.selection_manifest:
+ selection=json.loads(a.selection_manifest.read_text())
+ for record in selection['sourceManifests']:
+  if hashlib.sha256(pathlib.Path(record['path']).read_bytes()).hexdigest()!=record['sha256']:raise ValueError('Frozen source manifest changed')
+ for c in selection['chunks']:
+  if c['id'] in selected or c['sourceByteCount']!=513*513*2:raise ValueError('Invalid frozen native selection')
+  if not park.intersects(bbox(c['bounds'])):raise ValueError('Frozen chunk is outside the build boundary')
+  selected[c['id']]=c
+else:
+ for root in filter(None,[a.source,a.fallback]):
+  for path in [root/f'tiles/10/{x}/{y}/manifest.json' for x in xs for y in ys]:
+   if not path.exists():continue
+   m=json.loads(path.read_text())
+   if not park.intersects(bbox(m['bounds'])):continue
+   complete=path.with_name('COMPLETE.json')
+   if complete.exists():
+    expected=json.loads(complete.read_text()).get('manifestSHA256')
+    if expected and hashlib.sha256(path.read_bytes()).hexdigest()!=expected:raise ValueError(f'Manifest checksum: {path}')
+   for parent in m['parents']:
+    if not park.intersects(bbox(parent['bounds'])):continue
+    if parent['status']!='available': unavailable.append({'tile':m['tileID'],'parent':parent['id'],'reason':parent.get('reasonCode'),'bounds':parent['bounds']})
+    for child in parent.get('precisionChildren',[]):
+     if not park.intersects(bbox(child['bounds'])):continue
+     levels=[l for l in child.get('lods',[]) if l['nominalSpacingMetres']==1]
+     if not levels:continue
+     level=levels[0];key=f"{m['tileID']}-{parent['id']}-{child['id']}"
+     if key in selected:continue
+     t=level['terrain']
+     if (t['width'],t['height'],t['scaleMetres'],t['sampleFormat'],t['byteOrder'])!=(513,513,.1,'int16','little-endian'):raise ValueError('Unsupported source format')
+     selected[key]={'id':key,'bounds':child['bounds'],'source':str(path.parent/'parents'/parent['id']/level['path']),'sourceSHA256':level['sha256'],'sourceByteCount':level['byteCount']}
 coverage=unary_union([bbox(c['bounds']) for c in selected.values()]);gap=park.difference(coverage)
 (a.output/'coverage-gaps.geojson').write_text(json.dumps({'type':'Feature','properties':{'description':'No prepared 1 m source; not covered by the adaptive error guarantee'},'geometry':mapping(gap)}))
 (a.output/'boundary.geojson').write_text(json.dumps(feature))
@@ -55,7 +65,7 @@ manifest={'schemaVersion':1,'id':f'{park_id}-adaptive-0p5','name':f'{park_name} 
 print(json.dumps({k:v for k,v in manifest.items() if k!='chunks'}),flush=True)
 manifest['sourceSelectionSHA256']=hashlib.sha256(json.dumps([{k:c[k] for k in ['id','bounds','sourceSHA256']} for c in sorted(selected.values(),key=lambda c:c['id'])],sort_keys=True).encode()).hexdigest()
 manifest['boundarySHA256']=hashlib.sha256(a.boundary.read_bytes()).hexdigest()
-manifest['sourceRoots']=[str(root) for root in filter(None,[a.source,a.fallback])]
+manifest['sourceRoots']=selection.get('sourceRoots',[]) if selection else [str(root) for root in filter(None,[a.source,a.fallback])]
 manifest['sourceHeightfieldBytes']=sum(c['sourceByteCount'] for c in selected.values())
 manifest['nativeGridTriangles']=len(selected)*512*512*2
 plan={**{k:v for k,v in manifest.items() if k!='chunks'},'chunkCount':len(selected)}

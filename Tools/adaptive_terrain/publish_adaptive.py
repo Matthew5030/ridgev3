@@ -48,8 +48,9 @@ def publish_catalog(directory):
         atomic_json(directory / 'adaptive-catalog.json', dict(schemaVersion=1, sources=entries))
 
 
-def publish(root, directory, workers=4, mesh_package=None, codec="rme1"):
+def publish(root, directory, workers=4, mesh_package=None, codec="rme1", packed=False, update_catalog=True):
     if codec not in ("rme1","rat1"):raise ValueError("Unsupported codec")
+    if packed and codec != "rat1":raise ValueError("Packed downloads require RAT1")
     raw_manifest = (root / 'manifest.json').read_bytes()
     manifest = json.loads(raw_manifest)
     validation = json.loads((root / 'validation.json').read_text())
@@ -72,7 +73,7 @@ def publish(root, directory, workers=4, mesh_package=None, codec="rme1"):
             if json.loads(published.read_text())['sourceManifestSHA256'] != fingerprint:
                 raise ValueError('Published source is immutable: use a new source ID')
             print('Already published:', identifier, flush=True)
-            publish_catalog(directory)
+            if update_catalog:publish_catalog(directory)
             return
         reader=MeshReader(root,manifest['chunks'],mesh_package)
         compact_codec=CompactCodec() if codec=='rat1' else None
@@ -111,11 +112,14 @@ def publish(root, directory, workers=4, mesh_package=None, codec="rme1"):
             if zlib.decompress(compressed) != payload:
                 raise ValueError('Compression round-trip failed')
             filename = f"mesh-{chunk_id}.{'rat' if compact_codec else 'rmesh'}.zlib"
-            target = out / filename
-            if not target.exists() or digest(target.read_bytes()) != digest(compressed):
-                temporary = target.with_suffix('.tmp')
-                temporary.write_bytes(compressed)
-                temporary.replace(target)
+            if packed:
+                filename='terrain.ratpack'
+            else:
+                target = out / filename
+                if not target.exists() or digest(target.read_bytes()) != digest(compressed):
+                    temporary = target.with_suffix('.tmp')
+                    temporary.write_bytes(compressed)
+                    temporary.replace(target)
             # Measure an equally compressed original heightfield, not just an
             # uncompressed baseline. Do not publish duplicate source files.
             source_bytes = chunk['sourceByteCount']
@@ -141,14 +145,29 @@ def publish(root, directory, workers=4, mesh_package=None, codec="rme1"):
                         sourceByteCount=source_bytes,
                         sourceZlibBytes=source_zlib_bytes)
             if compact_codec:entry.update(topologyByteCount=len(payload),topologySHA256=digest(payload))
-            return entry
+            return (entry,compressed) if packed else entry
 
         chunks = []
-        with concurrent.futures.ThreadPoolExecutor(workers) as pool:
-            for c in pool.map(encode, manifest['chunks']):
-                chunks.append(c)
-                if len(chunks) % 500 == 0:
-                    print(f'{identifier}: compressed {len(chunks)}/{len(manifest["chunks"])}', flush=True)
+        pack_path=out/'terrain.ratpack'
+        pack_tmp=out/'terrain.ratpack.tmp'
+        pack_hash=hashlib.sha256()
+        pack_stream=pack_tmp.open('wb') if packed else None
+        try:
+            with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+                # Bounded batches prevent a slow disk from retaining an entire
+                # partition's compressed output while later workers finish.
+                for start in range(0,len(manifest['chunks']),64):
+                    for item in pool.map(encode,manifest['chunks'][start:start+64]):
+                        if packed:
+                            c,data=item;c['byteOffset']=pack_stream.tell()
+                            pack_stream.write(data);pack_hash.update(data)
+                        else:c=item
+                        chunks.append(c)
+                        if len(chunks)%500==0:
+                            print(f'{identifier}: compressed {len(chunks)}/{len(manifest["chunks"])}',flush=True)
+        finally:
+            if pack_stream:pack_stream.close()
+        if packed:pack_tmp.replace(pack_path)
         assets = {}
         for name in ['boundary.geojson', 'coverage-gaps.geojson']:
             data = (root / name).read_bytes()
@@ -157,8 +176,8 @@ def publish(root, directory, workers=4, mesh_package=None, codec="rme1"):
         park_name=manifest.get('parkName') or json.loads((root/'boundary.geojson').read_text()).get('properties',{}).get('displayName')
         display_name=f'{park_name} · adaptive 0.5 m' if park_name else manifest['name']
         result = dict(schemaVersion=1, id=identifier, name=display_name,
-                      contentKind='adaptive-terrain', requiredReader=f'{codec}-zlib-v1',
-                      storage=f'independent-zlib-{codec}', meshFormat='RME1',
+                      contentKind='adaptive-terrain', requiredReader=f'{codec}-zlib-range-v1' if packed else f'{codec}-zlib-v1',
+                      storage=f'concatenated-zlib-{codec}' if packed else f'independent-zlib-{codec}', meshFormat='RME1',
                       geometrySourceID=manifest['id'],
                       payloadFormat='RAT1' if compact_codec else 'RME1',
                       surfaceToleranceMetres=manifest['surfaceToleranceMetres'],
@@ -180,11 +199,12 @@ def publish(root, directory, workers=4, mesh_package=None, codec="rme1"):
         if compact_codec:
             result['topologyByteCount']=sum(c['topologyByteCount'] for c in chunks)
             result['encoderSourceSHA256']=digest(Path(__file__).with_name('compact_mesh.cpp').read_bytes())
+        if packed:result['container']=dict(path='terrain.ratpack',byteCount=pack_path.stat().st_size,sha256=pack_hash.hexdigest())
         result['nativeGridTriangles'] = len(chunks) * 512 * 512 * 2
         result['publishSeconds'] = round(time.monotonic() - started, 3)
         atomic_json(published, result)
         print(json.dumps({k: v for k, v in result.items() if k not in ['chunks', 'assets', 'sourceManifests']}), flush=True)
-    publish_catalog(directory)
+    if update_catalog:publish_catalog(directory)
 
 
 if __name__ == '__main__':
@@ -194,7 +214,9 @@ if __name__ == '__main__':
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--mesh-package', type=Path)
     parser.add_argument('--codec',choices=['rme1','rat1'],default='rat1')
+    parser.add_argument('--pack',action='store_true',help='One range-addressable RAT1 container per partition')
+    parser.add_argument('--no-catalog',action='store_true',help='Let a collection runner publish its bounded catalogue')
     args = parser.parse_args()
     if not 1 <= args.workers <= 16:
         parser.error('--workers must be between 1 and 16')
-    publish(args.source, args.directory, args.workers, args.mesh_package, args.codec)
+    publish(args.source, args.directory, args.workers, args.mesh_package, args.codec,args.pack,not args.no_catalog)

@@ -387,3 +387,92 @@ use the same independent seam/surface verification and compact publication.
 priority, resolution rejection, checksum-verified download resume, and identical
 shared coordinates queried from different windows using synthetic georeferenced
 rasters. The window test reproduces a real Scottish source seam failure.
+
+## Whole-UK terrain downloads
+
+The UK build uses the existing fixed z10 grid, with **one owner per native
+chunk**. It processes and validates one grid section at a time, then removes
+its temporary uncompressed meshes. It does not build a monolithic UK scene.
+The public index advertises `rat1-zlib-range-v1`: each section has a
+`terrain.ratpack` container, and each chunk has an offset, compressed length,
+compressed hash and decoded hash. HTTP byte ranges retrieve only the selected
+chunks. The compact encoding is lossless relative to the validated adaptive
+mesh; decoded geometry still needs the app's memory admission limit.
+
+There are two different terrain assets:
+
+- `uk-adaptive-0p5-v2/catalog.json`: detailed adaptive sections. The 0.5 m
+  tolerance is measured against the prepared 1 m heightfield, not absolute
+  survey accuracy. `buildComplete` distinguishes an in-progress catalogue.
+- `uk-coarse-background-v2/background.json`: separately labelled coarse global
+  elevation, resampled to 513 × 513 per world section, with explicit NoData.
+  It provides UK context where detailed LiDAR is unavailable. It does not carry
+  the detailed layer's 0.5 m guarantee.
+
+The detailed catalogue includes the background descriptor's path and checksum.
+These capabilities are separate from the normal app catalogue. The iOS app
+still needs a RAT1 range reader before it can use these new terrain assets.
+Textures and routing data are not included or downsampled by this process.
+
+### Source coverage is a required input
+
+An audit of the older EA-derived prepared files found constant −0.3 m chunks
+outside the official England survey coverage, including hills in Scotland.
+Prepared `available` flags are therefore insufficient. `download_ea_coverage.py`
+freezes the official 2022 DTM footprint catalogue, checking all feature IDs,
+projection, checksums and the catalogue's edit version. Queries use POST to
+avoid URL-length failures on large object-ID lists.
+
+`plan_uk.py` verifies that each EA-derived chunk's full projected envelope,
+plus 2 m for interpolation support, lies inside the union of those footprints.
+It preserves holes and considers valid fallback sources after a rejection.
+Invalid ArcGIS nested rings are repaired using GEOS `make_valid` linework,
+which retains the original edges and even-odd holes; no outward buffering is
+applied to survey coverage. The acceptance envelope is deliberately
+conservative at survey boundaries. Welsh COG and Scottish source preparation
+retain their own explicit NoData policy.
+
+The original unfiltered UK publication was withdrawn. The corrected build uses
+new immutable URLs ending in `v2`. The UK administrative polygon includes
+territorial water, so its polygon coverage percentage must not be presented as
+a percentage of UK land with LiDAR.
+
+```sh
+python Tools/adaptive_terrain/download_ea_coverage.py /external/ea-2022-coverage
+python Tools/adaptive_terrain/plan_uk.py \
+  --output /external/uk-build-v2 \
+  --source /external/england-wales-native \
+  --source /external/earlier-parks-native \
+  --source /external/scottish-native \
+  --boundary /path/to/uk-boundary.geojson \
+  --world-grid /path/to/world-grid.json \
+  --ea-coverage /external/ea-2022-coverage
+python Tools/adaptive_terrain/build_uk_background.py \
+  --build /external/uk-build-v2 \
+  --source-lock /path/to/uk-bulk.lock.json \
+  --source-root /path/to/mapping/sources \
+  --output /external/downloads/uk-coarse-background-v2
+python Tools/adaptive_terrain/build_uk.py \
+  --build /external/uk-build-v2 \
+  --downloads /external/downloads/uk-adaptive-0p5-v2 \
+  --background /external/downloads/uk-coarse-background-v2/background.json \
+  --work /local/scratch/uk \
+  --compiler /path/to/adaptive-compiler \
+  --reuse-builds /external/park-builds \
+  --reuse-downloads /external/downloads \
+  --workers 10
+python Tools/adaptive_terrain/verify_uk_downloads.py http://localhost:8787 \
+  --local /external/downloads/uk-adaptive-0p5-v2 \
+  --require-complete --output /external/uk-build-v2/http-validation.json
+python Tools/adaptive_terrain/verify_uk_background.py http://localhost:8787 \
+  --output /external/uk-build-v2/background-http-validation.json
+```
+
+Resume with the same build command. Plan, selection, compiler and background
+identities are frozen; changed inputs require a new revision. Durable private
+manifests are archived before publication, allowing recovery if a process stops
+between publishing a section and updating the global catalogue. The runner
+checks available disk space and retains only bounded scratch meshes. Public
+assets have an nginx allowlist; source paths, build reports and locks return 404.
+The final verifier hashes every local container and tests actual byte-range
+retrieval for representative chunks in every section.

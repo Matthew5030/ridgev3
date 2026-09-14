@@ -3,7 +3,7 @@
 All chunks are fully checked by the compiler; this uses Matplotlib's independent
 triangle locator, verifies decoded disk data and audits neighbouring source seams.
 """
-import json,pathlib,struct,hashlib,sys,concurrent.futures,argparse,zlib
+import json,pathlib,struct,hashlib,sys,concurrent.futures,argparse,zlib,os,atexit
 import numpy as np
 import matplotlib.tri as tri
 from mesh_io import MeshReader
@@ -11,15 +11,22 @@ from compact_codec import CompactCodec
 parser=argparse.ArgumentParser();parser.add_argument('source',type=pathlib.Path);parser.add_argument('--published',type=pathlib.Path);parser.add_argument('--mesh-package',type=pathlib.Path);args=parser.parse_args()
 r=args.source;m=json.loads((r/'manifest.json').read_text());chunks=m['chunks']
 reader=MeshReader(r,chunks,args.mesh_package)
-published={};codec=None
+published={};codec=None;pack_files={}
 if args.published:
  index=json.loads((args.published/'adaptive.json').read_text())
  assert index['sourceManifestSHA256']==hashlib.sha256((r/'manifest.json').read_bytes()).hexdigest()
  published={c['id']:c for c in index['chunks']}
- if index['requiredReader']=='rat1-zlib-v1':codec=CompactCodec()
+ if index['requiredReader'] in ('rat1-zlib-v1','rat1-zlib-range-v1'):codec=CompactCodec()
+ for c in index['chunks']:
+  if 'byteOffset' in c and c['path'] not in pack_files:
+   path=args.published/c['path'];fd=os.open(path,os.O_RDONLY);pack_files[c['path']]=(fd,path.stat().st_size);atexit.register(os.close,fd)
 def mesh_bytes(c):
  if not args.published:return reader.read(c)
- item=published[c['id']];compressed=(args.published/item['path']).read_bytes()
+ item=published[c['id']]
+ if 'byteOffset' in item:
+  fd,size=pack_files[item['path']];offset=item['byteOffset'];assert isinstance(offset,int) and offset>=0 and offset+item['byteCount']<=size
+  compressed=os.pread(fd,item['byteCount'],offset)
+ else:compressed=(args.published/item['path']).read_bytes()
  assert len(compressed)==item['byteCount'] and hashlib.sha256(compressed).hexdigest()==item['sha256']
  raw=zlib.decompress(compressed)
  if codec:

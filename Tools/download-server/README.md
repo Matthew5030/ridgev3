@@ -84,3 +84,19 @@ The preferred RAT1 encoding losslessly reconstructs the same RME1 geometry from
 subdivision decisions and heights. It reduces transfer bytes, not the resident
 geometry budget. Repacked legacy URLs remain valid; the adaptive catalogue
 selects one preferred encoding per landscape.
+
+### Whole-UK terrain assets
+
+The server also exposes `/uk-adaptive-0p5-v2/catalog.json` and
+`/uk-coarse-background-v2/background.json`. The former lists independently
+validated adaptive grid sections, with chunk byte ranges inside each
+`terrain.ratpack`; the latter supplies separately labelled coarse background
+heightfields. These remain distinct from the normal app's `/catalog.json`.
+The current app does not yet read `rat1-zlib-range-v1`.
+
+A detailed catalogue may be published incrementally: inspect `buildComplete`.
+Only completed section indices appear in it. The older unfiltered
+`/uk-adaptive-0p5/` revision is no longer served because its prepared source
+availability flags included unsupported terrain. The corrected source audit,
+formats and verification commands are documented in
+[the whole-UK tooling](../adaptive_terrain/README.md#whole-uk-terrain-downloads).
