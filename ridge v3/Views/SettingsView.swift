@@ -34,7 +34,7 @@ struct SettingsView: View {
                 estimatesSection
                 attributionSection
                 if store.activeTerrain == nil && FileManager.default.fileExists(atPath: URL.documentsDirectory.appendingPathComponent("EryriAdaptiveTest/manifest.json").path) {
-                    Button("Eryri adaptive · full park stress test") { showParkTest = true }.buttonStyle(.bordered)
+                    Button("Eryri adaptive terrain") { showParkTest = true }.buttonStyle(.bordered)
                 }
                 HStack {
                     Image(systemName: "mountain.2").font(.system(size: 15, weight: .medium))

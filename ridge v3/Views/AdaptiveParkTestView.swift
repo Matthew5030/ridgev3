@@ -20,6 +20,28 @@ struct AdaptiveParkManifest: Decodable, Sendable {
         // Two page-aligned buffers per chunk, including allocation padding.
         chunks.reduce(0) { $0 + Int64((($1.vertices * 6 + 16383) / 16384 + ($1.triangles * 3 * $1.indexWidth + 16383) / 16384) * 16384) }
     }
+
+    func selection(containing requested: GeoBounds) -> AdaptiveParkManifest? {
+        let chosen = chunks.filter { chunk in
+            chunk.bounds.minLatitude < requested.maxLatitude && chunk.bounds.maxLatitude > requested.minLatitude &&
+            chunk.bounds.minLongitude < requested.maxLongitude && chunk.bounds.maxLongitude > requested.minLongitude
+        }
+        guard !chosen.isEmpty else { return nil }
+        let selectedBounds = GeoBounds(
+            minLatitude: chosen.map(\.bounds.minLatitude).min()!,
+            minLongitude: chosen.map(\.bounds.minLongitude).min()!,
+            maxLatitude: chosen.map(\.bounds.maxLatitude).max()!,
+            maxLongitude: chosen.map(\.bounds.maxLongitude).max()!)
+        return AdaptiveParkManifest(
+            schemaVersion: schemaVersion, name: "Eryri adaptive area", meshFormat: meshFormat,
+            surfaceToleranceMetres: surfaceToleranceMetres, parkAreaKm2: parkAreaKm2,
+            uncoveredParkAreaKm2: uncoveredParkAreaKm2,
+            vertices: chosen.reduce(0) { $0 + Int64($1.vertices) },
+            triangles: chosen.reduce(0) { $0 + Int64($1.triangles) },
+            compactBytes: chosen.reduce(0) { $0 + $1.compactBytes },
+            metalGeometryBytes: chosen.reduce(0) { $0 + Int64($1.vertices * 48 + $1.triangles * 12) },
+            bounds: selectedBounds, chunks: chosen)
+    }
 }
 
 private struct ParkDraw {
@@ -72,7 +94,7 @@ private final class ParkTestModel {
                   m.triangles == m.chunks.reduce(0, { $0 + Int64($1.triangles) }) else { throw ParkFailure(message: "Invalid experiment manifest.") }
             manifest = m
             available = memoryAllowance()
-            message = "Ready to test the entire prepared mesh. All chunks stay in memory; moving the camera never loads terrain."
+            message = "Drag the rectangle to choose a planning area. Terrain is loaded once when you open it."
             result = ["status": "ready", "physicalMemoryBytes": "\(ProcessInfo.processInfo.physicalMemory)", "availableMemoryBytes": "\(available)", "compactResidentBytes": "\(m.residentBytes)", "currentRendererBytes": "\(m.metalGeometryBytes)", "triangles": "\(m.triangles)"]
             #if targetEnvironment(simulator)
             result["environment"] = "Simulator: fixed 1 GiB verification budget, not a device reading"
@@ -82,8 +104,9 @@ private final class ParkTestModel {
             saveResult()
         } catch { message = "The experiment pack could not be opened. \(error.localizedDescription)" }
     }
-    func load() {
-        guard !loading, scene == nil, let m = manifest, let device = MTLCreateSystemDefaultDevice() else { return }
+    func load(_ requested: GeoBounds) {
+        guard !loading, scene == nil, let source = manifest,
+              let m = source.selection(containing: requested), let device = MTLCreateSystemDefaultDevice() else { return }
         available = memoryAllowance()
         // Test actual compact geometry, without the production grid sample cap.
         // Leave space for the OS-facing view, framebuffers and in-flight file read.
@@ -92,13 +115,15 @@ private final class ParkTestModel {
         let gpuRemaining = recommended > 0 ? max(0, recommended - Int64(clamping: device.currentAllocatedSize)) : available
         result["gpuWorkingSetSource"] = recommended > 0 ? "Metal recommendation" : "Metal recommendation unavailable; using process allowance"
         result["availableMemoryBytes"] = "\(available)"; result["gpuRemainingBytes"] = "\(gpuRemaining)"
-        guard available > 0 else { message = "iOS did not provide a memory allowance. The full-scene test has not started."; result["status"] = "memory-reading-unavailable"; saveResult(); return }
+        guard available > 0 else { message = "iOS did not provide a memory allowance. This area has not been opened."; result["status"] = "memory-reading-unavailable"; saveResult(); return }
         guard m.residentBytes + reserve <= available, m.residentBytes <= gpuRemaining else {
-            message = "The full scene does not fit this device’s current allowance. It needs \(RidgeTheme.bytes(m.residentBytes)) for compact terrain plus 512 MB headroom; iOS currently reports \(RidgeTheme.bytes(available)) available. No terrain was allocated or reduced."
+            message = "This area is too large at adaptive 0.5 m. It needs \(RidgeTheme.bytes(m.residentBytes)) for terrain plus 512 MB headroom; iOS currently reports \(RidgeTheme.bytes(available)) available. Make the rectangle smaller."
             result["status"] = "refused-before-allocation"; result["reason"] = message; saveResult(); return
         }
         result["status"] = "loading"; saveResult()
-        loading = true; message = "Loading all \(m.chunks.count.formatted()) chunks…"
+        result["selectionBounds"] = "\(m.bounds.minLatitude),\(m.bounds.minLongitude),\(m.bounds.maxLatitude),\(m.bounds.maxLongitude)"
+        result["compactResidentBytes"] = "\(m.residentBytes)"; result["triangles"] = "\(m.triangles)"
+        loading = true; message = "Preparing \(m.chunks.count.formatted()) terrain chunks…"
         let start = Date(), directory = Self.directory
         worker = Task.detached(priority: .userInitiated) {
             let packedFile = m.chunks.contains(where: { $0.byteOffset != nil }) ? try FileHandle(forReadingFrom: directory.appendingPathComponent("terrain.rmeshpack")) : nil
@@ -138,7 +163,7 @@ private final class ParkTestModel {
             do {
                 let loaded = try await worker!.value
                 try Task.checkCancellation()
-                scene = loaded; progress = 1; result["loadedFraction"] = "1.0"; message = "All \(m.chunks.count.formatted()) chunks resident · \(Date().timeIntervalSince(start).formatted(.number.precision(.fractionLength(1)))) s to load."
+                scene = loaded; progress = 1; result["loadedFraction"] = "1.0"; message = "\(m.chunks.count.formatted()) chunks ready · \(Date().timeIntervalSince(start).formatted(.number.precision(.fractionLength(1)))) s to load."
                 result["status"] = "fully-loaded"; result["loadSeconds"] = "\(Date().timeIntervalSince(start))"; result["gpuAllocatedBytes"] = "\(device.currentAllocatedSize)"; saveResult()
             } catch is CancellationError { message = "Load cancelled. Terrain memory released." }
               catch { message = error.localizedDescription; result["status"] = "load-failed"; result["reason"] = message; saveResult() }
@@ -152,7 +177,14 @@ private final class ParkTestModel {
         if let error { message = error; result["reason"] = error }
         saveResult()
     }
-    func cancel() { task?.cancel(); worker?.cancel(); scene = nil }
+    func releaseScene(showSelectionMessage: Bool = false) {
+        task?.cancel(); worker?.cancel(); task = nil; worker = nil
+        scene = nil; loading = false; progress = 0
+        if showSelectionMessage {
+            message = "Drag the rectangle to choose a planning area. Terrain is loaded once when you open it."
+        }
+    }
+    func cancel() { releaseScene() }
     private func saveResult() {
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL.documentsDirectory.appendingPathComponent("EryriStressResult.json"), options: .atomic)
@@ -163,35 +195,217 @@ private final class ParkTestModel {
 struct AdaptiveParkTestView: View {
     var onClose: (() -> Void)? = nil
     @State private var model = ParkTestModel()
-    @State private var wholePark = false
+    @State private var requested: GeoBounds?
     @Environment(\.dismiss) private var dismiss
+
+    private var selected: AdaptiveParkManifest? {
+        guard let requested else { return nil }
+        return model.manifest?.selection(containing: requested)
+    }
+
+    private var selectedFits: Bool {
+        guard let selected, model.available > 0 else { return false }
+        return selected.residentBytes + 512 * 1024 * 1024 <= model.available
+    }
+
     var body: some View {
+        Group {
+            if let scene = model.scene { terrain(scene) }
+            else { selectionPage }
+        }
+        .task {
+            model.inspect()
+            if requested == nil, let source = model.manifest {
+                requested = Self.area(center: GeoPoint(latitude: 53.075, longitude: -4.054), kilometres: 8, inside: source.bounds)
+            }
+            if ProcessInfo.processInfo.arguments.contains("--eryri-auto-test"), let requested { model.load(requested) }
+        }
+            .onDisappear { model.cancel() }
+    }
+
+    private var selectionPage: some View {
+        GeometryReader { geometry in
+            let wide = geometry.size.width > 760
+            Group {
+                if wide {
+                    HStack(spacing: 0) { selectionMap; selectionPanel.frame(width: 360) }
+                } else {
+                    VStack(spacing: 0) { selectionMap; selectionPanel }
+                }
+            }
+        }
+        .background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
+    }
+
+    @ViewBuilder private var selectionMap: some View {
+        if let source = model.manifest, let binding = Binding($requested) {
+            ParkSelectionMap(manifest: source, selection: binding)
+                .overlay(alignment: .topLeading) {
+                    Label("Drag to move your area", systemImage: "hand.draw")
+                        .font(.system(size: 11, weight: .semibold)).padding(11)
+                        .background(RidgeTheme.panel.opacity(0.94), in: Capsule()).padding(16)
+                }
+        } else {
+            ProgressView("Reading Eryri terrain…").frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var selectionPanel: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Eyebrow(text: "Eryri · adaptive terrain")
+                    Text("Choose your landscape").font(.system(size: 28, weight: .regular, design: .serif))
+                }
+                Spacer()
+                Button { close() } label: { Image(systemName: "xmark").frame(width: 38, height: 38) }
+                    .accessibilityLabel("Close adaptive terrain")
+            }
+            Text("The complete park source stays offline on this iPad. Ridge opens only the fixed rectangle you choose.")
+                .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
+            if let selection = selected {
+                HStack {
+                    metric("AREA", String(format: "%.1f × %.1f km", selection.bounds.widthMeters / 1000, selection.bounds.depthMeters / 1000))
+                    Spacer(); metric("TERRAIN", RidgeTheme.bytes(selection.residentBytes))
+                    Spacer(); metric("CHUNKS", selection.chunks.count.formatted())
+                }.padding(16).background(RidgeTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 17))
+                HStack(spacing: 16) {
+                    Button("Smaller", systemImage: "minus.magnifyingglass") { resize(0.78) }
+                    Button("Larger", systemImage: "plus.magnifyingglass") { resize(1.28) }
+                }.font(.system(size: 13, weight: .semibold))
+                Label(selectedFits ? "Fits this iPad’s current memory allowance" : "Too large for the current memory allowance", systemImage: selectedFits ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(selectedFits ? RidgeTheme.forest : RidgeTheme.orange)
+            }
+            Text(model.message).font(.system(size: 12)).foregroundStyle(model.message.contains("too large") ? RidgeTheme.orange : RidgeTheme.muted)
+            if model.loading {
+                ProgressView(value: model.progress).tint(RidgeTheme.forest)
+                Button("Cancel") { model.releaseScene(showSelectionMessage: true) }.font(.subheadline.weight(.semibold))
+            } else {
+                Button {
+                    if let requested { model.load(requested) }
+                } label: {
+                    HStack { Image(systemName: "mountain.2"); Text("Open this area in 3D"); Spacer(); Image(systemName: "arrow.up.right") }
+                        .padding(.horizontal, 15)
+                }.buttonStyle(RidgeButtonStyle()).disabled(selected == nil || !selectedFits)
+            }
+            Text("Adaptive 0.5 m is measured surface error against the prepared 1 m LiDAR. Empty cells show places where the prepared source has no complete coverage.")
+                .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted).lineSpacing(3)
+        }.padding(22).background(RidgeTheme.panel)
+    }
+
+    private func terrain(_ scene: ParkScene) -> some View {
         ZStack(alignment: .topLeading) {
             Color(red: 0.72, green: 0.86, blue: 0.96).ignoresSafeArea()
-            if let scene = model.scene { ParkMetalView(scene: scene, wholePark: wholePark, onFrame: model.frameCompleted).ignoresSafeArea() }
-            VStack(alignment: .leading, spacing: 14) {
-                HStack { Text(model.manifest?.name ?? "Eryri · full park stress test").font(.title2.bold()); Spacer(); Button("Done") { model.cancel(); if let onClose { onClose() } else { dismiss() } } }
-                Text("0.5 m surface tolerance · experimental terrain only").font(.subheadline)
-                if let m = model.manifest {
-                    Text("\(m.triangles.formatted()) triangles · \(RidgeTheme.bytes(m.residentBytes)) compact terrain · \(RidgeTheme.bytes(m.metalGeometryBytes)) in the current renderer").font(.callout)
-                    Text("Prepared 1 m coverage is missing over \(m.uncoveredParkAreaKm2.formatted(.number.precision(.fractionLength(1)))) km² of the park. Those gaps stay empty. Map textures, route planning and horizon terrain are excluded from this diagnostic, so a successful load is not a full-app performance result.").font(.footnote)
+            ParkMetalView(scene: scene, onFrame: model.frameCompleted).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 11) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Eryri adaptive area").font(.headline)
+                        Text("\(scene.manifest.chunks.count.formatted()) chunks · \(RidgeTheme.bytes(scene.manifest.residentBytes)) · fixed scene")
+                            .font(.caption).foregroundStyle(RidgeTheme.muted)
+                    }
+                    Spacer()
+                    Button("Done") { close() }
                 }
-                Text(model.message).font(.callout).textSelection(.enabled)
-                if model.loading { ProgressView(value: model.progress); Button("Cancel load") { model.cancel() } }
-                else if model.scene == nil { Button("Test full scene") { model.load() }.buttonStyle(.borderedProminent).disabled(model.manifest == nil) }
-                else {
-                    Button(wholePark ? "Return to Crib Goch" : "Fit entire park") { wholePark.toggle() }.buttonStyle(.borderedProminent)
-                    Text("Uses your one/two-finger move and rotate settings. Pinch to zoom. Every chunk stays resident.").font(.footnote)
+                Text(model.message).font(.caption)
+                HStack {
+                    Button("Change area", systemImage: "rectangle.dashed") { model.releaseScene(showSelectionMessage: true) }
+                    Button("Expand area", systemImage: "arrow.up.left.and.arrow.down.right") {
+                        requested = Self.resized(scene.manifest.bounds, factor: 1.45, inside: model.manifest?.bounds ?? scene.manifest.bounds)
+                        model.releaseScene(showSelectionMessage: true)
+                    }.buttonStyle(.borderedProminent)
                 }
-            }.padding(22).frame(maxWidth: 640).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22)).padding(20)
-        }.task { model.inspect(); if ProcessInfo.processInfo.arguments.contains("--eryri-auto-test") { model.load() } }
-            .onDisappear { model.cancel() }
+                Text("One finger moves · two fingers rotate · pinch zooms. Expanding replaces this scene; camera movement never loads more terrain.")
+                    .font(.caption2).foregroundStyle(RidgeTheme.muted)
+            }.padding(18).frame(maxWidth: 600).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).padding(18)
+        }
+    }
+
+    private func resize(_ factor: Double) {
+        guard let requested, let source = model.manifest else { return }
+        self.requested = Self.resized(requested, factor: factor, inside: source.bounds)
+    }
+
+    private func metric(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Eyebrow(text: label); Text(value).font(.system(size: 13, weight: .semibold, design: .rounded))
+        }
+    }
+
+    private func close() { model.cancel(); if let onClose { onClose() } else { dismiss() } }
+
+    private static func area(center: GeoPoint, kilometres: Double, inside outer: GeoBounds) -> GeoBounds {
+        let halfLatitude = kilometres / 111.195 / 2
+        let halfLongitude = kilometres / (111.195 * cos(center.latitude * .pi / 180)) / 2
+        return clamped(GeoBounds(minLatitude: center.latitude - halfLatitude, minLongitude: center.longitude - halfLongitude,
+                                 maxLatitude: center.latitude + halfLatitude, maxLongitude: center.longitude + halfLongitude), inside: outer)
+    }
+
+    private static func resized(_ bounds: GeoBounds, factor: Double, inside outer: GeoBounds) -> GeoBounds {
+        let center = bounds.center
+        let latitude = (bounds.maxLatitude - bounds.minLatitude) * factor / 2
+        let longitude = (bounds.maxLongitude - bounds.minLongitude) * factor / 2
+        return clamped(GeoBounds(minLatitude: center.latitude - latitude, minLongitude: center.longitude - longitude,
+                                 maxLatitude: center.latitude + latitude, maxLongitude: center.longitude + longitude), inside: outer)
+    }
+
+    fileprivate static func clamped(_ bounds: GeoBounds, inside outer: GeoBounds) -> GeoBounds {
+        let latitude = min(bounds.maxLatitude - bounds.minLatitude, outer.maxLatitude - outer.minLatitude)
+        let longitude = min(bounds.maxLongitude - bounds.minLongitude, outer.maxLongitude - outer.minLongitude)
+        let south = min(outer.maxLatitude - latitude, max(outer.minLatitude, bounds.center.latitude - latitude / 2))
+        let west = min(outer.maxLongitude - longitude, max(outer.minLongitude, bounds.center.longitude - longitude / 2))
+        return GeoBounds(minLatitude: south, minLongitude: west, maxLatitude: south + latitude, maxLongitude: west + longitude)
+    }
+}
+
+private struct ParkSelectionMap: View {
+    let manifest: AdaptiveParkManifest
+    @Binding var selection: GeoBounds
+    @State private var dragStart: GeoBounds?
+
+    var body: some View {
+        GeometryReader { geometry in
+            Canvas { context, size in
+                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.78, green: 0.87, blue: 0.88)))
+                var coverage = Path()
+                for chunk in manifest.chunks { coverage.addRect(rect(chunk.bounds, size: size)) }
+                context.fill(coverage, with: .color(Color(red: 0.74, green: 0.79, blue: 0.64)))
+                let selected = rect(selection, size: size)
+                context.fill(Path(roundedRect: selected, cornerRadius: 5), with: .color(RidgeTheme.lime.opacity(0.25)))
+                context.stroke(Path(roundedRect: selected, cornerRadius: 5), with: .color(RidgeTheme.orange), style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                context.draw(Text("N ↑").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(RidgeTheme.ink), at: CGPoint(x: size.width - 32, y: 24))
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if dragStart == nil { dragStart = selection }
+                    guard let start = dragStart, geometry.size.width > 0, geometry.size.height > 0 else { return }
+                    let longitude = Double(value.translation.width / geometry.size.width) * (manifest.bounds.maxLongitude - manifest.bounds.minLongitude)
+                    let latitude = -Double(value.translation.height / geometry.size.height) * (manifest.bounds.maxLatitude - manifest.bounds.minLatitude)
+                    let moved = GeoBounds(minLatitude: start.minLatitude + latitude, minLongitude: start.minLongitude + longitude,
+                                          maxLatitude: start.maxLatitude + latitude, maxLongitude: start.maxLongitude + longitude)
+                    selection = AdaptiveParkTestView.clamped(moved, inside: manifest.bounds)
+                }
+                .onEnded { _ in dragStart = nil })
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Eryri adaptive terrain coverage and selected planning rectangle")
+        .accessibilityHint("Drag to move the selected area. Use Smaller and Larger to change its size.")
+        .background(RidgeTheme.paper)
+    }
+
+    private func rect(_ bounds: GeoBounds, size: CGSize) -> CGRect {
+        let x = (bounds.minLongitude - manifest.bounds.minLongitude) / (manifest.bounds.maxLongitude - manifest.bounds.minLongitude) * size.width
+        let y = (manifest.bounds.maxLatitude - bounds.maxLatitude) / (manifest.bounds.maxLatitude - manifest.bounds.minLatitude) * size.height
+        let width = (bounds.maxLongitude - bounds.minLongitude) / (manifest.bounds.maxLongitude - manifest.bounds.minLongitude) * size.width
+        let height = (bounds.maxLatitude - bounds.minLatitude) / (manifest.bounds.maxLatitude - manifest.bounds.minLatitude) * size.height
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 
 private struct ParkMetalView: UIViewRepresentable {
     let scene: ParkScene
-    let wholePark: Bool
     let onFrame: (Double, String?) -> Void
     @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
     func makeCoordinator() -> ParkRenderer { ParkRenderer(scene: scene) }
@@ -203,7 +417,6 @@ private struct ParkMetalView: UIViewRepresentable {
     }
     func updateUIView(_ view: MTKView, context: Context) {
         context.coordinator.style = gestureStyle
-        if context.coordinator.whole != wholePark { context.coordinator.whole = wholePark; context.coordinator.home() }
     }
     static func dismantleUIView(_ view: MTKView, coordinator: ParkRenderer) { view.isPaused = true; view.delegate = nil }
 }
@@ -214,14 +427,15 @@ private final class ParkRenderer: NSObject, MTKViewDelegate {
     var style: TerrainGestureStyle = .moveWithOneFinger
     var onFrame: ((Double, String?) -> Void)?
     private var reportedFrame = false
-    var whole = false
     var target = SIMD3<Float>(0, 0.7, 0), yaw: Float = 0.6, pitch: Float = 0.55, distance: Float = 5
     private var queue: MTLCommandQueue?, pipeline: MTLRenderPipelineState?, depth: MTLDepthStencilState?
     private weak var view: MTKView?
     init(scene: ParkScene) { self.scene = scene; super.init(); home() }
     func home() {
-        if whole { target = .zero; distance = 110; pitch = 0.85 }
-        else { let center = scene.manifest.bounds.center; target = SIMD3(Float((-4.054 - center.longitude) * cos(center.latitude * .pi / 180) * 111.195), 0.8, Float((center.latitude - 53.075) * 111.195)); distance = 5; pitch = 0.55 }
+        target = SIMD3(0, 0.55, 0)
+        distance = Float(max(scene.manifest.bounds.widthMeters, scene.manifest.bounds.depthMeters) / 1000) * 0.78
+        distance = max(2.2, distance)
+        pitch = 0.58
     }
     func install(_ view: MTKView) {
         self.view = view; view.clearColor = MTLClearColor(red: 0.72, green: 0.86, blue: 0.96, alpha: 1)

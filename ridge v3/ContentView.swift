@@ -3,13 +3,14 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var store = AppStore()
+    @State private var showAdaptivePark = false
     var body: some View {
         ZStack {
             RidgeTheme.paper.ignoresSafeArea()
             VStack(spacing: 0) {
                 Group {
                     switch store.tab {
-                    case .explore: ExploreView(store: store)
+                    case .explore: ExploreView(store: store, onOpenAdaptive: { showAdaptivePark = true })
                     case .areas: AreaLibraryView(store: store)
                     case .routes: RouteLibraryView(store: store)
                     }
@@ -41,6 +42,7 @@ struct ContentView: View {
             }
             .interactiveDismissDisabled(store.extensionInProgress)
         }
+        .fullScreenCover(isPresented: $showAdaptivePark) { AdaptiveParkTestView() }
         .alert("Ridge", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("OK", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
