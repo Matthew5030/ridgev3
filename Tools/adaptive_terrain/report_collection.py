@@ -10,7 +10,12 @@ p.add_argument('builds', type=Path)
 p.add_argument('downloads', type=Path)
 a = p.parse_args()
 plan = json.loads((a.builds/'collection-plan.json').read_text())
-indices = [json.loads(path.read_text()) for path in sorted(a.downloads.glob('*/adaptive.json'))]
+catalog=json.loads((a.downloads/'adaptive-catalog.json').read_text())
+indices=[]
+for entry in catalog['sources']:
+    raw=(a.downloads/entry['id']/'adaptive.json').read_bytes()
+    if hashlib.sha256(raw).hexdigest()!=entry['sha256']:raise ValueError('Catalogue index checksum mismatch')
+    indices.append(json.loads(raw))
 parks=[]
 for key, item in sorted(plan['parks'].items(),key=lambda kv:kv[1]['name']):
     matches=[m for m in indices if m['id'].startswith(key+'-adaptive-') or m['id'].startswith(key+'-park-adaptive-')]

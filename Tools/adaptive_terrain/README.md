@@ -476,3 +476,10 @@ checks available disk space and retains only bounded scratch meshes. Public
 assets have an nginx allowlist; source paths, build reports and locks return 404.
 The final verifier hashes every local container and tests actual byte-range
 retrieval for representative chunks in every section.
+
+Corrected source revisions may declare `supersedes` in their private manifest.
+Their published index retains that relation, so rebuilding the catalogue does
+not re-advertise the old source. The old payload bytes remain available for
+private audit; known-invalid source revisions can be withdrawn by the server.
+North York Moors uses `north-york-moors-adaptive-0p5-coverage-v2` after the UK
+survey-footprint check; its previous URL returns 410.

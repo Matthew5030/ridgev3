@@ -34,8 +34,12 @@ def publish_catalog(directory):
         # One catalogue choice per landscape. Older immutable URLs remain
         # valid after a smaller topology variant has been published.
         preferred={}
+        publications=[]
         for path in sorted(directory.glob('*/adaptive.json')):
-            raw=path.read_bytes();m=json.loads(raw)
+            raw=path.read_bytes();publications.append((raw,json.loads(raw)))
+        superseded={old for _,m in publications for old in m.get('supersedes',[])}
+        for raw,m in publications:
+            if m['id'] in superseded:continue
             key=m.get('geometrySourceID',m['id'])
             if key not in preferred or m['requiredReader']=='rat1-zlib-v1':preferred[key]=(raw,m)
         entries=[]
@@ -193,6 +197,9 @@ def publish(root, directory, workers=4, mesh_package=None, codec="rme1", packed=
                                       independentChunkCount=len(validation['independentSamples']),
                                       maximumMeasuredErrorMetres=manifest['maximumMeasuredErrorMetres']),
                       chunks=chunks)
+        if manifest.get('supersedes'):
+            if not all(isinstance(old,str) and old!=identifier for old in manifest['supersedes']):raise ValueError('Invalid superseded source ID')
+            result['supersedes']=manifest['supersedes']
         for key in ['byteCount', 'decodedByteCount', 'packedGeometryBytes',
                     'expandedGeometryBytes', 'vertices', 'triangles', 'sourceByteCount', 'sourceZlibBytes']:
             result[key] = sum(c[key] for c in chunks)

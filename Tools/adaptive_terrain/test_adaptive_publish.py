@@ -106,6 +106,18 @@ class AdaptivePublishingTests(unittest.TestCase):
         result=subprocess.run(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         self.assertNotEqual(result.returncode,0)
 
+    def test_corrected_source_supersedes_old_catalogue_entry(self):
+        old=self.publish(codec='rat1');old_bytes=(old/'adaptive.json').read_bytes()
+        self.manifest['supersedes']=[self.manifest['id']]
+        self.manifest['id']='test-park-adaptive-0p5-coverage-v2';self.write_manifest()
+        subprocess.run([sys.executable,str(HERE/'verify_park.py'),str(self.root)],check=True,stdout=subprocess.DEVNULL)
+        revised=self.publish(codec='rat1')
+        catalog=json.loads((self.out/'adaptive-catalog.json').read_bytes())
+        self.assertEqual([entry['id'] for entry in catalog['sources']],[revised.name])
+        self.assertEqual((old/'adaptive.json').read_bytes(),old_bytes)
+        publisher.publish_catalog(self.out)
+        self.assertEqual(len(json.loads((self.out/'adaptive-catalog.json').read_bytes())['sources']),1)
+
     def test_repeat_publish_recovers_missing_catalogue(self):
         out = self.publish()
         before = (out / 'adaptive.json').read_bytes()

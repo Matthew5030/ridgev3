@@ -14,7 +14,7 @@ this is not a claim of complete survey coverage in every park.
 | Lake District National Park | 99.96% | 150.84 MB | 96.89% |
 | Loch Lomond and The Trossachs National Park | 3.00% | 2.87 MB | 97.46% |
 | New Forest National Park | 99.19% | 13.57 MB | 98.02% |
-| North York Moors National Park | 79.12% | 45.41 MB | 97.72% |
+| North York Moors National Park | 70.30% | 45.17 MB | 97.63% |
 | Northumberland National Park | 98.00% | 43.80 MB | 97.86% |
 | Peak District National Park | 100.00% | 72.79 MB | 97.34% |
 | Pembrokeshire Coast National Park | 58.11% | 63.08 MB | 86.20% |
@@ -22,10 +22,10 @@ this is not a claim of complete survey coverage in every park.
 | The Broads | 99.86% | 8.55 MB | 97.89% |
 | Yorkshire Dales National Park | 100.00% | 105.73 MB | 97.51% |
 
-Total preferred terrain payload: **1,395,881,651 bytes
+Total preferred terrain payload: **1,395,648,961 bytes
 (1.396 GB)**, excluding index/boundary metadata, map textures,
 walking graphs and horizon meshes. Original native heightfields total
-38,660,578,776 bytes, or 7,825,178,496 bytes compressed
+38,365,303,158 bytes, or 7,824,558,266 bytes compressed
 with the same zlib level. RAT1 reduces downloads by
 82.16% against that compressed baseline.
 
@@ -40,10 +40,10 @@ with the same zlib level. RAT1 reduces downloads by
   acceptance. Heights, triangle counts, triangle/vertex order and native shared
   edges remain identical; only the storage representation changes.
 - Independent interpolation/topology checks use up to 26 distributed/extreme chunks
-  per park. All meshes are checksum checked and all **142,022
+  per park. All meshes are checksum checked and all **140,945
   shared edges** match exactly. Retained original-source samples for the 13
   England/Wales publications were separately rechecked against their hashes.
-- Fifteen publication/codec regression tests and seven Scottish source tests
+- Seventeen publication/codec regression tests and seven Scottish source tests
   pass. They cover native 32-bit and simplified 16-bit meshes, malformed data,
   immutable revisions, concatenated-package reuse, direct verification without
   raw scratch files, missing sources, source corruption, NoData and resampling.
@@ -88,3 +88,38 @@ HTTP results are on the external drive under `Ridge Experiments`. Published
 chunks are under `Ridge Sources` and served at `/adaptive-catalog.json` on the
 existing local Docker server, port 8787. `NATIONAL-PARKS.md` and
 `NATIONAL-PARKS.json` hold the complete measured collection summary.
+
+## UK extension and official-footprint correction
+
+The whole-UK inventory now applies the official EA 2022 DTM survey footprints
+before accepting EA-derived source chunks. The earlier prepared availability
+flags incorrectly admitted terrain outside those footprints. The corrected
+plan retains 589,402 native chunks in 342 grid sections and excludes 213,141
+unsupported candidates. All known constant −0.3 m chunks are excluded.
+
+The footprint snapshot contains 21,380 checksum-locked features. GEOS linework
+repairs invalid nested rings without outward buffering; acceptance requires the
+full projected chunk envelope plus 2 m interpolation support within the survey
+union. Six footprint tests and three planner tests cover holes, adjoining
+surveys, checksums, incomplete snapshots and valid fallback selection.
+
+Comparing all 15 existing park publications against the corrected selection
+found only North York Moors affected. Its new immutable revision is
+`north-york-moors-adaptive-0p5-coverage-v2`: 4,746 chunks, with 561 unsupported
+chunks excluded, including 80 wholly flat −0.3 m chunks. The old revision is
+superseded in the catalogue and returns HTTP 410. Its updated coverage and
+payload are reflected in the table above. All 75 representative park chunk
+HTTP checks passed again after this correction.
+
+The separately labelled UK coarse background is complete: **674 sections,
+193,728,577 bytes**. Every section was downloaded, decompressed and checked;
+all **1,197 shared edges** agree exactly, including NoData masks. Four background
+regression tests pass. This is coarse global elevation, not 1 m LiDAR and not
+covered by the detailed layer's 0.5 m error guarantee.
+
+The detailed UK conversion is in progress. Its catalogue advertises
+`rat1-zlib-range-v1` and only completed sections; `buildComplete` remains false
+until all planned sections pass. The first corrected HTTP range test and a
+later 28-section test passed, including full local container hashes, background
+descriptor checks, private-file exclusion and write refusal. Final totals will
+be recorded after the full build and download verification finish.
