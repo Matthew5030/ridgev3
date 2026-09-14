@@ -83,3 +83,62 @@ The ten profiles all have a 2 m criterion; the preprocessor can stop testing any
 The external rim remains native and coordinated in this test. Rebuilding larger production packs, independently joining neighbouring regions, simplifying their shared boundaries or mixing quality levels still needs a defined boundary policy. The measurements do not establish whole-Snowdon cost or device frame times.
 
 Re-running the base experiment resets the viewer to the tolerance comparison; run this layout experiment afterwards to restore the extended lab. `verify_viewer.cjs` discovers the available profile count and checks every profile plus both shortcut groups. Source pack files remain read-only throughout.
+
+## Eryri whole-park 0.5 m stress test
+
+The park compiler is `park_mesh.cpp`, an offline C++ implementation of the same
+RTIN surface-error method. It checks candidate triangles at native vertices and
+NE–SW cell centres, propagates splits, restores native diagonals, then checks the
+finished surface again. It preserves native shared edges and has no triangle-size
+cap. It reproduces the Crib Goch 0.5 m triangle counts exactly. This is still an
+experimental compiler and format, separate from normal app terrain imports.
+
+```sh
+clang++ -O3 -std=c++17 Tools/adaptive_terrain/park_mesh.cpp -o /tmp/ridge-park-mesh
+# Install requirements.txt into the experiment venv first.
+python Tools/adaptive_terrain/build_park.py \
+  --source /path/to/england-wales-precision/2026.09.02-1 \
+  --fallback /path/to/uk-national-parks-precision/2026.09.01-1 \
+  --boundary /path/to/eryri-boundary.geojson \
+  --output /path/outside-iCloud/eryri-park-adaptive \
+  --compiler /tmp/ridge-park-mesh
+python Tools/adaptive_terrain/verify_park.py /path/outside-iCloud/eryri-park-adaptive
+python Tools/adaptive_terrain/report_park.py /path/outside-iCloud/eryri-park-adaptive
+python Tools/adaptive_terrain/package_park.py \
+  /path/outside-iCloud/eryri-park-adaptive /path/outside-iCloud/EryriAdaptiveTest
+```
+
+Keep these large generated files outside Desktop/Documents iCloud storage. The
+builder verifies source manifests and source hashes, rejects NoData samples,
+resumes verified chunks, and locks its output directory against concurrent runs.
+Coverage is calculated against the park polygon, including absent parents. It
+does not silently fill source gaps with coarse data. The independent verifier
+checks 26 distributed/extreme chunks using Matplotlib's triangle locator and
+compares every shared edge from the written meshes.
+
+The measured pack contains 9,010 chunks and 768,136,638 triangles. Prepared 1 m
+coverage is missing over 46.58 km² (2.18% of the boundary). Raw RME1 files total
+7,022,271,670 bytes. The current renderer's expanded vertex/index representation
+would require 28,096,210,968 bytes before maps/routes. See the generated REPORT.md
+for the exact method, caveats, and validation results.
+
+`package_park.py` makes a single `terrain.rmeshpack` for practical device transfer.
+It concatenates SHA-verified RME1 chunks; each manifest entry has a `byteOffset`
+and `compactBytes`. The native reader seeks and reads one chunk at a time during
+the initial load, then retains every GPU buffer. This is not runtime streaming.
+The package and individual chunk layouts are both supported by the diagnostic.
+
+Copy the packaged folder to the app's `Documents/EryriAdaptiveTest`, then use
+**Settings → Eryri adaptive · full park stress test** with no ordinary 3D area
+open. It is a geometry-only diagnostic with relief colouring, not a routable map
+pack. The increased-memory-limit entitlement requests additional memory on
+supported devices; the test still checks `os_proc_available_memory` and a
+512 MiB reserve before loading. Devices without sufficient allowance refuse the
+whole scene rather than silently reducing detail. Simulator uses an explicit
+1 GiB verification budget because it does not provide the iOS memory reading.
+
+For development, launch with `--eryri-stress-test --eryri-auto-test`.
+`Documents/EryriStressResult.json` records the device allowance, load progress,
+full resident result, and first completed GPU frame (or GPU error). A successful
+small Simulator fixture verifies the loader/shader only; it is not an iPad or
+whole-park performance result. The normal fixed-scene planner is unchanged.

@@ -9,9 +9,14 @@ import SwiftUI
 
 @main
 struct ridge_v3App: App {
+    @State private var showStressTest = ProcessInfo.processInfo.arguments.contains("--eryri-stress-test")
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if showStressTest {
+                AdaptiveParkTestView(onClose: { showStressTest = false })
+            } else {
+                ContentView()
+            }
         }
     }
 }
