@@ -2,6 +2,13 @@
 
 14 September 2026 (earlier checks retained). Xcode 26.6; iOS 26.5 simulators. Deployment target iOS 18.
 
+## Visible tile selection and atlas navigation — 14 September
+
+- Source cell boundaries are visible at useful zoom levels. A first tap chooses exactly one cell. Drawing and resizing select complete cells; moving a block preserves its row/column count. Partially overlapping requests clamp to prepared edges, while a tap outside prepared data clears the selection instead of opening the prior area. The panel reports rows, columns and selected cell count.
+- Native UIKit recognizers handle one-finger selection/browsing, two-finger navigation and pinch zoom. Selection no longer disables pinch. Move map enables one-finger navigation while retaining the chosen block; explicit zoom buttons remain available.
+- Atlas selection tests pass **1,150 assertions**, including taps near both corners of all 256 cells, idempotent snapping, 60 moves without cell growth, edge clamping, outside-source rejection, and opening distinct native terrain selections. Simulator inspection confirmed one-cell selection, growth to 3 × 3 cells and zooming while retaining that block.
+- The 3 × 3 block moved to the southeast coverage corner without an invalid-area message and saved successfully. Expansion recovery/route/camera tests pass **43 assertions**. Debug simulator and signed Release builds passed. Simulator automation did not reliably generate continuous pan/pinch touch sequences; physical multitouch behaviour still requires hands-on confirmation.
+
 ## Fast area selection — 14 September
 
 - Selection interaction follow-up: tapping a new point used to start a two-corner gesture while leaving the previous rectangle and Open action active. A tap now recentres an existing rectangle, search moves it to the chosen place, and Draw new explicitly begins another rectangle. Edits immediately invalidate the previous proposal. Storage rounding no longer writes its expanded bounds back into the user's footprint, preventing repeated moves from gradually growing the selection.

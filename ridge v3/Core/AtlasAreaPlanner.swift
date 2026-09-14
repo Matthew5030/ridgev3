@@ -13,6 +13,51 @@ struct AtlasAreaProposal: Sendable {
 }
 
 enum AtlasAreaPlanner {
+    /// Resolve complete source cells immediately, before preview/admission.
+    /// Moves retain the number of cells; resizes include every touched cell.
+    static func snapped(_ requested: GeoBounds, entries: [PackEntry], preservingSize: Bool = false) -> GeoBounds? {
+        guard requested.isValid else { return nil }
+        let candidates = entries.filter {
+            $0.manifest.grid?.isValid == true &&
+            $0.manifest.bounds.minLatitude < requested.maxLatitude && $0.manifest.bounds.maxLatitude > requested.minLatitude &&
+            $0.manifest.bounds.minLongitude < requested.maxLongitude && $0.manifest.bounds.maxLongitude > requested.minLongitude
+        }.sorted {
+            if $0.manifest.levels.count != $1.manifest.levels.count { return $0.manifest.levels.count > $1.manifest.levels.count }
+            if $0.manifest.bounds.areaSquareKilometers != $1.manifest.bounds.areaSquareKilometers { return $0.manifest.bounds.areaSquareKilometers > $1.manifest.bounds.areaSquareKilometers }
+            return $0.id < $1.id
+        }
+        guard let source = candidates.first?.manifest, let grid = source.grid else { return nil }
+        let a = source.bounds.uv(GeoPoint(latitude: requested.maxLatitude, longitude: requested.minLongitude))
+        let b = source.bounds.uv(GeoPoint(latitude: requested.minLatitude, longitude: requested.maxLongitude))
+        let left: Int, top: Int, right: Int, bottom: Int
+        if preservingSize {
+            let columns = min(grid.columns, max(1, Int(((b.u - a.u) * Double(grid.columns)).rounded())))
+            let rows = min(grid.rows, max(1, Int(((b.v - a.v) * Double(grid.rows)).rounded())))
+            left = min(grid.columns - columns, max(0, Int((a.u * Double(grid.columns)).rounded())))
+            top = min(grid.rows - rows, max(0, Int((a.v * Double(grid.rows)).rounded())))
+            right = left + columns; bottom = top + rows
+        } else {
+            left = min(grid.columns - 1, max(0, Int(floor(a.u * Double(grid.columns) + 1e-8))))
+            top = min(grid.rows - 1, max(0, Int(floor(a.v * Double(grid.rows) + 1e-8))))
+            right = min(grid.columns, max(left + 1, Int(ceil(b.u * Double(grid.columns) - 1e-8))))
+            bottom = min(grid.rows, max(top + 1, Int(ceil(b.v * Double(grid.rows) - 1e-8))))
+        }
+        let nw = source.bounds.point(u: Double(left) / Double(grid.columns), v: Double(top) / Double(grid.rows))
+        let se = source.bounds.point(u: Double(right) / Double(grid.columns), v: Double(bottom) / Double(grid.rows))
+        return GeoBounds(minLatitude: se.latitude, minLongitude: nw.longitude, maxLatitude: nw.latitude, maxLongitude: se.longitude)
+    }
+
+    static func tile(at point: GeoPoint, entries: [PackEntry]) -> GeoBounds? {
+        guard point.isValid, let source = entries.filter({ $0.manifest.grid?.isValid == true && $0.manifest.bounds.contains(point) })
+            .sorted(by: { $0.manifest.levels.count > $1.manifest.levels.count }).first?.manifest, let grid = source.grid else { return nil }
+        let uv = source.bounds.uv(point)
+        let column = min(grid.columns - 1, max(0, Int(floor(uv.u * Double(grid.columns) + 1e-9))))
+        let row = min(grid.rows - 1, max(0, Int(floor(uv.v * Double(grid.rows) + 1e-9))))
+        let nw = source.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row) / Double(grid.rows))
+        let se = source.bounds.point(u: Double(column + 1) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
+        return GeoBounds(minLatitude: se.latitude, minLongitude: nw.longitude, maxLatitude: nw.latitude, maxLongitude: se.longitude)
+    }
+
     /// Move the chosen footprint with a place tap, preserving its size. Coverage
     /// admission happens afterwards; never silently keep the previous location.
     static func recentered(_ bounds: GeoBounds, on point: GeoPoint) -> GeoBounds {

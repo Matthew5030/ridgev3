@@ -1,6 +1,6 @@
 # Ridge
 
-A native iPhone and iPad route planner built around fixed offline terrain tiles. Browse or search the 2D atlas, draw a rectangle, then save and open it directly in 3D. Tile boundaries remain internal storage details. A broad surround of coarser terrain carries the view toward a fading horizon. SwiftUI handles the interface; Metal renders the terrain, independent cartography, routes and map boundary. Moving the camera makes no network requests.
+A native iPhone and iPad route planner built around fixed offline terrain tiles. Browse or search the 2D atlas, select a visible block of tiles, then save and open it directly in 3D. A broad surround of coarser terrain carries the view toward a fading horizon. SwiftUI handles the interface; Metal renders the terrain, independent cartography, routes and map boundary. Moving the camera makes no network requests.
 
 ## Run
 
@@ -27,7 +27,7 @@ xcodebuild -project 'ridge v3.xcodeproj' -scheme 'ridge v3' \
   -derivedDataPath /tmp/ridge-v3-build CODE_SIGNING_ALLOWED=NO build
 ```
 
-Start with **Eryri** or search for a place. Tap **Select area**, drag a rectangle or tap two opposite corners, then adjust its corner handles or drag inside to move it. Once a rectangle exists, a single tap moves it to that location; choosing a search result moves it to the named place. **Draw new** clears it for a fresh rectangle. **Use centre of map**, **Smaller** and **Larger** provide alternatives to drawing. The saved terrain rounds outward to prepared cells while the drawn footprint keeps its size through repeated moves. The selected place name, prepared dimensions, estimated saved size and live device admission appear in the same panel. **Save & open in 3D** shows progress there and opens the selected scene automatically; an exact saved selection offers **Open in 3D**.
+Start with **Eryri** or search for a place. The atlas shows the prepared tile grid when zoomed in. Tap **Select area**, then tap one tile or drag across a block. Handles resize in whole tiles; moving the block preserves its row and column count and stops at prepared edges. The panel shows the selected tile count. **Draw new** clears the block, **Select centre tile** starts with one tile, and **Smaller/Larger** change its size. Search moves the selection to the chosen place. One finger pans in browse mode; two fingers pan and pinch zoom works in either mode. During selection, **Move map** also enables one-finger pan without editing the block. **Save & open in 3D** opens the selected scene automatically; an exact saved selection offers **Open in 3D**.
 
 The main atlas journey holds terrain at 4 m and rejects oversized selections instead of silently lowering detail. Surroundings are included when available and admitted. Current source data is bundled or imported, so the UI says no download is needed; outside complete prepared coverage it explains the limitation instead of inventing a hosted download. Saved areas are shaded on the atlas. Areas cut from a bundled source reference its signed, immutable cartography directly; imported sources retain verified copies that are shared between overlapping areas. Terrain crops and graphs remain separate. Removing one area does not remove maps used by another.
 

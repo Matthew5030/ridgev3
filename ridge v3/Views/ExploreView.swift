@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct AtlasFocus: Equatable {
     var point: GeoPoint
@@ -96,9 +97,9 @@ struct ExploreView: View {
                          admittedBounds: lastValidBounds, selectionAllowed: proposal?.canOpen ?? false,
                          requiredBounds: expanding?.bounds, route: expanding == nil ? [] : store.activeRoute?.points.map(\.coordinate) ?? [],
                          routeSegments: expanding == nil ? [] : store.activeRoute?.segments.map { $0.points.map(\.coordinate) } ?? [],
-                         onViewport: { viewport = $0 })
+                         onViewport: { viewport = $0 }, snapToTiles: true)
             .overlay(alignment: .topLeading) {
-                Label(selecting ? (bounds == nil ? "Draw an area · Or tap two corners" : "Tap to move · Drag corners to resize") : "Browse the map · Choose your area", systemImage: selecting ? "rectangle.dashed" : "hand.draw")
+                Label(selecting ? "Tap a tile · Drag to select · Pinch to zoom" : "Drag to pan · Pinch to zoom", systemImage: selecting ? "rectangle.dashed" : "hand.draw")
                     .font(.system(size: 11, weight: .medium)).padding(11).background(RidgeTheme.panel.opacity(0.94), in: Capsule()).padding(12).allowsHitTesting(false)
             }
             .overlay(alignment: .bottomLeading) {
@@ -148,6 +149,12 @@ struct ExploreView: View {
                         Spacer()
                         if let allowance = proposal?.allowance { Text("Est. " + RidgeTheme.bytes(allowance.bytesOnDisk)) }
                     }.font(.system(size: 13, weight: .semibold))
+                    if let grid = proposal?.preview?.grid {
+                        Text("\(grid.columns) × \(grid.rows) tiles · \(grid.columns * grid.rows) selected")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(RidgeTheme.muted)
+                    } else {
+                        Text("Checking selected tiles…").font(.system(size: 11, weight: .medium)).foregroundStyle(RidgeTheme.muted)
+                    }
                     HStack(spacing: 18) {
                         Button("Smaller", systemImage: "minus.magnifyingglass") { resize(0.8) }
                         Button("Larger", systemImage: "plus.magnifyingglass") { resize(1.25) }
@@ -170,9 +177,9 @@ struct ExploreView: View {
                         HStack { Image(systemName: proposal?.saved != nil ? "mountain.2" : "square.and.arrow.down"); Text(expanding != nil ? "Save & return to 3D" : proposal?.saved != nil ? "Open in 3D" : "Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 16)
                     }.buttonStyle(RidgeButtonStyle()).disabled(refreshing || proposal?.canOpen != true || busy)
                 } else {
-                    Text("Drag across the map to draw your area, or tap two opposite corners. Drag inside your rectangle to move it.")
+                    Text("Tap a highlighted tile, or drag across several tiles. Two fingers move the map; pinch to zoom. Selection stops at available coverage.")
                         .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
-                    Button("Use centre of map", systemImage: "viewfinder") { selectCentre() }.buttonStyle(RidgeButtonStyle())
+                    Button("Select centre tile", systemImage: "viewfinder") { selectCentre() }.buttonStyle(RidgeButtonStyle())
                 }
             } else {
                 Text("Find a place, draw an area and explore it in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
@@ -203,7 +210,7 @@ struct ExploreView: View {
                 ForEach(Array(Dictionary(grouping: places, by: \.name).compactMap { $0.value.first }.sorted { $0.name < $1.name }.prefix(6)), id: \.name) { place in
                     Button {
                         query = ""
-                        if selecting, let bounds { selectionBinding.wrappedValue = AtlasAreaPlanner.recentered(bounds, on: place.coordinate) }
+                        if selecting { selectionBinding.wrappedValue = bounds.flatMap { AtlasAreaPlanner.snapped(AtlasAreaPlanner.recentered($0, on: place.coordinate), entries: atlasEntries, preservingSize: true) } ?? AtlasAreaPlanner.tile(at: place.coordinate, entries: atlasEntries) }
                         focus = AtlasFocus(point: place.coordinate, scale: 1_000_000)
                     } label: { Label(place.name, systemImage: "mappin").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
                 }
@@ -214,17 +221,23 @@ struct ExploreView: View {
 
     private var selectionBinding: Binding<GeoBounds?> {
         Binding(get: { bounds }, set: { value in
-            guard bounds != value else { return }
-            bounds = value; proposal = nil; lastValidBounds = nil; refreshing = value != nil
+            var snapped = value.flatMap { AtlasAreaPlanner.snapped($0, entries: atlasEntries) }
+            if let required = expanding?.bounds, let chosen = snapped {
+                snapped = AtlasAreaPlanner.snapped(GeoBounds(minLatitude: min(required.minLatitude, chosen.minLatitude), minLongitude: min(required.minLongitude, chosen.minLongitude), maxLatitude: max(required.maxLatitude, chosen.maxLatitude), maxLongitude: max(required.maxLongitude, chosen.maxLongitude)), entries: atlasEntries)
+            }
+            guard bounds != snapped else { return }
+            bounds = snapped; proposal = nil; lastValidBounds = nil; refreshing = snapped != nil
         })
     }
     private func focusOn(_ area: GeoBounds) {
-        if selecting, let bounds { selectionBinding.wrappedValue = AtlasAreaPlanner.recentered(bounds, on: area.center) }
+        if selecting { selectionBinding.wrappedValue = bounds.flatMap { AtlasAreaPlanner.snapped(AtlasAreaPlanner.recentered($0, on: area.center), entries: atlasEntries, preservingSize: true) } ?? AtlasAreaPlanner.tile(at: area.center, entries: atlasEntries) }
         focus = AtlasFocus(point: area.center, scale: 600_000, bounds: Self.padded(area, factor: 1.25))
     }
     private func selectCentre() {
         guard let viewport else { return }
-        bounds = Self.padded(viewport, factor: 0.5)
+        let point = atlasEntries.first(where: { $0.manifest.bounds.contains(viewport.center) }) != nil ? viewport.center : atlasEntries.first?.manifest.bounds.center
+        selectionBinding.wrappedValue = point.flatMap { AtlasAreaPlanner.tile(at: $0, entries: atlasEntries) }
+        if let bounds { focus = AtlasFocus(point: bounds.center, scale: 600_000, bounds: Self.padded(bounds, factor: 8)) }
     }
     private func resize(_ factor: Double) {
         guard let current = bounds else { return }
@@ -242,8 +255,8 @@ struct ExploreView: View {
             resized = GeoBounds(minLatitude: b.latitude, minLongitude: a.longitude, maxLatitude: a.latitude, maxLongitude: b.longitude)
         }
         if let required = expanding?.bounds {
-            bounds = GeoBounds(minLatitude: min(required.minLatitude, resized.minLatitude), minLongitude: min(required.minLongitude, resized.minLongitude), maxLatitude: max(required.maxLatitude, resized.maxLatitude), maxLongitude: max(required.maxLongitude, resized.maxLongitude))
-        } else { bounds = resized }
+            selectionBinding.wrappedValue = GeoBounds(minLatitude: min(required.minLatitude, resized.minLatitude), minLongitude: min(required.minLongitude, resized.minLongitude), maxLatitude: max(required.maxLatitude, resized.maxLatitude), maxLongitude: max(required.maxLongitude, resized.maxLongitude))
+        } else { selectionBinding.wrappedValue = resized }
     }
     private static func padded(_ bounds: GeoBounds, factor: Double) -> GeoBounds {
         let p = bounds.center, lat = (bounds.maxLatitude - bounds.minLatitude) * factor / 2, lon = (bounds.maxLongitude - bounds.minLongitude) * factor / 2
@@ -318,6 +331,7 @@ struct OfflineAtlasView: View {
     var route: [GeoPoint]
     var routeSegments: [[GeoPoint]]
     var onViewport: (GeoBounds) -> Void
+    var snapToTiles = false
     private let verticalOffset: CGFloat = 0
     private let selectionInsets = EdgeInsets(top: 55, leading: 25, bottom: 60, trailing: 60)
     @State private var images: [String: UIImage] = [:]
@@ -328,6 +342,7 @@ struct OfflineAtlasView: View {
     @State private var scale: CGFloat = 7400
     @State private var gestureCenter: CGPoint?
     @State private var gestureScale: CGFloat?
+    @State private var movingMap = false
     private func world(_ point: GeoPoint) -> CGPoint {
         let lat = min(85, max(-85, point.latitude)) * .pi / 180
         return CGPoint(x: (point.longitude + 180) / 360, y: (1 - log(tan(lat) + 1 / cos(lat)) / .pi) / 2)
@@ -353,43 +368,51 @@ struct OfflineAtlasView: View {
                 if let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawSelection(context: &context, size: size)
             }.contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 5).onChanged { value in
-                    if selecting { draggingSelection = true; dragSelection(value, size: geometry.size) }
-                    else {
-                        if gestureCenter == nil { gestureCenter = center }
-                        if let start = gestureCenter { center = CGPoint(x: min(1, max(0, start.x - value.translation.width / scale)), y: min(0.94, max(0.06, start.y - value.translation.height / scale))) }
-                    }
-                }.onEnded { value in
-                    if selecting { dragSelection(value, size: geometry.size) }
-                    gestureCenter = nil; dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size)
-                })
-                .simultaneousGesture(MagnifyGesture().onChanged { value in
-                    guard !selecting else { return }
-                    if gestureScale == nil { gestureScale = scale }; scale = min(4_000_000, max(350, (gestureScale ?? scale) * value.magnification))
-                }.onEnded { _ in gestureScale = nil; reportViewport(geometry.size) })
-                .simultaneousGesture(SpatialTapGesture().onEnded { event in
-                    if selecting {
-                        let point = coordinate(at: event.location, size: geometry.size)
-                        if let bounds = selectedBounds {
-                            selectedBounds = AtlasAreaPlanner.recentered(bounds, on: point); tapAnchor = nil
-                        } else if let anchor = tapAnchor { selectedBounds = area(from: anchor, to: point); tapAnchor = nil }
-                        else { tapAnchor = point }
-                        return
-                    }
-                    if let group = clusters(size: geometry.size).first(where: { clusterLabelRect($0, size: geometry.size).insetBy(dx: -10, dy: -10).contains(event.location) }) {
-                        zoom(to: group.entries[0].manifest.bounds, size: geometry.size)
-                    } else if let entry = entries.first(where: { rectangle($0.manifest.bounds, size: geometry.size).insetBy(dx: -10, dy: -10).contains(event.location) }) {
-                        zoom(to: entry.manifest.bounds, size: geometry.size)
-                    }
-                    reportViewport(geometry.size)
-                })
+                .overlay {
+                    AtlasTouchSurface(selecting: selecting, onDrag: { start, point, translation, twoFingers, ended in
+                        if selecting && !movingMap && !twoFingers {
+                            draggingSelection = !ended
+                            dragSelection(start: start, location: point, size: geometry.size)
+                        } else {
+                            if gestureCenter == nil { gestureCenter = center }
+                            if let origin = gestureCenter { center = CGPoint(x: min(1, max(0, origin.x - translation.width / scale)), y: min(0.94, max(0.06, origin.y - translation.height / scale))) }
+                        }
+                        if ended { gestureCenter = nil; dragAnchor = nil; movingBounds = nil; draggingSelection = false }
+                        reportViewport(geometry.size)
+                    }, onZoom: { factor, ended in
+                        if gestureScale == nil { gestureScale = scale }
+                        scale = min(4_000_000, max(350, (gestureScale ?? scale) * factor))
+                        if ended { gestureScale = nil }
+                        reportViewport(geometry.size)
+                    }, onTap: { location in
+                        if selecting && !movingMap {
+                            let point = coordinate(at: location, size: geometry.size)
+                            if snapToTiles {
+                                guard let tile = AtlasAreaPlanner.tile(at: point, entries: entries) else { selectedBounds = nil; return }
+                                if let bounds = selectedBounds {
+                                    selectedBounds = AtlasAreaPlanner.snapped(AtlasAreaPlanner.recentered(bounds, on: tile.center), entries: entries, preservingSize: true)
+                                } else { selectedBounds = tile }
+                            } else if let bounds = selectedBounds {
+                                selectedBounds = AtlasAreaPlanner.recentered(bounds, on: point); tapAnchor = nil
+                            } else if let anchor = tapAnchor { selectedBounds = area(from: anchor, to: point); tapAnchor = nil }
+                            else { tapAnchor = point }
+                            return
+                        }
+                        if let group = clusters(size: geometry.size).first(where: { clusterLabelRect($0, size: geometry.size).insetBy(dx: -10, dy: -10).contains(location) }) {
+                            zoom(to: group.entries[0].manifest.bounds, size: geometry.size)
+                        } else if let entry = entries.first(where: { rectangle($0.manifest.bounds, size: geometry.size).insetBy(dx: -10, dy: -10).contains(location) }) {
+                            zoom(to: entry.manifest.bounds, size: geometry.size)
+                        }
+                        reportViewport(geometry.size)
+                    })
+                }
                 .onChange(of: focus) { _, value in
                     if let bounds = value.bounds { zoom(to: bounds, size: geometry.size) }
                     else { center = world(value.point); scale = value.scale }
                     reportViewport(geometry.size)
                 }
                 .onChange(of: geometry.size) { _, size in reportViewport(size) }
-                .onChange(of: selecting) { _, _ in tapAnchor = nil; dragAnchor = nil; movingBounds = nil }
+                .onChange(of: selecting) { _, _ in tapAnchor = nil; dragAnchor = nil; movingBounds = nil; movingMap = false }
                 .onAppear {
                     if let bounds = focus.bounds { zoom(to: bounds, size: geometry.size) }
                     else { center = world(focus.point); scale = focus.scale }
@@ -409,9 +432,16 @@ struct OfflineAtlasView: View {
                     if !Task.isCancelled { images = rendered }
                 }
                 .accessibilityLabel(selecting ? "Area selection map" : "Offline atlas")
-                .accessibilityHint(selecting ? "Tap to move the selected area here. Drag a corner to resize, or drag inside to move. Choose Draw new to draw another rectangle or tap its two opposite corners." : "Drag to browse, pinch to zoom, or choose a place using search.")
+                .accessibilityHint(selecting ? "Tap a tile or drag to select whole tiles. Two fingers pan the map and pinch zooms. Move map lets one finger pan without changing the selection." : "Drag to browse, pinch to zoom, or choose a place using search.")
                 .overlay(alignment: .bottomTrailing) {
                     VStack(spacing: 8) {
+                        if selecting {
+                            Button { movingMap.toggle() } label: {
+                                Label(movingMap ? "Select tiles" : "Move map", systemImage: movingMap ? "square.grid.3x3" : "hand.draw")
+                                    .font(.system(size: 12, weight: .semibold)).padding(12)
+                                    .background(RidgeTheme.panel, in: Capsule())
+                            }.buttonStyle(.plain)
+                        }
                         RoundControl(symbol: "plus", label: "Zoom atlas in") { scale = min(4_000_000, scale * 1.8); reportViewport(geometry.size) }
                         RoundControl(symbol: "minus", label: "Zoom atlas out") { scale = max(350, scale / 1.8); reportViewport(geometry.size) }
                         RoundControl(symbol: "globe.europe.africa", label: "Show United Kingdom") { center = world(GeoPoint(latitude: 54.2, longitude: -3.4)); scale = min(7400, geometry.size.height * 20); reportViewport(geometry.size) }
@@ -430,27 +460,31 @@ struct OfflineAtlasView: View {
     private func corners(_ bounds: GeoBounds) -> [GeoPoint] {
         [GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude), GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.maxLongitude), GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude), GeoPoint(latitude: bounds.minLatitude, longitude: bounds.minLongitude)]
     }
-    private func dragSelection(_ value: DragGesture.Value, size: CGSize) {
+    private func dragSelection(start: CGPoint, location: CGPoint, size: CGSize) {
         tapAnchor = nil
         if dragAnchor == nil {
             if let bounds = selectedBounds {
                 let points = corners(bounds)
-                if let corner = points.indices.min(by: { hypot(screen(points[$0], size: size).x - value.startLocation.x, screen(points[$0], size: size).y - value.startLocation.y) < hypot(screen(points[$1], size: size).x - value.startLocation.x, screen(points[$1], size: size).y - value.startLocation.y) }),
-                   hypot(screen(points[corner], size: size).x - value.startLocation.x, screen(points[corner], size: size).y - value.startLocation.y) <= 32 {
+                let rect = rectangle(bounds, size: size)
+                let handleRadius = min(24, min(rect.width, rect.height) / 3)
+                if let corner = points.indices.min(by: { hypot(screen(points[$0], size: size).x - start.x, screen(points[$0], size: size).y - start.y) < hypot(screen(points[$1], size: size).x - start.x, screen(points[$1], size: size).y - start.y) }),
+                   hypot(screen(points[corner], size: size).x - start.x, screen(points[corner], size: size).y - start.y) <= handleRadius {
                     dragAnchor = points[(corner + 2) % 4]
-                } else if rectangle(bounds, size: size).contains(value.startLocation) {
-                    movingBounds = bounds; dragAnchor = coordinate(at: value.startLocation, size: size)
+                } else if rectangle(bounds, size: size).contains(start) {
+                    movingBounds = bounds; dragAnchor = coordinate(at: start, size: size)
                 }
             }
-            if dragAnchor == nil { dragAnchor = coordinate(at: value.startLocation, size: size) }
+            if dragAnchor == nil { dragAnchor = coordinate(at: start, size: size) }
         }
         guard let anchor = dragAnchor else { return }
-        let point = coordinate(at: value.location, size: size)
+        let point = coordinate(at: location, size: size)
         if let original = movingBounds {
             let lat = point.latitude - anchor.latitude, lon = point.longitude - anchor.longitude
             let candidate = GeoBounds(minLatitude: original.minLatitude + lat, minLongitude: original.minLongitude + lon, maxLatitude: original.maxLatitude + lat, maxLongitude: original.maxLongitude + lon)
-            if candidate.isValid { selectedBounds = candidate }
-        } else if let bounds = area(from: anchor, to: point) { selectedBounds = bounds }
+            if candidate.isValid { selectedBounds = snapToTiles ? AtlasAreaPlanner.snapped(candidate, entries: entries, preservingSize: true) : candidate }
+        } else if let bounds = area(from: anchor, to: point) {
+            selectedBounds = snapToTiles ? AtlasAreaPlanner.snapped(bounds, entries: entries) : bounds
+        }
     }
 
     private func drawSelection(context: inout GraphicsContext, size: CGSize) {
@@ -585,6 +619,20 @@ struct OfflineAtlasView: View {
             guard rect.intersects(viewport) else { continue }
             context.fill(Path(rect), with: .color(RidgeTheme.lime.opacity(0.19)))
             context.stroke(Path(rect), with: .color(RidgeTheme.forest.opacity(0.35)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            if snapToTiles, let grid = entry.manifest.grid, cellsAreVisible(entry, size: size) {
+                var lines = Path()
+                for column in 0...grid.columns {
+                    let x = rect.minX + rect.width * CGFloat(column) / CGFloat(grid.columns)
+                    lines.move(to: CGPoint(x: x, y: rect.minY)); lines.addLine(to: CGPoint(x: x, y: rect.maxY))
+                }
+                for row in 0...grid.rows {
+                    let point = entry.manifest.bounds.point(u: 0, v: Double(row) / Double(grid.rows))
+                    let y = screen(point, size: size).y
+                    lines.move(to: CGPoint(x: rect.minX, y: y)); lines.addLine(to: CGPoint(x: rect.maxX, y: y))
+                }
+                context.stroke(lines, with: .color(RidgeTheme.paper.opacity(0.8)), lineWidth: 2)
+                context.stroke(lines, with: .color(RidgeTheme.forest.opacity(0.5)), lineWidth: 0.8)
+            }
             if rect.width > 80 && rect.width < 220 {
                 context.draw(Text(entry.manifest.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(RidgeTheme.forest), at: CGPoint(x: rect.midX, y: rect.midY))
             }
@@ -606,6 +654,67 @@ struct OfflineAtlasView: View {
             let label = clusterLabelRect(group, size: size)
             context.fill(Path(roundedRect: label, cornerRadius: 10), with: .color(RidgeTheme.forest))
             context.draw(Text(clusterTitle(group)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(RidgeTheme.paper), at: CGPoint(x: label.midX, y: label.midY))
+        }
+    }
+}
+
+/// Native recognizers keep pan/pinch independent from SwiftUI selection updates.
+/// One finger selects (or browses); two fingers always navigate the map.
+private struct AtlasTouchSurface: UIViewRepresentable {
+    var selecting: Bool
+    var onDrag: (CGPoint, CGPoint, CGSize, Bool, Bool) -> Void
+    var onZoom: (CGFloat, Bool) -> Void
+    var onTap: (CGPoint) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(); view.backgroundColor = .clear; view.isMultipleTouchEnabled = true
+        view.isAccessibilityElement = true
+        updateAccessibility(view)
+        context.coordinator.install(on: view)
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self; updateAccessibility(view) }
+    private func updateAccessibility(_ view: UIView) {
+        view.accessibilityLabel = selecting ? "Area selection map" : "Offline atlas"
+        view.accessibilityHint = selecting ? "Tap a tile. Drag a corner to resize or drag inside to move. Two fingers pan and pinch zooms. Move map enables one-finger navigation." : "Drag to pan and pinch to zoom. Zoom buttons are also available."
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: AtlasTouchSurface
+        private var onePan: UIPanGestureRecognizer!
+        private var twoPan: UIPanGestureRecognizer!
+        private var pinch: UIPinchGestureRecognizer!
+        private var starts: [ObjectIdentifier: CGPoint] = [:]
+        init(_ parent: AtlasTouchSurface) { self.parent = parent }
+        func install(on view: UIView) {
+            onePan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+            onePan.minimumNumberOfTouches = 1; onePan.maximumNumberOfTouches = 1
+            onePan.allowedScrollTypesMask = .all
+            twoPan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+            twoPan.minimumNumberOfTouches = 2; twoPan.maximumNumberOfTouches = 2
+            pinch = UIPinchGestureRecognizer(target: self, action: #selector(zoom(_:)))
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tap(_:)))
+            tap.require(toFail: onePan); tap.require(toFail: twoPan); tap.require(toFail: pinch)
+            for gesture in [onePan!, twoPan!, pinch!, tap] { gesture.delegate = self; view.addGestureRecognizer(gesture) }
+        }
+        @objc private func pan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let point = gesture.location(in: view), delta = gesture.translation(in: view), key = ObjectIdentifier(gesture)
+            let ended = gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed
+            let start = starts[key] ?? CGPoint(x: point.x - delta.x, y: point.y - delta.y)
+            starts[key] = start
+            parent.onDrag(start, point, CGSize(width: delta.x, height: delta.y), gesture === twoPan, ended)
+            if ended { starts.removeValue(forKey: key) }
+        }
+        @objc private func zoom(_ gesture: UIPinchGestureRecognizer) {
+            parent.onZoom(gesture.scale, gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed)
+        }
+        @objc private func tap(_ gesture: UITapGestureRecognizer) {
+            if gesture.state == .ended { parent.onTap(gesture.location(in: gesture.view)) }
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            (gestureRecognizer === twoPan && other === pinch) || (gestureRecognizer === pinch && other === twoPan)
         }
     }
 }

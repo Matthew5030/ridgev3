@@ -15,6 +15,26 @@ private struct AreaFailure: Error, CustomStringConvertible { let description: St
         let original = source
         let entry = PackEntry(manifest: source, directory: directory, installed: false)
         let context = BudgetFixtures.capable
+        for row in 0..<source.grid!.rows { for column in 0..<source.grid!.columns {
+            for fraction in [0.1, 0.9] {
+                let point = source.bounds.point(u: (Double(column) + fraction) / Double(source.grid!.columns), v: (Double(row) + fraction) / Double(source.grid!.rows))
+                let tile = AtlasAreaPlanner.tile(at: point, entries: [entry])!
+                let picked = AtlasAreaPlanner.propose(bounds: tile, entries: [entry], context: context).preview!
+                try check(picked.grid?.columns == 1 && picked.grid?.rows == 1 && picked.bounds.contains(point), "Taps throughout a visible cell choose exactly that cell")
+                try check(AtlasAreaPlanner.snapped(tile, entries: [entry]) == tile, "Exact tile edges remain stable through repeated snapping")
+            }
+        } }
+        var tileMove = AtlasAreaPlanner.tile(at: source.bounds.center, entries: [entry])!
+        for index in 0..<60 {
+            let point = source.bounds.point(u: Double(index % 13 + 1) / 15, v: Double(index % 11 + 1) / 13)
+            tileMove = AtlasAreaPlanner.snapped(AtlasAreaPlanner.recentered(tileMove, on: point), entries: [entry], preservingSize: true)!
+            let grid = AtlasAreaPlanner.propose(bounds: tileMove, entries: [entry], context: context).preview!.grid!
+            try check(grid.columns == 1 && grid.rows == 1, "Moving a snapped tile never adds rows or columns")
+        }
+        let edgeMove = AtlasAreaPlanner.recentered(tileMove, on: source.bounds.point(u: 0, v: 0))
+        let edge = AtlasAreaPlanner.snapped(edgeMove, entries: [entry], preservingSize: true)!
+        try check(AtlasAreaPlanner.contains(source.bounds, edge), "Moving across an outer edge stops at complete prepared tiles")
+        try check(AtlasAreaPlanner.tile(at: source.bounds.point(u: 2, v: 2), entries: [entry]) == nil, "An unprepared location never selects a distant tile")
         func rect(_ u0: Double, _ v0: Double, _ u1: Double, _ v1: Double) -> GeoBounds {
             let a = source.bounds.point(u: u0, v: v0), b = source.bounds.point(u: u1, v: v1)
             return GeoBounds(minLatitude: min(a.latitude,b.latitude), minLongitude: min(a.longitude,b.longitude), maxLatitude: max(a.latitude,b.latitude), maxLongitude: max(a.longitude,b.longitude))
