@@ -31,7 +31,10 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
         try await packs.install(from: crop.directory, manifest: crop.manifest, spacing: 8) { _ in }
         let original = try await packs.load(id: crop.manifest.id)
         let sourceEntry = PackEntry(manifest: source, directory: sourceURL, installed: false)
-        let store = AppStore(packs: packs, routeStore: routes)
+        let preferenceName = "ridge-flow-\(UUID())"
+        let preferences = UserDefaults(suiteName: preferenceName)!
+        defer { preferences.removePersistentDomain(forName: preferenceName) }
+        let store = AppStore(packs: packs, routeStore: routes, preferences: preferences)
         store.entries = [sourceEntry]
         store.activeTerrain = original
         store.planningMode = .direct
@@ -200,6 +203,19 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
         let sameNameA = MapPlace(id: "a", name: "High Point", coordinate: first, kind: "peak")
         let sameNameB = MapPlace(id: "b", name: "High Point", coordinate: second, kind: "peak")
         try check(sameNameA.searchIdentity != sameNameB.searchIdentity, "Search preserves different places with identical names")
+        store.editing = true
+        store.updateNavigation(TerrainNavigationState(pose: pose, spacing: 16, insidePlanningArea: true))
+        store.savePlanningSession()
+        let freshStore = AppStore(packs: packs, routeStore: routes, preferences: preferences)
+        try check(freshStore.activeTerrain == nil, "Reading a resume record does not load terrain at launch")
+        freshStore.entries = store.entries; freshStore.routes = try await routes.load()
+        try check(freshStore.canResume, "A fresh app can find the saved planning session")
+        freshStore.resumePlanning(); try await settle(freshStore)
+        try check(freshStore.activeTerrain?.manifest.id == store.activeTerrain?.manifest.id && freshStore.activeRoute?.id == store.activeRoute?.id,
+                  "Continue planning restores the saved area and durable route")
+        try check(freshStore.camera.action == .restore(pose) && freshStore.editing, "Resume restores the geographic viewpoint and planning mode")
+        freshStore.entries = []
+        try check(!freshStore.canResume, "Removed terrain cannot appear as ready to resume")
         print("PASS extension flow: \(checks) assertions")
     }
 }

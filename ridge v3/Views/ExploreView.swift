@@ -16,6 +16,7 @@ struct ExploreView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var query = ""
     @AppStorage("ridge.recentSearches") private var recentSearchData = Data()
+    @AppStorage("ridge.atlasViewport") private var atlasViewportData = Data()
     @State private var selectedSpacing = 4
     @State private var selectionMessage: String?
     private var recentSearches: [String] { (try? JSONDecoder().decode([String].self, from: recentSearchData)) ?? [] }
@@ -59,6 +60,9 @@ struct ExploreView: View {
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
             .task(id: proposalID) { await updateProposal() }
             .onAppear {
+                if expanding == nil, let saved = try? JSONDecoder().decode(GeoBounds.self, from: atlasViewportData), saved.isValid {
+                    focus = AtlasFocus(point: saved.center, scale: 7400, bounds: saved)
+                }
                 if let expanding {
                     selectedSpacing = expanding.defaultSpacing
                     var initial = expanding.bounds
@@ -70,7 +74,8 @@ struct ExploreView: View {
                     focus = AtlasFocus(point: initial.center, scale: 600_000, bounds: Self.padded(initial, factor: 1.65))
                 }
             }
-            .onChange(of: scenePhase) { _, phase in if phase == .active { budgetRevision += 1 } }
+            .onDisappear { rememberViewport() }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { budgetRevision += 1 } else { rememberViewport() } }
             .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in budgetRevision += 1 }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in budgetRevision += 1 }
             .task {
@@ -196,11 +201,28 @@ struct ExploreView: View {
                     Button("Select centre tile", systemImage: "viewfinder") { selectCentre() }.buttonStyle(RidgeButtonStyle())
                 }
             } else {
+                if expanding == nil, store.canResume, let session = store.lastSession {
+                    Button { store.resumePlanning() } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.clockwise")
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(session.routeID == nil ? "Continue exploring" : "Continue planning").font(.headline)
+                                Text(store.routes.first { $0.id == session.routeID }?.name ?? session.areaName).font(.subheadline).lineLimit(1)
+                            }
+                            Spacer(); Image(systemName: "arrow.up.right")
+                        }.padding(14).background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
+                    }.buttonStyle(.plain).disabled(busy)
+                }
                 Text("Find a place, draw an area and explore it in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
                 Button { selecting = true; query = "" } label: { Label("Select area", systemImage: "rectangle.dashed").frame(maxWidth: .infinity) }.buttonStyle(RidgeButtonStyle())
                 Text("Marked areas have prepared terrain. Shaded areas are saved offline.").font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
             }
         }.padding(20).background(RidgeTheme.panel)
+    }
+
+    private func rememberViewport() {
+        guard expanding == nil, let viewport, viewport.isValid, let data = try? JSONEncoder().encode(viewport) else { return }
+        atlasViewportData = data
     }
 
     private var fittingCoarserSpacing: Int? {

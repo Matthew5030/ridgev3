@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var store = AppStore()
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         ZStack {
             RidgeTheme.paper.ignoresSafeArea()
@@ -20,6 +21,7 @@ struct ContentView: View {
         }
         .tint(RidgeTheme.forest).preferredColorScheme(.light)
         .task { await store.bootstrap() }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { store.savePlanningSession() } }
         .onOpenURL { url in if url.pathExtension.lowercased() == "gpx" { store.importGPX(url) } else { store.importPack(url) } }
         .sheet(item: $store.pendingPack, onDismiss: { store.dismissPendingPack() }) { entry in AreaDetailView(store: store, entry: entry).presentationDragIndicator(.visible) }
         .sheet(isPresented: $store.showDownloadSheet) { DownloadLinkView(store: store).presentationDetents([.medium]).presentationDragIndicator(.visible) }

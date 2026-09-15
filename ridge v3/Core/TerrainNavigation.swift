@@ -14,7 +14,7 @@ enum TerrainGestureStyle: String, CaseIterable, Identifiable {
 }
 
 /// Geographic camera state survives a new mesh's origin, scale and elevation datum.
-struct TerrainCameraPose: Equatable, Sendable {
+struct TerrainCameraPose: Codable, Equatable, Sendable {
     var target: GeoPoint
     var targetElevationMeters: Double
     var yaw: Float
@@ -90,4 +90,13 @@ struct TerrainCameraCommand: Equatable, Sendable {
     var action: Action
     var id: UUID
     init(action: Action = .home, id: UUID = UUID()) { self.action = action; self.id = id }
+}
+
+/// A tiny resume record, never a second resident terrain scene.
+struct PlanningSession: Codable, Equatable {
+    var areaID: String
+    var areaName: String
+    var routeID: UUID?
+    var camera: TerrainCameraPose?
+    var editing: Bool
 }

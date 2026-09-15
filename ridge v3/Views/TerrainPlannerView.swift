@@ -279,6 +279,8 @@ struct TerrainPlannerView: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
                 Eyebrow(text: store.editing ? "Your line across the landscape" : imported ? "Imported GPX track" : "Saved route")
+                if store.isRouting { Text("Updating route…").font(.caption).foregroundStyle(RidgeTheme.muted) }
+                else if store.routeSaved { Label(UIDevice.current.userInterfaceIdiom == .pad ? "Saved on this iPad" : "Saved on this device", systemImage: "checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
                 Button { routeName = route.name; rename = true } label: { Text(route.name).font(.system(size: 21, weight: .medium, design: .serif)).lineLimit(1) }.disabled(store.isRouting)
             }
             Spacer(minLength: 6)

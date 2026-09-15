@@ -30,6 +30,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     var errorMessage: String?
     var notice: String?
     var loaded = false
+    private(set) var lastSession: PlanningSession?
+    private(set) var routeSaved = false
+    @ObservationIgnored private let preferences: UserDefaults
+    @ObservationIgnored private var sessionSaveTask: Task<Void, Never>?
     var showGPXImporter = false
     var showPackImporter = false
     var showDownloadSheet = false
@@ -61,9 +65,35 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     private var pendingRoute: RidgeRoute?
     private var scopedPackURL: URL?
 
-    init(packs: PackStore = PackStore(), routeStore: RouteStore = RouteStore()) {
+    init(packs: PackStore = PackStore(), routeStore: RouteStore = RouteStore(), preferences: UserDefaults = .standard) {
         self.packs = packs
         self.routeStore = routeStore
+        self.preferences = preferences
+        if let data = preferences.data(forKey: "ridge.lastPlanningSession"),
+           let session = try? JSONDecoder().decode(PlanningSession.self, from: data),
+           PackStore.safeName(session.areaID), session.camera?.isValid != false { lastSession = session }
+    }
+
+    var canResume: Bool {
+        guard let lastSession else { return false }
+        return entries.contains { $0.installed && $0.id == lastSession.areaID }
+    }
+
+    func savePlanningSession() {
+        sessionSaveTask?.cancel()
+        guard let terrain = activeTerrain, !extensionInProgress else { return }
+        let route = activeRoute.flatMap { $0.points.isEmpty ? nil : $0 }
+        let session = PlanningSession(areaID: terrain.manifest.id, areaName: terrain.manifest.name,
+                                      routeID: route?.id, camera: lastCameraPose, editing: editing && route != nil)
+        guard session != lastSession, let data = try? JSONEncoder().encode(session) else { return }
+        lastSession = session; preferences.set(data, forKey: "ridge.lastPlanningSession")
+    }
+
+    func resumePlanning() {
+        guard !isPreparing, let session = lastSession,
+              let entry = entries.first(where: { $0.installed && $0.id == session.areaID }) else { return }
+        let route = routes.first { $0.id == session.routeID }
+        open(entry, route: route, resuming: session)
     }
 
     var extensionManifest: RegionManifest? {
@@ -82,6 +112,11 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     func updateNavigation(_ state: TerrainNavigationState) {
         guard activeTerrain != nil, !extensionInProgress else { return }
         lastCameraPose = state.pose
+        sessionSaveTask?.cancel()
+        sessionSaveTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            self?.savePlanningSession()
+        }
         lastViewedPoint = state.viewedPoint ?? state.pose.target
         sceneReleased = false
         if viewingSurroundings == state.insidePlanningArea { viewingSurroundings = !state.insidePlanningArea }
@@ -448,6 +483,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                 cleanup()
                 if operationID == token {
                     preparationKind = nil; preparingFromAtlas = false; operation = nil; acceptingTransfer = false
+                    savePlanningSession()
                 }
             }
             do {
@@ -519,7 +555,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         operationID = UUID(); preparationKind = nil; preparingFromAtlas = false; pendingRoute = nil
     }
 
-    func open(_ entry: PackEntry, route: RidgeRoute? = nil) {
+    func open(_ entry: PackEntry, route: RidgeRoute? = nil, resuming: PlanningSession? = nil) {
         guard !extensionInProgress else { return }
         guard entry.installed else { choose(entry, route: route); return }
         pendingRoute = nil
@@ -527,6 +563,11 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             let terrain = try await self.packs.load(id: entry.id)
             try Task.checkCancellation()
             self.present(terrain, route: route)
+            if let session = resuming {
+                if let pose = session.camera, pose.isValid { self.lastCameraPose = pose; self.camera = TerrainCameraCommand(action: .restore(pose)) }
+                self.editing = session.editing && route != nil && route?.segments.contains(where: { $0.mode == "imported" }) != true
+                self.savePlanningSession()
+            }
         }
     }
 
@@ -538,10 +579,13 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         pendingExtension = nil; extensionError = nil
         lastCameraPose = nil; lastViewedPoint = nil; viewingSurroundings = false; viewingSceneEdge = false; viewedTerrainSpacing = terrain.level.spacing
         activeTerrain = terrain
+        routeSaved = route?.points.isEmpty == false
+        savePlanningSession()
     }
 
     func closeTerrain() {
         guard !isRouting, !extensionInProgress else { return }
+        savePlanningSession()
         activeTerrain = nil; activeRoute = nil; editing = false; selectedPoint = nil
         undoStack = []; redoStack = []; movingWaypoint = nil; insertingWaypoint = nil
         pendingExtension = nil; extensionError = nil
@@ -550,6 +594,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
 
     func startRoute() {
         guard !isRouting, let terrain = activeTerrain else { return }
+        routeSaved = false
         activeRoute = RidgeRoute(name: "\(terrain.manifest.name) route", regionID: terrain.manifest.id)
         undoStack = []; redoStack = []; editing = true; movingWaypoint = nil; insertingWaypoint = nil
         toast(viewingSurroundings ? "Tap the terrain to start a route sketch." : (planningMode == .paths ? "Tap a mapped path to place your start." : "Tap the terrain to place your start."))
@@ -657,6 +702,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     func finishRoute() {
         guard !isRouting else { return }
         editing = false; movingWaypoint = nil; insertingWaypoint = nil; selectedPoint = nil
+        savePlanningSession()
         if activeRoute?.points.isEmpty != false { activeRoute = nil; toast("Empty route discarded.") }
         else { toast("Route saved on this device.") }
     }
@@ -721,9 +767,12 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         undoStack.append(previous)
         if undoStack.count > 40 { undoStack.removeFirst() }
         redoStack = []; activeRoute = updated
+        routeSaved = !updated.points.isEmpty
+        savePlanningSession()
         return true
     }
     private func persist(_ route: RidgeRoute) async -> Bool {
+        routeSaved = false
         if route.points.isEmpty {
             // An empty draft still belongs to the editor's undo/redo history,
             // but should not become a saved route or an empty GPX export.
@@ -733,7 +782,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             routes.removeAll { $0.id == route.id }
             return true
         }
-        do { try await routeStore.save(route) }
+        do { try await routeStore.save(route); routeSaved = true }
         catch { errorMessage = "Your route could not be saved. The previous saved version is unchanged: \(error.localizedDescription)"; return false }
         // The write succeeded. Refreshing the library must not turn it into a failed edit.
         routes.removeAll { $0.id == route.id }
