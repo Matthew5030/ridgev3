@@ -336,6 +336,16 @@ actor PackStore {
         return LoadedBackdrop(metadata: backdrop, level: level, heights: heights, textureURLs: urls)
     }
 
+    /// Resolve shared map files for a library thumbnail without loading heights or GPU resources.
+    func previewMap(for entry: PackEntry) throws -> PackEntry {
+        guard let (atlas, directory) = try compatibleBundledCartography(for: entry.manifest) else { return entry }
+        var preview = entry
+        preview.manifest.cartography = atlas
+        preview.manifest.textures = []
+        preview.directory = directory
+        return preview
+    }
+
     /// Existing saved terrain can use the current bundled map without rewriting
     /// its heights, route association or saved files. Only a matching grid with
     /// complete local coverage qualifies; this never fetches a remote asset.

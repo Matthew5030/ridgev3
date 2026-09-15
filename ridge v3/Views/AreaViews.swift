@@ -294,12 +294,13 @@ struct AreaLibraryView: View {
                         Button("Explore the atlas") { store.tab = .explore }.buttonStyle(RidgeButtonStyle())
                     }.padding(28).frame(maxWidth: .infinity).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 26)).padding(.top, 25)
                 }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400), spacing: 20, alignment: .top)], alignment: .leading, spacing: 20) {
                 ForEach(saved) { entry in
                     Button { store.open(entry) } label: {
                         VStack(alignment: .leading, spacing: 0) {
-                            AreaPreview(manifest: entry.manifest, directory: entry.directory).frame(height: 178).clipped()
+                            LibraryMapPreview(entry: entry, route: nil, packs: store.packs)
                             HStack {
-                                VStack(alignment: .leading, spacing: 6) { Text(entry.manifest.name).font(.system(size: 25, design: .serif)); Text(entry.manifest.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted) }
+                                VStack(alignment: .leading, spacing: 6) { Text(entry.manifest.name).font(.system(size: 23, design: .serif)).lineLimit(2, reservesSpace: true); Text(entry.manifest.subtitle).font(.caption).lineLimit(2, reservesSpace: true).foregroundStyle(RidgeTheme.muted) }
                                 Spacer()
                                 Image(systemName: "arrow.up.right").font(.title3).padding(12).background(RidgeTheme.lime.opacity(0.45), in: Circle())
                             }.padding(20)
@@ -311,11 +312,12 @@ struct AreaLibraryView: View {
                         Button("Remove saved area", systemImage: "trash", role: .destructive) { removal = entry }
                     }
                 }
+                }
                 VStack(alignment: .leading, spacing: 10) {
                     Eyebrow(text: "Your data, on your device")
                     Text("Import a prepared area from Files, or download one using its direct link. Ridge never requests new terrain as you move around.").font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
                 }.padding(.top, 10)
-            }.padding(24)
+            }.padding(24).frame(maxWidth: 1280).frame(maxWidth: .infinity)
         }.foregroundStyle(RidgeTheme.ink)
             .confirmationDialog("Remove this saved area? Your routes will be kept.", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } }), titleVisibility: .visible) {
                 Button("Remove area", role: .destructive) { if let removal { store.removeArea(removal) }; removal = nil }

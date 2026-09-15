@@ -157,6 +157,9 @@ private struct Failure: Error { var message: String }
         let terrain = try await store.load(id: crop.manifest.id)
         try check(installed.heights == terrain.heights && installed.directory == terrain.directory, "Installation returns the activated terrain without another load")
         try check(installed.cartography?.imageURLs == terrain.cartography?.imageURLs, "Borrowed source map URLs survive activation unchanged")
+        let previewEntry = try await store.previewMap(for: PackEntry(manifest: terrain.manifest, directory: terrain.directory, installed: true))
+        try check(previewEntry.directory == entry.directory && previewEntry.manifest.cartography != nil,
+                  "Library previews resolve borrowed map files in the source cache without loading a scene")
         for y in stride(from: 0, to: terrain.level.height, by: 7) { for x in stride(from: 0, to: terrain.level.width, by: 13) {
             let expected = Float(x * 4 * 2 + y * 4 * 3) * 0.1
             try check(abs(terrain.heights[y * terrain.level.width + x] - expected) < 0.001, "Tile assembly retains exact samples across cell boundaries")

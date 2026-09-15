@@ -27,6 +27,20 @@ import Foundation
         let bounded = RouteEngine.elevationProfile([RouteSegment(points: large, mode: "imported")])
         try check(bounded.count <= 1002 && bounded.first?.point == large.first && bounded.last?.point == large.last, "Large profiles remain bounded and retain endpoints")
         try check(RouteEngine.elevationProfile([]).isEmpty, "Empty drafts have an empty profile")
+        for area in [GeoBounds(minLatitude: 53, minLongitude: -4.1, maxLatitude: 53.08, maxLongitude: -4.09),
+                     GeoBounds(minLatitude: 53, minLongitude: -4.1, maxLatitude: 53.001, maxLongitude: -3.9)] {
+            let fitted = area.libraryPreviewBounds(aspect: 1.5)
+            try check(fitted.contains(area.point(u: 0, v: 0)) && fitted.contains(area.point(u: 1, v: 1)), "Thumbnail includes the full route, even for narrow or wide bounds")
+            try check(abs(fitted.widthMeters / fitted.depthMeters - 1.5) < 0.001, "Map preview preserves physical proportions at UK latitudes")
+            let center = fitted.uv(area.center)
+            try check(abs(center.u - 0.5) < 0.001 && abs(center.v - 0.5) < 0.001, "Route stays centred in its map preview")
+        }
+        let singlePoint = GeoBounds(minLatitude: 53, minLongitude: -4, maxLatitude: 53, maxLongitude: -4).libraryPreviewBounds(aspect: 1.5)
+        try check(singlePoint.isValid && singlePoint.depthMeters >= 399, "A one-point draft has a useful nonzero preview extent")
+        let square = GeoBounds(minLatitude: 53, minLongitude: -4.1, maxLatitude: 53.06, maxLongitude: -4)
+        let cover = square.libraryPreviewBounds(aspect: 1.5, padding: 1, cropToFill: true)
+        try check(square.contains(cover.point(u: 0, v: 0)) && square.contains(cover.point(u: 1, v: 1)), "Area cover crops within available map coverage instead of adding blank sidebars")
+        try check(abs(cover.widthMeters / cover.depthMeters - 1.5) < 0.001, "Area cover crops without distorting the map")
         print("PASS route inspection: \(checks) assertions")
     }
 }

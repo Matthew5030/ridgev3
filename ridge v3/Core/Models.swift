@@ -26,6 +26,21 @@ struct GeoBounds: Codable, Hashable, Sendable {
     func intersects(_ other: GeoBounds) -> Bool { minLatitude <= other.maxLatitude && maxLatitude >= other.minLatitude && minLongitude <= other.maxLongitude && maxLongitude >= other.minLongitude }
     func point(u: Double, v: Double) -> GeoPoint { GeoPoint(latitude: maxLatitude - v * (maxLatitude - minLatitude), longitude: minLongitude + u * (maxLongitude - minLongitude)) }
     func uv(_ point: GeoPoint) -> (u: Double, v: Double) { ((point.longitude - minLongitude) / (maxLongitude - minLongitude), (maxLatitude - point.latitude) / (maxLatitude - minLatitude)) }
+
+    /// North-up preview with undistorted geography: fit routes, or crop area covers to fill.
+    func libraryPreviewBounds(aspect: Double, padding: Double = 1.25, cropToFill: Bool = false) -> GeoBounds {
+        let longitudeScale = max(0.01, cos(center.latitude * .pi / 180))
+        let metresPerDegree = 111_195.0
+        var height = max(400, (maxLatitude - minLatitude) * metresPerDegree) * padding
+        let width = max(400, (maxLongitude - minLongitude) * metresPerDegree * longitudeScale) * padding
+        height = cropToFill ? min(height, width / max(0.1, aspect)) : max(height, width / max(0.1, aspect))
+        let latitudeSpan = min(180, height / metresPerDegree)
+        let longitudeSpan = min(360, height * max(0.1, aspect) / (metresPerDegree * longitudeScale))
+        let latitude = min(90 - latitudeSpan / 2, max(-90 + latitudeSpan / 2, center.latitude))
+        let longitude = min(180 - longitudeSpan / 2, max(-180 + longitudeSpan / 2, center.longitude))
+        return GeoBounds(minLatitude: latitude - latitudeSpan / 2, minLongitude: longitude - longitudeSpan / 2,
+                         maxLatitude: latitude + latitudeSpan / 2, maxLongitude: longitude + longitudeSpan / 2)
+    }
 }
 
 struct TerrainLOD: Codable, Hashable, Identifiable, Sendable {
