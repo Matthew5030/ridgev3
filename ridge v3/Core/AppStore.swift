@@ -18,7 +18,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     var camera = TerrainCameraCommand()
     var selectedPoint: GeoPoint?
     var movingWaypoint: Int?
-    var isPreparing = false
+    var isPreparing: Bool { preparationKind != nil }
     var preparationLabel = "Opening terrain"
     var progress: Double = 0
     var isRouting = false
@@ -35,7 +35,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     var pendingExtension: AreaExtensionProposal?
     var extensionSpacing = 8
     var extensionBudgetContext = TerrainBudget.currentContext()
-    var extensionInProgress = false
+    var extensionInProgress: Bool { preparationKind == .extending }
     var extensionError: String?
     var extensionForRoute = false
     var extensionMarginMeters: Double = 500
@@ -47,7 +47,9 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     @ObservationIgnored private var lastCameraPose: TerrainCameraPose?
     @ObservationIgnored private var lastViewedPoint: GeoPoint?
     @ObservationIgnored private var sceneReleased = true
-    @ObservationIgnored private var releaseWaiter: CheckedContinuation<Void, Never>?
+    @ObservationIgnored private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private enum PreparationKind { case opening, saving, extending, inspecting }
+    private var preparationKind: PreparationKind?
     private var operation: Task<Void, Never>?
     private var operationID = UUID()
     private var noticeTask: Task<Void, Never>?
@@ -95,8 +97,9 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
 
     func terrainViewReleased() {
         sceneReleased = true
-        releaseWaiter?.resume()
-        releaseWaiter = nil
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     var routeNeedsDetail: Bool {
@@ -182,93 +185,55 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                                        movingWaypoint: movingWaypoint, undo: undoStack, redo: redoStack,
                                        camera: lastCameraPose, proposal: proposal)
         let spacing = extensionSpacing
-        let waitForRelease = !sceneReleased
-        operation?.cancel()
-        let token = UUID(); operationID = token
-        extensionInProgress = true
         extensionError = nil
-        isPreparing = true
-        preparationLabel = "Extending your planning area"
-        progress = 0
-        // The replacement retains only route/metadata/camera state. It must not
-        // hold the previous LoadedTerrain's heights or graph while building.
-        activeTerrain = nil
-        operation = Task {
-            defer {
-                if operationID == token { extensionInProgress = false; isPreparing = false }
+        startPreparation(.extending, label: "Extending your planning area", retireTerrain: true) { [self] token in
+            let expanded = try await self.prepareSelection(source, selection: selection, spacing: spacing,
+                                                          displayName: proposal.displayName, token: token)
+            try Task.checkCancellation()
+            // Finish catalogue and sketch resolution while the editor is
+            // retired. Publish the complete scene and route together.
+            await refresh()
+            try Task.checkCancellation()
+            var associated = session.route
+            associated?.regionID = expanded.manifest.id
+            if let draft = associated {
+                associated = try await Task.detached { try RouteEngine.resolveOverview(draft, terrain: expanded) }.value
             }
+            // Resolve old sketch snapshots off the main actor as well, so
+            // undo/redo keep their original shapes with newly available heights.
+            let snapshots = await Task.detached { [undo = session.undo, redo = session.redo] in
+                (undo.map { (try? RouteEngine.resolveOverview($0, terrain: expanded)) ?? $0 },
+                 redo.map { (try? RouteEngine.resolveOverview($0, terrain: expanded)) ?? $0 })
+            }.value
+            var completedSession = session
+            completedSession.undo = snapshots.0; completedSession.redo = snapshots.1
+            try Task.checkCancellation()
+            // Once the durable route association is saved, publish the new
+            // state together. Cancellation before this point restores the old area.
+            if let associated, !associated.points.isEmpty {
+                try await routeStore.save(associated)
+                routes.removeAll { $0.id == associated.id }
+                routes.append(associated)
+                routes.sort { $0.modifiedAt > $1.modifiedAt }
+            }
+            restoreExtensionState(completedSession, terrain: expanded, route: associated, completed: true)
+            toast(session.route?.segments.contains(where: { $0.mode == "overview" }) == true
+                  ? "Detail added. Your sketch lines remain manual connections."
+                  : "Detail added. Your area is saved offline.")
+        } onFailure: { [self] error in
+            let cancelled = error is CancellationError || Task.isCancelled
+            preparationLabel = "Returning to your saved area"
+            // Recovery runs independently of the cancelled preparation task.
+            // The old installation is kept throughout the extension.
             do {
-                if waitForRelease { await waitForTerrainRelease() }
-                try Task.checkCancellation()
-                preparationLabel = source.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
-                let downloadedPreview = try await packs.downloadSelection(from: source, selection: selection, spacing: spacing) { [weak self] value in
-                    await self?.updateProgress(value, operationID: token)
-                }
-                preparationLabel = "Preparing selected terrain"; progress = 0
-                let sourceID = cartographySourceID(for: source)
-                let worker = Task.detached(priority: .userInitiated) {
-                    try AreaCropper.prepare(directory: source.directory, manifest: source.manifest, selection: selection, spacing: spacing,
-                                            cartographySourceID: sourceID, downloadedPreview: downloadedPreview)
-                }
-                let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-                defer { try? FileManager.default.removeItem(at: crop.directory) }
-                try Task.checkCancellation()
-                var savedManifest = crop.manifest
-                if let name = proposal.displayName { savedManifest.name = name }
-                try await packs.install(from: crop.directory, manifest: savedManifest, spacing: spacing) { [weak self] value in
-                    await self?.updateProgress(value, operationID: token)
-                }
-                try Task.checkCancellation()
-                preparationLabel = "Opening the extended terrain"
-                let expanded = try await packs.load(id: crop.manifest.id, spacing: spacing)
-                try Task.checkCancellation()
-                // Finish catalogue and sketch resolution while the editor is
-                // retired. Publish the complete scene and route together.
-                await refresh()
-                try Task.checkCancellation()
-                var associated = session.route
-                associated?.regionID = expanded.manifest.id
-                if let draft = associated {
-                    associated = try await Task.detached { try RouteEngine.resolveOverview(draft, terrain: expanded) }.value
-                }
-                // Resolve old sketch snapshots off the main actor as well, so
-                // undo/redo keep their original shapes with newly available heights.
-                let snapshots = await Task.detached { [undo = session.undo, redo = session.redo] in
-                    (undo.map { (try? RouteEngine.resolveOverview($0, terrain: expanded)) ?? $0 },
-                     redo.map { (try? RouteEngine.resolveOverview($0, terrain: expanded)) ?? $0 })
-                }.value
-                var completedSession = session
-                completedSession.undo = snapshots.0; completedSession.redo = snapshots.1
-                try Task.checkCancellation()
-                // Once the durable route association is saved, publish the new
-                // state together. Cancellation before this point restores the old area.
-                if let associated, !associated.points.isEmpty {
-                    try await routeStore.save(associated)
-                    routes.removeAll { $0.id == associated.id }
-                    routes.append(associated)
-                    routes.sort { $0.modifiedAt > $1.modifiedAt }
-                }
-                restoreExtensionState(completedSession, terrain: expanded, route: associated, completed: true)
-                extensionInProgress = false
-                isPreparing = false
-                toast(session.route?.segments.contains(where: { $0.mode == "overview" }) == true
-                      ? "Detail added. Your sketch lines remain manual connections."
-                      : "Detail added. Your area is saved offline.")
+                let packs = self.packs
+                let restored = try await Task.detached { try await packs.load(id: session.areaID) }.value
+                restoreExtensionState(session, terrain: restored, route: session.route, completed: false)
+                extensionError = cancelled ? "Extension cancelled. Your route and saved area are unchanged." : "The area could not be extended. Your route is unchanged. " + error.localizedDescription
             } catch {
-                let cancelled = error is CancellationError
-                preparationLabel = "Returning to your saved area"
-                // Recovery runs independently of the cancelled preparation task.
-                // The old installation is kept throughout the extension.
-                do {
-                    let packs = self.packs
-                    let restored = try await Task.detached { try await packs.load(id: session.areaID) }.value
-                    restoreExtensionState(session, terrain: restored, route: session.route, completed: false)
-                    extensionError = cancelled ? "Extension cancelled. Your route and saved area are unchanged." : "The area could not be extended. Your route is unchanged. " + error.localizedDescription
-                } catch {
-                    activeRoute = session.route
-                    pendingExtension = session.proposal
-                    errorMessage = "Your original area and route are still saved, but the terrain could not be reopened: " + error.localizedDescription
-                }
+                activeRoute = session.route
+                pendingExtension = session.proposal
+                errorMessage = "Your original area and route are still saved, but the terrain could not be reopened: " + error.localizedDescription
             }
         }
     }
@@ -278,7 +243,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         // before recovery decodes a replacement copy of that saved scene.
         if !sceneReleased {
             await withCheckedContinuation { continuation in
-                if sceneReleased { continuation.resume() } else { releaseWaiter = continuation }
+                if sceneReleased { continuation.resume() } else { releaseWaiters.append(continuation) }
             }
         }
     }
@@ -318,8 +283,13 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     }
 
     func refresh() async {
-        do { entries = try await packs.catalogue(); routes = try await routeStore.load() }
-        catch { errorMessage = error.localizedDescription }
+        do {
+            let refreshedEntries = try await packs.catalogue()
+            let refreshedRoutes = try await routeStore.load()
+            try Task.checkCancellation()
+            entries = refreshedEntries; routes = refreshedRoutes
+        } catch is CancellationError { }
+        catch { if !Task.isCancelled { errorMessage = error.localizedDescription } }
     }
 
     /// Source collections remain visible; their contained examples and saved
@@ -424,52 +394,78 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         // selected folder's scope first and retains it until copying has finished.
         let importScope = scopedPackURL; scopedPackURL = nil
         pendingPack = nil
+        startPreparation(.saving, label: remote == nil ? "Saving area offline" : "Downloading area", retireTerrain: true,
+                         cleanup: { importScope?.stopAccessingSecurityScopedResource() }) { token in
+            let terrain: LoadedTerrain
+            if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil) {
+                terrain = try await self.prepareSelection(entry, selection: selection, spacing: spacing, displayName: displayName, token: token)
+            } else if let remote {
+                terrain = try await self.packs.download(manifest: entry.manifest, from: remote, spacing: spacing) { [weak self] value in
+                    await self?.updateProgress(value, operationID: token)
+                }
+            } else {
+                terrain = try await self.packs.install(from: entry.directory, manifest: entry.manifest, spacing: spacing) { [weak self] value in
+                    await self?.updateProgress(value, operationID: token)
+                }
+            }
+            try Task.checkCancellation()
+            await self.refresh()
+            try Task.checkCancellation()
+            let route = try await self.routeForPresentation(requestedRoute, terrain: terrain)
+            try Task.checkCancellation()
+            self.present(terrain, route: route)
+        }
+    }
+
+    /// One task owns preparation UI, cancellation and scene retirement. A
+    /// superseded task may finish cleaning up, but cannot publish a stale error.
+    private func startPreparation(_ kind: PreparationKind, label: String, retireTerrain: Bool = false,
+                                  cleanup: @escaping @MainActor () -> Void = {},
+                                  work: @escaping @MainActor (UUID) async throws -> Void,
+                                  onFailure: (@MainActor (Error) async -> Void)? = nil) {
         operation?.cancel()
         let token = UUID(); operationID = token
+        preparationKind = kind; preparationLabel = label; progress = 0
+        if retireTerrain { activeTerrain = nil }
         operation = Task {
-            isPreparing = true; preparationLabel = remote == nil ? "Saving area offline" : "Downloading area"; progress = 0
             defer {
-                importScope?.stopAccessingSecurityScopedResource()
-                if operationID == token { isPreparing = false; preparingFromAtlas = false }
+                cleanup()
+                if operationID == token {
+                    preparationKind = nil; preparingFromAtlas = false; operation = nil
+                }
             }
             do {
-                // Retire the previous fixed scene before preparing its replacement.
-                // The live allowance must not have to cover two terrain meshes.
-                activeTerrain = nil
-                var openedID = entry.id
-                if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil) {
-                    preparationLabel = entry.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
-                    let downloadedPreview = try await packs.downloadSelection(from: entry, selection: selection, spacing: spacing) { [weak self] value in
-                        await self?.updateProgress(value, operationID: token)
-                    }
-                    preparationLabel = "Preparing selected terrain"; progress = 0
-                    let sourceID = cartographySourceID(for: entry)
-                    let worker = Task.detached(priority: .userInitiated) {
-                        try AreaCropper.prepare(directory: entry.directory, manifest: entry.manifest, selection: selection, spacing: spacing,
-                                                cartographySourceID: sourceID, downloadedPreview: downloadedPreview)
-                    }
-                    let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-                    defer { try? FileManager.default.removeItem(at: crop.directory) }
-                    try Task.checkCancellation()
-                    openedID = crop.manifest.id
-                    var savedManifest = crop.manifest
-                    if let displayName { savedManifest.name = displayName }
-                    try await packs.install(from: crop.directory, manifest: savedManifest, spacing: spacing) { [weak self] value in await self?.updateProgress(value, operationID: token) }
-                } else if let remote {
-                    try await packs.download(manifest: entry.manifest, from: remote, spacing: spacing) { [weak self] value in await self?.updateProgress(value, operationID: token) }
-                } else {
-                    try await packs.install(from: entry.directory, manifest: entry.manifest, spacing: spacing) { [weak self] value in await self?.updateProgress(value, operationID: token) }
-                }
+                if retireTerrain { await waitForTerrainRelease() }
                 try Task.checkCancellation()
-                await refresh()
-                preparationLabel = "Preparing your terrain"
-                let terrain = try await packs.load(id: openedID, spacing: spacing)
-                try Task.checkCancellation()
-                let route = try await routeForPresentation(requestedRoute, terrain: terrain)
-                try Task.checkCancellation()
-                present(terrain, route: route)
-            } catch is CancellationError { }
-            catch { errorMessage = error.localizedDescription }
+                try await work(token)
+            } catch {
+                guard operationID == token else { return }
+                if let onFailure { await onFailure(error) }
+                else if !(error is CancellationError) && !Task.isCancelled { errorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    private func prepareSelection(_ entry: PackEntry, selection: AreaSelection, spacing: Int,
+                                  displayName: String?, token: UUID) async throws -> LoadedTerrain {
+        preparationLabel = entry.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
+        let downloadedPreview = try await packs.downloadSelection(from: entry, selection: selection, spacing: spacing) { [weak self] value in
+            await self?.updateProgress(value, operationID: token)
+        }
+        try Task.checkCancellation()
+        preparationLabel = "Preparing selected terrain"; progress = 0
+        let sourceID = cartographySourceID(for: entry)
+        let worker = Task.detached(priority: .userInitiated) {
+            try AreaCropper.prepare(directory: entry.directory, manifest: entry.manifest, selection: selection, spacing: spacing,
+                                   cartographySourceID: sourceID, downloadedPreview: downloadedPreview)
+        }
+        let crop = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+        defer { try? FileManager.default.removeItem(at: crop.directory) }
+        try Task.checkCancellation()
+        var manifest = crop.manifest
+        if let displayName { manifest.name = displayName }
+        return try await packs.install(from: crop.directory, manifest: manifest, spacing: spacing) { [weak self] value in
+            await self?.updateProgress(value, operationID: token)
         }
     }
 
@@ -488,25 +484,17 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         // Extension owns its cancellation recovery and must finish reopening
         // the previous scene before dismissing the preparation UI.
         if extensionInProgress { return }
-        operationID = UUID(); isPreparing = false; preparingFromAtlas = false; pendingRoute = nil
+        operationID = UUID(); preparationKind = nil; preparingFromAtlas = false; pendingRoute = nil
     }
 
     func open(_ entry: PackEntry, route: RidgeRoute? = nil) {
         guard !extensionInProgress else { return }
         guard entry.installed else { choose(entry, route: route); return }
         pendingRoute = nil
-        operation?.cancel()
-        let token = UUID(); operationID = token
-        operation = Task {
-            isPreparing = true; preparationLabel = "Opening \(entry.manifest.name)"; progress = 0
-            defer { if operationID == token { isPreparing = false; preparingFromAtlas = false } }
-            do {
-                activeTerrain = nil
-                let terrain = try await packs.load(id: entry.id)
-                try Task.checkCancellation()
-                present(terrain, route: route)
-            } catch is CancellationError { }
-            catch { errorMessage = error.localizedDescription }
+        startPreparation(.opening, label: "Opening \(entry.manifest.name)", retireTerrain: true) { _ in
+            let terrain = try await self.packs.load(id: entry.id)
+            try Task.checkCancellation()
+            self.present(terrain, route: route)
         }
     }
 
@@ -833,30 +821,21 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         guard !extensionInProgress else { toast("Finish extending this area before importing another pack."); return }
         let requestedRoute = pendingRoute
         scopedPackURL?.stopAccessingSecurityScopedResource(); scopedPackURL = nil
-        operation?.cancel()
-        let token = UUID(); operationID = token
-        operation = Task {
+        startPreparation(.inspecting, label: "Checking offline area") { _ in
             let scoped = url.startAccessingSecurityScopedResource()
             var scopeTransferred = false
-            defer {
-                if scoped && !scopeTransferred { url.stopAccessingSecurityScopedResource() }
-                if operationID == token { isPreparing = false; preparingFromAtlas = false }
-            }
-            isPreparing = true; preparationLabel = "Checking offline area"; progress = 0
-            do {
-                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-                let directory = isDirectory ? url : url.deletingLastPathComponent()
-                let manifest = try await packs.inspect(directory: directory)
-                try Task.checkCancellation()
-                if scoped { scopedPackURL = url; scopeTransferred = true }
-                pendingRemoteURL = nil; pendingSelection = nil
-                pendingPack = PackEntry(manifest: manifest, directory: directory, installed: entries.contains { $0.id == manifest.id && $0.installed })
-                if let requestedRoute, RouteEngine.containingRegion(for: requestedRoute, in: [manifest], installedIDs: []) != nil {
-                    pendingRoute = requestedRoute
-                } else { pendingRoute = nil }
-                showPackImporter = false
-            } catch is CancellationError { }
-            catch { errorMessage = error.localizedDescription }
+            defer { if scoped && !scopeTransferred { url.stopAccessingSecurityScopedResource() } }
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            let directory = isDirectory ? url : url.deletingLastPathComponent()
+            let manifest = try await self.packs.inspect(directory: directory)
+            try Task.checkCancellation()
+            if scoped { self.scopedPackURL = url; scopeTransferred = true }
+            self.pendingRemoteURL = nil; self.pendingSelection = nil
+            self.pendingPack = PackEntry(manifest: manifest, directory: directory, installed: self.entries.contains { $0.id == manifest.id && $0.installed })
+            if let requestedRoute, RouteEngine.containingRegion(for: requestedRoute, in: [manifest], installedIDs: []) != nil {
+                self.pendingRoute = requestedRoute
+            } else { self.pendingRoute = nil }
+            self.showPackImporter = false
         }
     }
 

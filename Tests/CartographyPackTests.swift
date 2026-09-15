@@ -80,8 +80,24 @@ private struct AtlasPackFailure: Error, CustomStringConvertible { let descriptio
             try check(bytes == (texture.width == CartographyAtlas.imageSize ? full : small), "Native and preview map cells are copied byte-for-byte")
         }
         let store = PackStore(root: temporary.appendingPathComponent("Installed"), bundledDirectory: nil)
-        try await store.install(from: crop.directory, manifest: crop.manifest, spacing: 1) { _ in }
+        let activated = try await store.install(from: crop.directory, manifest: crop.manifest, spacing: 1) { _ in }
         let loaded = try await store.load(id: crop.manifest.id)
+        try check(activated.heights == loaded.heights && activated.directory == loaded.directory &&
+                  activated.cartography?.imageURLs == loaded.cartography?.imageURLs &&
+                  activated.cartography?.previewURLs == loaded.cartography?.previewURLs,
+                  "Activated terrain retains decoded samples and rebases owned map URLs")
+        let sameDirectory = try await store.install(from: loaded.directory, manifest: loaded.manifest, spacing: 1) { _ in }
+        try check(sameDirectory.heights == loaded.heights && sameDirectory.directory == loaded.directory,
+                  "Reopening the installation directory returns usable terrain without moving its files")
+        let cancelledLoad = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await store.load(id: crop.manifest.id)
+        }
+        do {
+            _ = try await cancelledLoad.value
+            throw AtlasPackFailure(description: "Cancelled load continued decoding")
+        } catch is CancellationError { assertions += 1 }
+
         try check(loaded.cartography?.metadata == firstAtlas && loaded.textureURLs.isEmpty, "Installed area resolves the independent local map")
         try check(!fm.fileExists(atPath: loaded.directory.appendingPathComponent("overview.png").path), "Unused overview is not copied or charged as installed data")
         var overlapping = crop.manifest; overlapping.id = "overlapping-area"
@@ -103,8 +119,10 @@ private struct AtlasPackFailure: Error, CustomStringConvertible { let descriptio
                   "Borrowed bundled maps are not charged as duplicate installed storage")
         let borrowedRoot = temporary.appendingPathComponent("Borrowed")
         let borrowedStore = PackStore(root: borrowedRoot, bundledDirectory: bundle)
-        try await borrowedStore.install(from: borrowedCrop.directory, manifest: borrowedCrop.manifest, spacing: 1) { _ in }
+        let activatedBorrowed = try await borrowedStore.install(from: borrowedCrop.directory, manifest: borrowedCrop.manifest, spacing: 1) { _ in }
         let borrowed = try await borrowedStore.load(id: borrowedCrop.manifest.id)
+        try check(activatedBorrowed.cartography?.imageURLs == borrowed.cartography?.imageURLs,
+                  "Activation leaves borrowed map URLs at the original source")
         try check(borrowed.cartography?.metadata == firstAtlas, "A saved crop resolves the exact bundled map metadata")
         try check(borrowed.cartography?.imageURLs.first?.deletingLastPathComponent().standardizedFileURL.path == sourceURL.standardizedFileURL.path,
                   "A saved crop reads immutable map cells directly from the application bundle")
@@ -147,6 +165,57 @@ private struct AtlasPackFailure: Error, CustomStringConvertible { let descriptio
         try check(upgraded.level.spacing == 8 && upgraded.manifest.id == source.id && upgraded.manifest.bounds == source.bounds, "Compatibility map upgrade preserves terrain detail, bounds and area identity")
         let savedAfter = try Data(contentsOf: savedURL)
         try check(savedBefore == savedAfter, "Compatibility map upgrade does not rewrite the saved pack")
+        // Exercise owned primary and horizon URLs without a supplemental atlas.
+        var horizonSource = legacy; horizonSource.id = "legacy-horizon"
+        func backdrop(_ spacing: Int, name: String) throws -> TerrainBackdrop {
+            var level = source.levels.first { $0.spacing == spacing }!
+            let oldFile = level.file; level.file = "\(name)-height.bin"
+            try fm.copyItem(at: sourceURL.appendingPathComponent(oldFile), to: sourceURL.appendingPathComponent(level.file))
+            var texture = source.textures[0]; texture.file = "\(name)-map.png"
+            try small.write(to: sourceURL.appendingPathComponent(texture.file))
+            return TerrainBackdrop(bounds: source.bounds, levels: [level], textures: [texture])
+        }
+        horizonSource.horizon = TerrainHorizon(near: try backdrop(8, name: "near"), far: try backdrop(32, name: "far"))
+        let horizonStore = PackStore(root: temporary.appendingPathComponent("Horizon"), bundledDirectory: nil,
+                                    sourceDirectory: temporary.appendingPathComponent("NoSources"))
+        let activatedHorizon = try await horizonStore.install(from: sourceURL, manifest: horizonSource, spacing: 8) { _ in }
+        let reloadedHorizon = try await horizonStore.load(id: horizonSource.id)
+        try check(activatedHorizon.horizon?.layers.count == 2 && activatedHorizon.textureURLs == reloadedHorizon.textureURLs,
+                  "Activation retains legacy primary textures and both horizon bands")
+        for (activated, reloaded) in zip(activatedHorizon.horizon!.layers, reloadedHorizon.horizon!.layers) {
+            try check(activated.heights == reloaded.heights && activated.textureURLs == reloaded.textureURLs &&
+                      activated.textureURLs.allSatisfy { fm.fileExists(atPath: $0.path) },
+                      "Activated horizon samples and texture URLs match a fresh load")
+        }
+        // A matching checksum is insufficient: semantic validation still runs
+        // before activation and must preserve the old installed area on failure.
+        var invalid = horizonSource
+        let levelIndex = invalid.levels.firstIndex { $0.spacing == 8 }!
+        let badBytes = [Int16](repeating: Int16(invalid.noDataValue).littleEndian,
+                              count: invalid.levels[levelIndex].sampleCount).withUnsafeBytes { Data($0) }
+        try badBytes.write(to: sourceURL.appendingPathComponent(invalid.levels[levelIndex].file))
+        invalid.levels[levelIndex].sha256 = digest(badBytes)
+        do {
+            try await horizonStore.install(from: sourceURL, manifest: invalid, spacing: 8) { _ in }
+            throw AtlasPackFailure(description: "All-no-data replacement was accepted")
+        } catch is AtlasPackFailure { throw AtlasPackFailure(description: "Semantic validation did not reject the replacement") }
+          catch { assertions += 1 }
+        let afterFailure = try await horizonStore.load(id: horizonSource.id)
+        try check(afterFailure.heights == activatedHorizon.heights, "Semantic failure preserves the previous installation")
+        // Restore valid bytes so cancellation is the only reason for failure.
+        try [Int16](repeating: Int16(1000).littleEndian, count: invalid.levels[levelIndex].sampleCount).withUnsafeBytes { Data($0) }
+            .write(to: sourceURL.appendingPathComponent(invalid.levels[levelIndex].file))
+        let cancelledInstall = Task {
+            try await horizonStore.install(from: sourceURL, manifest: horizonSource, spacing: 8) { _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        }
+        do {
+            _ = try await cancelledInstall.value
+            throw AtlasPackFailure(description: "Cancelled installation was activated")
+        } catch is CancellationError { assertions += 1 }
+        let afterCancel = try await horizonStore.load(id: horizonSource.id)
+        try check(afterCancel.heights == activatedHorizon.heights, "Cancelled replacement leaves the saved terrain intact")
         print("PASS cartography crop/install/rollback/legacy upgrade: \(assertions) assertions")
     }
 }

@@ -10,15 +10,16 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
     }
     static func settle(_ store: AppStore) async throws {
         let deadline = Date().addingTimeInterval(45)
-        while store.extensionInProgress || store.isRouting {
+        while store.isPreparing || store.isRouting {
             guard Date() < deadline else { throw FlowFailure(description: "Extension did not finish: \(store.preparationLabel)") }
             try await Task.sleep(for: .milliseconds(20))
         }
     }
     static func main() async throws {
         guard CommandLine.arguments.count == 2 else { throw FlowFailure(description: "Pass the Eryri source directory") }
-        let sourceURL = URL(fileURLWithPath: CommandLine.arguments[1])
-        var source = try JSONDecoder().decode(RegionManifest.self, from: Data(contentsOf: sourceURL.appendingPathComponent("pack.json")))
+        let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent("ridge-flow-source-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+        var source = try TerrainFixture.make(template: URL(fileURLWithPath: CommandLine.arguments[1]), directory: sourceURL)
         source.horizon = nil // Transaction tests do not need to recopy distant maps.
         guard let grid = source.grid, let selected = grid.selection(column: 0, row: 0) else { throw FlowFailure(description: "Missing original grid") }
         let crop = try AreaCropper.prepare(directory: sourceURL, manifest: source, selection: selected, spacing: 8)
@@ -143,6 +144,28 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
         store.dismissExtension()
         try check(store.pendingExtension == nil && store.selectedPoint == nil, "Keep looking dismisses only the proposed pin")
         print("PASS failure recovery and honest unavailable coverage")
+        // Normal opening must use the same retirement and cancellation rules.
+        let savedEntry = PackEntry(manifest: original.manifest, directory: original.directory, installed: true)
+        store.updateNavigation(TerrainNavigationState(pose: pose, spacing: 8, insidePlanningArea: true))
+        store.open(savedEntry)
+        try check(store.isPreparing && store.activeTerrain == nil, "Opening reserves preparation synchronously and retires the scene")
+        try await Task.sleep(for: .milliseconds(30))
+        try check(store.activeTerrain == nil && store.isPreparing, "Normal opening waits for renderer release too")
+        // Multiple requests while waiting must not overwrite a continuation.
+        store.cancelPreparation()
+        store.open(savedEntry)
+        try await Task.sleep(for: .milliseconds(30))
+        store.terrainViewReleased()
+        try await settle(store)
+        try check(store.activeTerrain?.manifest.id == original.manifest.id && store.errorMessage == nil,
+                  "Cancel then reopen releases all waiters and publishes only the current request")
+        var missingSaved = savedEntry; missingSaved.manifest.id = "missing-saved-area"
+        store.open(missingSaved)
+        store.open(savedEntry)
+        try await settle(store)
+        try check(store.activeTerrain?.manifest.id == original.manifest.id && store.errorMessage == nil,
+                  "A superseded failed open cannot show a stale error over the new scene")
+        print("PASS ordinary preparation, cancellation and supersession")
         print("PASS extension flow: \(checks) assertions")
     }
 }

@@ -18,6 +18,7 @@ xcrun swiftc -swift-version 6 -parse-as-library \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteStore.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/AtlasAreaPlanner.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/AppStore.swift" \
+  "$RIDGE_PROJECT_ROOT/Tests/TerrainFixture.swift" \
   "$RIDGE_PROJECT_ROOT/Tests/BudgetFixtures.swift" \
   "$RIDGE_PROJECT_ROOT/Tests/TiledSourceTests.swift" \
   -o "$RIDGE_TEST_BUILD/TiledSourceTests"

@@ -73,11 +73,19 @@ private final class ParkTestModel {
     private var worker: Task<ParkScene, Error>?
     var result: [String: String] = [:]
 
+    static var reserveBytes: Int64 {
+        #if targetEnvironment(simulator)
+        return 384 * 1024 * 1024
+        #else
+        return 512 * 1024 * 1024
+        #endif
+    }
+
     private func memoryAllowance() -> Int64 {
         #if targetEnvironment(simulator)
-        // iOS process allowance is unavailable in Simulator. This is only a
-        // small renderer-verification budget, never an iPad capacity result.
-        return 1024 * 1024 * 1024
+        // Simulator does not expose an iOS jetsam allowance. Four GiB is a
+        // conservative test ceiling on the development Mac, not a device claim.
+        return 4 * 1024 * 1024 * 1024
         #else
         return Int64(clamping: os_proc_available_memory())
         #endif
@@ -110,7 +118,7 @@ private final class ParkTestModel {
         available = memoryAllowance()
         // Test actual compact geometry, without the production grid sample cap.
         // Leave space for the OS-facing view, framebuffers and in-flight file read.
-        let reserve: Int64 = 512 * 1024 * 1024
+        let reserve = Self.reserveBytes
         let recommended = Int64(clamping: device.recommendedMaxWorkingSetSize)
         let gpuRemaining = recommended > 0 ? max(0, recommended - Int64(clamping: device.currentAllocatedSize)) : available
         result["gpuWorkingSetSource"] = recommended > 0 ? "Metal recommendation" : "Metal recommendation unavailable; using process allowance"
@@ -194,8 +202,13 @@ private final class ParkTestModel {
 
 struct AdaptiveParkTestView: View {
     var onClose: (() -> Void)? = nil
+    var atlas: AtlasData? = nil
+    var atlasEntries: [PackEntry] = []
     @State private var model = ParkTestModel()
     @State private var requested: GeoBounds?
+    @State private var mapFocus = AtlasFocus(point: GeoPoint(latitude: 53.075, longitude: -4.054), scale: 300_000)
+    @State private var draggingSelection = false
+    @State private var bundledAtlas: AtlasData?
     @Environment(\.dismiss) private var dismiss
 
     private var selected: AdaptiveParkManifest? {
@@ -205,7 +218,7 @@ struct AdaptiveParkTestView: View {
 
     private var selectedFits: Bool {
         guard let selected, model.available > 0 else { return false }
-        return selected.residentBytes + 512 * 1024 * 1024 <= model.available
+        return selected.residentBytes + ParkTestModel.reserveBytes <= model.available
     }
 
     var body: some View {
@@ -217,6 +230,10 @@ struct AdaptiveParkTestView: View {
             model.inspect()
             if requested == nil, let source = model.manifest {
                 requested = Self.area(center: GeoPoint(latitude: 53.075, longitude: -4.054), kilometres: 8, inside: source.bounds)
+                mapFocus = AtlasFocus(point: source.bounds.center, scale: 300_000, bounds: Self.padded(source.bounds, factor: 1.08))
+            }
+            if atlas == nil, let root = PackStore.bundledRoot {
+                bundledAtlas = try? JSONDecoder().decode(AtlasData.self, from: Data(contentsOf: root.appendingPathComponent("atlas.json")))
             }
             if ProcessInfo.processInfo.arguments.contains("--eryri-auto-test"), let requested { model.load(requested) }
         }
@@ -238,10 +255,13 @@ struct AdaptiveParkTestView: View {
     }
 
     @ViewBuilder private var selectionMap: some View {
-        if let source = model.manifest, let binding = Binding($requested) {
-            ParkSelectionMap(manifest: source, selection: binding)
+        if let source = model.manifest {
+            OfflineAtlasView(atlas: atlas ?? bundledAtlas, entries: atlasEntries, savedEntries: [], focus: mapFocus,
+                             selecting: true, selectedBounds: mapSelection, draggingSelection: $draggingSelection,
+                             admittedBounds: nil, selectionAllowed: selectedFits, requiredBounds: source.bounds,
+                             route: [], routeSegments: [], onViewport: { _ in })
                 .overlay(alignment: .topLeading) {
-                    Label("Drag to move your area", systemImage: "hand.draw")
+                    Label("Drag inside to move · corners resize", systemImage: "rectangle.and.hand.point.up.left")
                         .font(.system(size: 11, weight: .semibold)).padding(11)
                         .background(RidgeTheme.panel.opacity(0.94), in: Capsule()).padding(16)
                 }
@@ -327,6 +347,13 @@ struct AdaptiveParkTestView: View {
         self.requested = Self.resized(requested, factor: factor, inside: source.bounds)
     }
 
+    private var mapSelection: Binding<GeoBounds?> {
+        Binding(get: { requested }, set: { value in
+            guard let value, let source = model.manifest else { return }
+            requested = Self.clamped(value, inside: source.bounds)
+        })
+    }
+
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Eyebrow(text: label); Text(value).font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -350,57 +377,20 @@ struct AdaptiveParkTestView: View {
                                  maxLatitude: center.latitude + latitude, maxLongitude: center.longitude + longitude), inside: outer)
     }
 
+    private static func padded(_ bounds: GeoBounds, factor: Double) -> GeoBounds {
+        let center = bounds.center
+        let latitude = (bounds.maxLatitude - bounds.minLatitude) * factor / 2
+        let longitude = (bounds.maxLongitude - bounds.minLongitude) * factor / 2
+        return GeoBounds(minLatitude: center.latitude - latitude, minLongitude: center.longitude - longitude,
+                         maxLatitude: center.latitude + latitude, maxLongitude: center.longitude + longitude)
+    }
+
     fileprivate static func clamped(_ bounds: GeoBounds, inside outer: GeoBounds) -> GeoBounds {
         let latitude = min(bounds.maxLatitude - bounds.minLatitude, outer.maxLatitude - outer.minLatitude)
         let longitude = min(bounds.maxLongitude - bounds.minLongitude, outer.maxLongitude - outer.minLongitude)
         let south = min(outer.maxLatitude - latitude, max(outer.minLatitude, bounds.center.latitude - latitude / 2))
         let west = min(outer.maxLongitude - longitude, max(outer.minLongitude, bounds.center.longitude - longitude / 2))
         return GeoBounds(minLatitude: south, minLongitude: west, maxLatitude: south + latitude, maxLongitude: west + longitude)
-    }
-}
-
-private struct ParkSelectionMap: View {
-    let manifest: AdaptiveParkManifest
-    @Binding var selection: GeoBounds
-    @State private var dragStart: GeoBounds?
-
-    var body: some View {
-        GeometryReader { geometry in
-            Canvas { context, size in
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.78, green: 0.87, blue: 0.88)))
-                var coverage = Path()
-                for chunk in manifest.chunks { coverage.addRect(rect(chunk.bounds, size: size)) }
-                context.fill(coverage, with: .color(Color(red: 0.74, green: 0.79, blue: 0.64)))
-                let selected = rect(selection, size: size)
-                context.fill(Path(roundedRect: selected, cornerRadius: 5), with: .color(RidgeTheme.lime.opacity(0.25)))
-                context.stroke(Path(roundedRect: selected, cornerRadius: 5), with: .color(RidgeTheme.orange), style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
-                context.draw(Text("N ↑").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(RidgeTheme.ink), at: CGPoint(x: size.width - 32, y: 24))
-            }
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    if dragStart == nil { dragStart = selection }
-                    guard let start = dragStart, geometry.size.width > 0, geometry.size.height > 0 else { return }
-                    let longitude = Double(value.translation.width / geometry.size.width) * (manifest.bounds.maxLongitude - manifest.bounds.minLongitude)
-                    let latitude = -Double(value.translation.height / geometry.size.height) * (manifest.bounds.maxLatitude - manifest.bounds.minLatitude)
-                    let moved = GeoBounds(minLatitude: start.minLatitude + latitude, minLongitude: start.minLongitude + longitude,
-                                          maxLatitude: start.maxLatitude + latitude, maxLongitude: start.maxLongitude + longitude)
-                    selection = AdaptiveParkTestView.clamped(moved, inside: manifest.bounds)
-                }
-                .onEnded { _ in dragStart = nil })
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Eryri adaptive terrain coverage and selected planning rectangle")
-        .accessibilityHint("Drag to move the selected area. Use Smaller and Larger to change its size.")
-        .background(RidgeTheme.paper)
-    }
-
-    private func rect(_ bounds: GeoBounds, size: CGSize) -> CGRect {
-        let x = (bounds.minLongitude - manifest.bounds.minLongitude) / (manifest.bounds.maxLongitude - manifest.bounds.minLongitude) * size.width
-        let y = (manifest.bounds.maxLatitude - bounds.maxLatitude) / (manifest.bounds.maxLatitude - manifest.bounds.minLatitude) * size.height
-        let width = (bounds.maxLongitude - bounds.minLongitude) / (manifest.bounds.maxLongitude - manifest.bounds.minLongitude) * size.width
-        let height = (bounds.maxLatitude - bounds.minLatitude) / (manifest.bounds.maxLatitude - manifest.bounds.minLatitude) * size.height
-        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 

@@ -13,8 +13,8 @@ private struct Failure: Error { var message: String }
         let root = fm.temporaryDirectory.appendingPathComponent("ridge-source-tests-\(UUID())")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
-        let originalDirectory = URL(fileURLWithPath: CommandLine.arguments[1])
-        let original = try JSONDecoder().decode(RegionManifest.self, from: Data(contentsOf: originalDirectory.appendingPathComponent("pack.json")))
+        let originalDirectory = root.appendingPathComponent("template")
+        let original = try TerrainFixture.make(template: URL(fileURLWithPath: CommandLine.arguments[1]), directory: originalDirectory)
         let served = root.appendingPathComponent("server"), sourceDirectory = served.appendingPathComponent("fixture")
         try fm.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
         var manifest = original
@@ -81,6 +81,20 @@ private struct Failure: Error { var message: String }
         let entries = try await store.catalogue(), entry = entries[0]
         try check(entry.remoteSource != nil && entry.manifest.tiledTerrain != nil, "Normal catalogue contains the remote tiled source")
         try check(!fm.fileExists(atPath: entry.directory.appendingPathComponent(cells[0].levels[0].file).path), "Connecting downloads metadata and overview only")
+        let broken = cache.appendingPathComponent("broken-source")
+        try fm.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("{invalid".utf8).write(to: broken.appendingPathComponent("pack.json"))
+        for _ in 0..<2 {
+            let healthy = try await store.catalogue()
+            let issues = await store.issues()
+            try check(healthy.contains { $0.id == manifest.id }, "A malformed neighbour never hides valid sources, including cached reads")
+            try check(issues.count == 1 && issues[0].contains("broken-source"), "Catalogue identifies the broken source on every read")
+        }
+        var badOrigin = manifest; badOrigin.id = "broken-source"
+        try JSONEncoder().encode(badOrigin).write(to: broken.appendingPathComponent("pack.json"))
+        try Data("not a URL".utf8).write(to: broken.appendingPathComponent("origin.json"))
+        let originEntries = try await store.catalogue()
+        try check(originEntries.contains { $0.id == manifest.id }, "An invalid origin is isolated just like an invalid manifest")
         let selection = AreaSelection(minU: 0, minV: 0, maxU: 0.5, maxV: 0.5)
         let preview = AreaCropper.preview(manifest: manifest, selection: selection, spacing: 4, context: BudgetFixtures.capable)
         try check(preview.tiledTerrain == nil && preview.cartography?.sourceOnly != true, "Selected scene is a normal bounded pack")
@@ -106,8 +120,10 @@ private struct Failure: Error { var message: String }
         let crop = try AreaCropper.prepare(directory: entry.directory, manifest: manifest, selection: selection, spacing: 4,
                                            cartographySourceID: manifest.id, downloadedPreview: downloaded)
         defer { try? fm.removeItem(at: crop.directory) }
-        try await store.install(from: crop.directory, manifest: crop.manifest, spacing: 4) { _ in }
+        let installed = try await store.install(from: crop.directory, manifest: crop.manifest, spacing: 4) { _ in }
         let terrain = try await store.load(id: crop.manifest.id)
+        try check(installed.heights == terrain.heights && installed.directory == terrain.directory, "Installation returns the activated terrain without another load")
+        try check(installed.cartography?.imageURLs == terrain.cartography?.imageURLs, "Borrowed source map URLs survive activation unchanged")
         for y in stride(from: 0, to: terrain.level.height, by: 7) { for x in stride(from: 0, to: terrain.level.width, by: 13) {
             let expected = Float(x * 4 * 2 + y * 4 * 3) * 0.1
             try check(abs(terrain.heights[y * terrain.level.width + x] - expected) < 0.001, "Tile assembly retains exact samples across cell boundaries")
@@ -124,6 +140,10 @@ private struct Failure: Error { var message: String }
         let offlineStore = PackStore(root: saves, bundledDirectory: nil, sourceDirectory: cache)
         let cold = try await offlineStore.load(id: crop.manifest.id)
         try check(cold.heights == terrain.heights, "A fresh app instance opens the saved area offline")
+        try fm.removeItem(at: broken)
+        _ = try await store.catalogue()
+        let repairedIssues = await store.issues()
+        try check(repairedIssues.isEmpty, "Removing the broken neighbour clears cached warnings")
         do {
             _ = try await store.downloadSelection(from: entry, selection: selection, spacing: 1) { _ in }
             throw Failure(message: "Missing 1m files should require the server")

@@ -169,17 +169,18 @@ private struct BudgetFailure: Error, CustomStringConvertible { var description: 
         let mib = BudgetFixtures.mebibyte
         let selection = grid.rectangle(from: TerrainCell(column: 0, row: 0), to: TerrainCell(column: 3, row: 3))!
         let simulator = TerrainBudget.Context(physicalMemory: 6 * BudgetFixtures.gibibyte, maximumBufferLength: 256 * mib, gpuTier: .apple)
-        let alternatives = AreaCropper.preview(manifest: source, selection: selection, context: simulator)
-        let selected = AreaCropper.preview(manifest: source, selection: selection, spacing: 1, context: simulator)
+        let capable = BudgetFixtures.capable
+        let alternatives = AreaCropper.preview(manifest: source, selection: selection, context: capable)
+        let selected = AreaCropper.preview(manifest: source, selection: selection, spacing: 1, context: capable)
         var primary = selected; primary.horizon = nil
-        let combined = TerrainBudget.allowance(for: selected, spacing: 1, context: simulator)
-        let primaryAllowance = TerrainBudget.allowance(for: primary, spacing: 1, context: simulator)
-        try check(selected.horizon?.near?.levels.map(\.spacing) == [8] && selected.horizon?.far?.levels.map(\.spacing) == [32], "The 4×4 1m simulator scene keeps its nearby 8m and distant 32m terrain")
-        try check(combined.allowed && combined.estimatedMemory <= simulator.memoryLimit, "The real combined 4×4 scene and complete cartography fit the unchanged simulator policy")
+        let combined = TerrainBudget.allowance(for: selected, spacing: 1, context: capable)
+        let primaryAllowance = TerrainBudget.allowance(for: primary, spacing: 1, context: capable)
+        try check(selected.horizon?.near?.levels.map(\.spacing) == [8] && selected.horizon?.far?.levels.map(\.spacing) == [32], "A capable device retains both complete terrain bands")
+        try check(combined.allowed && combined.estimatedMemory <= capable.memoryLimit, "The real combined scene and complete cartography fit the capable-device policy")
         try check(combined.estimatedMemory > primaryAllowance.estimatedMemory && combined.bytesOnDisk > primaryAllowance.bytesOnDisk, "Both disk and memory admission include the surrounding terrain")
         try check(selected.levels == primary.levels && selected.levels.first { $0.spacing == 1 }?.width == 2049, "Surrounding terrain retains the selected native 1m planning grid")
         try check(selected.bounds == primary.bounds && selected.grid == primary.grid && selected.textures == primary.textures, "Context never expands the planning footprint or changes sharp primary cartography")
-        try check(TerrainBudget.recommendedSpacing(for: alternatives, context: simulator) == 1, "Nearby context does not force a coarser primary resolution when the combined scene fits")
+        try check(TerrainBudget.recommendedSpacing(for: alternatives, context: capable) == 1, "Nearby context does not force a coarser primary resolution when the combined scene fits")
         try check(alternatives.horizon?.near?.levels.map(\.spacing) == [8, 16], "Preview alternatives retain the source near-layer choices for later admission")
 
         // Independently compose full-grid estimates to catch charging the 64 MiB
@@ -226,15 +227,22 @@ private struct BudgetFailure: Error, CustomStringConvertible { var description: 
                 indexCount: (mainLevel.width - 1) * (mainLevel.height - 1) * 6, context: BudgetFixtures.capable).estimatedMemory
             if cost < (candidates.last?.cost ?? .max) { candidates.append((cost, near, far)) }
         }
+        let simulatorScene = AreaCropper.preview(manifest: source, selection: selection, spacing: 1, context: simulator)
+        let simulatorChoice = candidates.first { $0.cost <= simulator.memoryLimit }
+        try check(simulatorScene.horizon?.near?.levels.first?.spacing == simulatorChoice?.near &&
+                  simulatorScene.horizon?.far?.levels.first?.spacing == simulatorChoice?.far,
+                  "Simulator retains the best affordable horizon for the current cartography")
+        let simulatorCost = TerrainBudget.allowance(for: simulatorScene, spacing: 1, context: simulator)
+        try check(simulatorCost.allowed == (simulatorChoice != nil), "Simulator admission follows its unchanged memory ceiling")
         var fallbacks: [(limit: Int64, near: Int?, far: Int?, fits: Bool)] = []
         for (index, candidate) in candidates.enumerated() {
-            let upper = index == 0 ? simulator.memoryLimit : candidates[index - 1].cost
+            let upper = index == 0 ? capable.memoryLimit : candidates[index - 1].cost
             let limit = candidate.cost + max(1, (upper - candidate.cost) / 2)
             fallbacks.append((limit, candidate.near, candidate.far, true))
         }
         fallbacks.append((primaryAllowance.estimatedMemory - mib, nil, nil, false))
         for (limit, nearSpacing, farSpacing, shouldFit) in fallbacks {
-            var context = simulator
+            var context = capable
             context.availableMemory = 64 * mib + limit * 100 / 65 + 100
             let headroom = context.availableMemory! / mib
             let preview = AreaCropper.preview(manifest: source, selection: selection, spacing: 1, context: context)

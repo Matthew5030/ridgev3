@@ -26,6 +26,7 @@ actor PackStore {
     private let sourceDirectory: URL
     private var sourceCacheKey: String?
     private var sourceCache: [PackEntry] = []
+    private var sourceIssues: [String] = []
 
     init(root: URL? = nil, bundledDirectory: URL? = PackStore.bundledRoot, sourceDirectory: URL? = nil) {
         self.sourceDirectory = sourceDirectory ?? Self.sourceRoot
@@ -39,27 +40,36 @@ actor PackStore {
     }
 
     private func sourceEntries() throws -> [PackEntry] {
-        guard fm.fileExists(atPath: sourceDirectory.path) else { return [] }
+        guard fm.fileExists(atPath: sourceDirectory.path) else {
+            sourceCacheKey = nil; sourceCache = []; sourceIssues = []
+            return []
+        }
         let directories = try fm.contentsOfDirectory(at: sourceDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             .filter { fm.fileExists(atPath: $0.appendingPathComponent("pack.json").path) }.sorted { $0.path < $1.path }
-        let key = try directories.flatMap { directory in
-            try ["pack.json", "origin.json"].map { file in
+        let key = directories.flatMap { directory in
+            ["pack.json", "origin.json"].map { file in
                 let path = directory.appendingPathComponent(file).path
                 guard fm.fileExists(atPath: path) else { return path }
-                let attributes = try fm.attributesOfItem(atPath: path)
+                guard let attributes = try? fm.attributesOfItem(atPath: path) else { return path + ":unreadable" }
                 return path + ":" + String(describing: attributes[.size]) + ":" + String(describing: attributes[.modificationDate])
             }
         }.joined(separator: "|")
         if key == sourceCacheKey { return sourceCache }
-        let entries = try directories.map { directory in
-            let manifest = try inspect(directory: directory)
-            guard manifest.tiledTerrain != nil, manifest.id == directory.lastPathComponent else { throw RidgeError.message("The terrain source folder does not match its index.") }
-            let origin = directory.appendingPathComponent("origin.json")
-            let remote = fm.fileExists(atPath: origin.path) ? try decoder.decode(URL.self, from: Data(contentsOf: origin)) : nil
-            if let remote { _ = try SourceDownloads.validBase(remote) }
-            return PackEntry(manifest: manifest, directory: directory, installed: false, remoteSource: remote)
+        var entries: [PackEntry] = []
+        var issues: [String] = []
+        for directory in directories {
+            try Task.checkCancellation()
+            do {
+                let manifest = try inspect(directory: directory)
+                guard manifest.tiledTerrain != nil, manifest.id == directory.lastPathComponent else { throw RidgeError.message("The terrain source folder does not match its index.") }
+                let origin = directory.appendingPathComponent("origin.json")
+                let remote = fm.fileExists(atPath: origin.path) ? try decoder.decode(URL.self, from: Data(contentsOf: origin)) : nil
+                if let remote { _ = try SourceDownloads.validBase(remote) }
+                entries.append(PackEntry(manifest: manifest, directory: directory, installed: false, remoteSource: remote))
+            } catch is CancellationError { throw CancellationError() }
+            catch { issues.append("Terrain source \(directory.lastPathComponent) could not be read: \(error.localizedDescription)") }
         }
-        sourceCacheKey = key; sourceCache = entries
+        sourceCacheKey = key; sourceCache = entries; sourceIssues = issues
         return entries
     }
 
@@ -69,6 +79,7 @@ actor PackStore {
     }
 
     func catalogue() throws -> [PackEntry] {
+        try Task.checkCancellation()
         catalogueIssues = []
         var entries: [String: PackEntry] = [:]
         if let bundleRoot = bundledDirectory {
@@ -83,7 +94,9 @@ actor PackStore {
         }
         do {
             for entry in try sourceEntries() { entries[entry.id] = entry }
-        } catch { catalogueIssues.append("A terrain source could not be read: \(error.localizedDescription)") }
+            catalogueIssues += sourceIssues
+        } catch is CancellationError { throw CancellationError() }
+        catch { catalogueIssues.append("A terrain source could not be read: \(error.localizedDescription)") }
         bundledCartography = nil
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         for directory in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
@@ -100,6 +113,7 @@ actor PackStore {
                 }
             } catch { catalogueIssues.append("Saved area \(directory.lastPathComponent) needs to be imported again: \(error.localizedDescription)") }
         }
+        try Task.checkCancellation()
         return entries.values.sorted { $0.manifest.name < $1.manifest.name }
     }
 
@@ -130,7 +144,8 @@ actor PackStore {
         return manifest
     }
 
-    func install(from directory: URL, manifest: RegionManifest, spacing: Int, progress: @Sendable (Double) async -> Void) async throws {
+    @discardableResult
+    func install(from directory: URL, manifest: RegionManifest, spacing: Int, progress: @Sendable (Double) async -> Void) async throws -> LoadedTerrain {
         try Self.validate(manifest)
         var manifest = manifest
         manifest.horizon = TerrainBudget.selectedHorizon(for: manifest, spacing: spacing)
@@ -149,8 +164,7 @@ actor PackStore {
         let destination = root.appendingPathComponent(manifest.id, isDirectory: true)
         if directory.standardizedFileURL == destination.standardizedFileURL,
            let installed = try installedManifest(id: manifest.id), installed.levels.contains(where: { $0.spacing == spacing }) {
-            _ = try decode(manifest: installed, directory: destination, spacing: spacing)
-            return
+            return try decode(manifest: installed, directory: destination, spacing: spacing)
         }
         let capacity = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? Int64.max
         guard capacity > allowance.bytesOnDisk + 32 * 1_048_576 else { throw RidgeError.message("There isn’t enough free storage to save this area.") }
@@ -191,12 +205,31 @@ actor PackStore {
         try encoder.encode(saved).write(to: staging.appendingPathComponent("pack.json"), options: .atomic)
         // Activation is the commit point: invalid but correctly hashed payloads
         // must fail here while the previous installation remains available.
-        _ = try decode(manifest: saved, directory: staging, spacing: spacing)
+        let terrain = try decode(manifest: saved, directory: staging, spacing: spacing)
         try Task.checkCancellation()
         if fm.fileExists(atPath: destination.path) {
             _ = try fm.replaceItemAt(destination, withItemAt: staging)
         } else { try fm.moveItem(at: staging, to: destination) }
         await progress(1)
+        return relocated(terrain, from: staging, to: destination)
+    }
+
+    /// Reuse the validated arrays after atomic activation. Only staged asset
+    /// URLs move; borrowed cartography continues to point at its source folder.
+    private func relocated(_ terrain: LoadedTerrain, from staging: URL, to destination: URL) -> LoadedTerrain {
+        let oldRoots = Set([staging.standardizedFileURL.path, staging.resolvingSymlinksInPath().standardizedFileURL.path])
+        func move(_ url: URL) -> URL {
+            oldRoots.contains(url.deletingLastPathComponent().standardizedFileURL.path)
+                ? destination.appendingPathComponent(url.lastPathComponent) : url
+        }
+        var result = terrain
+        result.directory = destination
+        result.textureURLs = result.textureURLs.map(move)
+        result.horizon?.near?.textureURLs = terrain.horizon?.near?.textureURLs.map(move) ?? []
+        result.horizon?.far?.textureURLs = terrain.horizon?.far?.textureURLs.map(move) ?? []
+        result.cartography?.imageURLs = terrain.cartography?.imageURLs.map(move) ?? []
+        result.cartography?.previewURLs = terrain.cartography?.previewURLs.map(move) ?? []
+        return result
     }
 
     private func reusableMaps(hashes: Set<String>) -> [String: URL] {
@@ -218,6 +251,7 @@ actor PackStore {
 
     private func decode(manifest: RegionManifest, directory: URL, spacing: Int?,
                         supplementalCartography: (CartographyAtlas, URL)? = nil) throws -> LoadedTerrain {
+        try Task.checkCancellation()
         try Self.validate(manifest)
         let resolvedCartography = try supplementalCartography ?? compatibleBundledCartography(for: manifest)
         let selected = spacing ?? manifest.defaultSpacing
@@ -229,18 +263,7 @@ actor PackStore {
         try Self.useIndependentCartography(&manifest)
         let allowance = TerrainBudget.allowance(for: manifest, spacing: selected, context: budgetContext)
         guard allowance.allowed, let level = manifest.levels.first(where: { $0.spacing == selected }) else { throw RidgeError.message(allowance.reason ?? "Save this resolution first.") }
-        let heightURL = try Self.asset(level.file, in: directory)
-        try Self.verify(heightURL, size: level.byteCount, hash: level.sha256)
-        let data = try Data(contentsOf: heightURL, options: .mappedIfSafe)
-        var heights = [Float]()
-        heights.reserveCapacity(level.sampleCount)
-        data.withUnsafeBytes { raw in
-            for index in 0..<level.sampleCount {
-                let value = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: index * 2, as: Int16.self))
-                heights.append(Int(value) == manifest.noDataValue ? .nan : Float(Double(value) * manifest.heightScale))
-            }
-        }
-        guard heights.contains(where: \.isFinite) else { throw RidgeError.message("This area contains no usable terrain samples.") }
+        let heights = try decodeHeights(level, manifest: manifest, directory: directory)
         let textures = try manifest.textures.map { texture -> URL in
             let url = try Self.asset(texture.file, in: directory)
             try Self.verify(url, size: texture.byteCount, hash: texture.sha256)
@@ -255,6 +278,7 @@ actor PackStore {
             let url = try Self.asset(file, in: directory)
             try Self.verify(url, size: bytes, hash: hash)
             graph = try decoder.decode(WalkingGraph.self, from: Data(contentsOf: url, options: .mappedIfSafe))
+            try Task.checkCancellation()
             guard let graph, graph.nodes.count <= 200_000, graph.edges.count <= 500_000,
                   Set(graph.nodes.map(\.id)).count == graph.nodes.count,
                   graph.nodes.allSatisfy({ $0.coordinate.isValid && $0.elevation.isFinite && manifest.bounds.contains($0.coordinate) }) else { throw RidgeError.message("The offline path network is invalid or too large.") }
@@ -271,22 +295,35 @@ actor PackStore {
         let cartography = try manifest.cartography.map {
             try decodeCartography($0, directory: cartographyDirectory, trustedBundled: resolvedCartography != nil && bundledDirectory.map { cartographyDirectory.path.hasPrefix($0.path + "/") } == true)
         }
+        try Task.checkCancellation()
         return LoadedTerrain(manifest: manifest, level: level, heights: heights, textureURLs: textures, graph: graph, directory: directory, budgetContext: budgetContext, horizon: horizon, cartography: cartography)
+    }
+
+    private func decodeHeights(_ level: TerrainLOD, manifest: RegionManifest, directory: URL) throws -> [Float] {
+        try Task.checkCancellation()
+        let url = try Self.asset(level.file, in: directory)
+        try Self.verify(url, size: level.byteCount, hash: level.sha256)
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        var heights: [Float] = []
+        heights.reserveCapacity(level.sampleCount)
+        var hasTerrain = false
+        try data.withUnsafeBytes { raw in
+            for index in 0..<level.sampleCount {
+                if index % 16_384 == 0 { try Task.checkCancellation() }
+                let value = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: index * 2, as: Int16.self))
+                let height: Float = Int(value) == manifest.noDataValue ? .nan : Float(Double(value) * manifest.heightScale)
+                heights.append(height)
+                hasTerrain = hasTerrain || height.isFinite
+            }
+        }
+        try Task.checkCancellation()
+        guard hasTerrain else { throw RidgeError.message("This area contains no usable terrain samples.") }
+        return heights
     }
 
     private func decodeBackdrop(_ backdrop: TerrainBackdrop, manifest: RegionManifest, directory: URL) throws -> LoadedBackdrop {
         guard backdrop.levels.count == 1, let level = backdrop.levels.first else { throw RidgeError.message("The surrounding terrain detail is incomplete.") }
-        let heightURL = try Self.asset(level.file, in: directory)
-        try Self.verify(heightURL, size: level.byteCount, hash: level.sha256)
-        let data = try Data(contentsOf: heightURL, options: .mappedIfSafe)
-        var heights: [Float] = []; heights.reserveCapacity(level.sampleCount)
-        data.withUnsafeBytes { raw in
-            for index in 0..<level.sampleCount {
-                let value = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: index * 2, as: Int16.self))
-                heights.append(Int(value) == manifest.noDataValue ? .nan : Float(Double(value) * manifest.heightScale))
-            }
-        }
-        guard heights.contains(where: \.isFinite) else { throw RidgeError.message("The surrounding terrain contains no usable elevation samples.") }
+        let heights = try decodeHeights(level, manifest: manifest, directory: directory)
         let urls = try backdrop.textures.map { texture -> URL in
             let url = try Self.asset(texture.file, in: directory)
             try Self.verify(url, size: texture.byteCount, hash: texture.sha256)
@@ -403,7 +440,8 @@ actor PackStore {
         return manifest
     }
 
-    func download(manifest: RegionManifest, from manifestURL: URL, spacing: Int, progress: @Sendable (Double) async -> Void) async throws {
+    @discardableResult
+    func download(manifest: RegionManifest, from manifestURL: URL, spacing: Int, progress: @Sendable (Double) async -> Void) async throws -> LoadedTerrain {
         try Self.validate(manifest)
         var manifest = manifest
         manifest.horizon = TerrainBudget.selectedHorizon(for: manifest, spacing: spacing)
@@ -430,7 +468,7 @@ actor PackStore {
             finished += file.1
             await progress(Double(finished) / Double(max(1, total)) * 0.9)
         }
-        try await install(from: stage, manifest: manifest, spacing: spacing) { value in await progress(0.9 + value * 0.1) }
+        return try await install(from: stage, manifest: manifest, spacing: spacing) { value in await progress(0.9 + value * 0.1) }
     }
 
     static func safeName(_ value: String) -> Bool {
@@ -576,12 +614,17 @@ actor PackStore {
         return url
     }
     fileprivate static func verify(_ url: URL, size: Int64, hash: String) throws {
+        try Task.checkCancellation()
         let actual = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
         guard actual == size else { throw RidgeError.message("An area file is incomplete. Import or download the pack again.") }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var digest = SHA256()
-        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty { digest.update(data: chunk) }
+        while true {
+            try Task.checkCancellation()
+            guard let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty else { break }
+            digest.update(data: chunk)
+        }
         guard digest.finalize().map({ String(format: "%02x", $0) }).joined() == hash.lowercased() else { throw RidgeError.message("An area file failed its integrity check. Import or download the pack again.") }
     }
 }

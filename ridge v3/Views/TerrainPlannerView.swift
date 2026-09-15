@@ -448,10 +448,7 @@ struct TerrainHelpView: View {
                 helpRow("square.dashed", "Detailed and overview terrain", "Expand area is always available on the 3D map. Tap distant terrain or move beyond your detailed area to see the coverage explanation, then expand around that location. Availability and size are checked before saving. You can keep sketching beyond detailed coverage; overview lines are manual connections, not followed paths.")
                 Divider()
                 Text("Map legend").font(.headline)
-                HStack { Capsule().fill(RidgeTheme.orange).frame(width: 32, height: 4); Text("Your planned route") }.font(.subheadline)
-                HStack { Rectangle().fill(Color.brown.opacity(0.65)).frame(width: 32, height: 1); Text("Contours · 10 metre interval") }.font(.subheadline)
-                HStack { Rectangle().fill(RidgeTheme.orange.opacity(0.65)).frame(width: 32, height: 1); Text("Mapped paths and tracks") }.font(.subheadline)
-                HStack { RoundedRectangle(cornerRadius: 3).fill(Color(red: 0.65, green: 0.80, blue: 0.84)).frame(width: 32, height: 14); Text("Water") }.font(.subheadline)
+                MapLegendView()
                 Text("Walking times and elevation totals are estimates. A mapped path does not establish access permission or mountain difficulty.").font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(3)
                 ForEach(terrain.manifest.sources, id: \.name) { source in VStack(alignment: .leading, spacing: 4) { Text(source.attribution); Text(source.license).foregroundStyle(RidgeTheme.muted) }.font(.system(size: 10)) }
             }.padding(28)
