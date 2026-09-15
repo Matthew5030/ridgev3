@@ -128,6 +128,27 @@ private struct Failure: Error { var message: String }
                                          transfer: { bytes, total in await transferLog.record(bytes, total) }) { _ in }
         let sawPartialFile = await transferLog.partial
         try check(sawPartialFile, "Live byte progress arrives before a single large file completes")
+        let cancelDirectory = root.appendingPathComponent("cancel-transfer-test")
+        try fm.createDirectory(at: cancelDirectory, withIntermediateDirectories: true)
+        let cancelLog = TransferLog()
+        let transferTask = Task {
+            try await SourceDownloads.ensure([SourceAsset(file: native.file, byteCount: native.byteCount, sha256: native.sha256)],
+                                             at: cancelDirectory, remote: url.appendingPathComponent("fixture"),
+                                             transfer: { bytes, total in await cancelLog.record(bytes, total) }) { _ in }
+        }
+        for _ in 0..<100 {
+            if await cancelLog.partial { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let transferStarted = await cancelLog.partial
+        transferTask.cancel()
+        do {
+            try await transferTask.value
+            throw Failure(message: "Cancelled transfer completed successfully")
+        } catch is CancellationError { checks += 1 }
+          catch let error as URLError where error.code == .cancelled { checks += 1 }
+        try check(transferStarted, "Cancellation exercises an active transfer after bytes arrive")
+        try check(!fm.fileExists(atPath: cancelDirectory.appendingPathComponent(native.file).path), "Cancelled transfer never publishes a partial asset")
         let downloaded = try await store.downloadSelection(from: entry, selection: selection, spacing: 4) { _ in }
         let crop = try AreaCropper.prepare(directory: entry.directory, manifest: manifest, selection: selection, spacing: 4,
                                            cartographySourceID: manifest.id, downloadedPreview: downloaded)
