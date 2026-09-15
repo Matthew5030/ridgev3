@@ -92,12 +92,16 @@ def render(features,heights,b,side=2368):
     return image
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--source',type=Path,required=True);p.add_argument('--baseline',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--encoder',type=Path,required=True);p.add_argument('--materials',action='store_true');p.add_argument('--contours',action='store_true');a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('--source',type=Path,required=True);p.add_argument('--baseline',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--encoder',type=Path,required=True);appearance=p.add_mutually_exclusive_group();appearance.add_argument('--materials',action='store_true');appearance.add_argument('--illustrated',action='store_true');p.add_argument('--contours',action='store_true');a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     renderer=render;style_document=STYLE
     if a.materials:
         import materials
         renderer=lambda fs,h,b: materials.render(fs,h,b,contours=a.contours)
         style_document=materials.CONFIG
+    if a.illustrated:
+        import illustrated
+        renderer=lambda fs,h,b: illustrated.render(fs,h,b,contours=a.contours)
+        style_document=illustrated.CONFIG
     report=json.loads((a.baseline/'source.json').read_text());m=json.loads((a.source/'pack.json').read_text())
     level=next(x for x in m['horizon']['near']['levels'] if x['spacing']==8)
     coarse=np.frombuffer(shared.checked_bytes(a.source/level['file'],level),dtype='<i2').reshape(level['height'],level['width'])
@@ -126,7 +130,7 @@ def main():
     subprocess.run([str(a.encoder),'-ds',str(a.output/'astc-0.astc'),str(a.output/'astc-reference.png'),'-silent'],check=True)
     delta=np.abs(np.asarray(hd,dtype='float32')-np.asarray(Image.open(a.output/'astc-reference.png').convert('RGB'),dtype='float32'))
     report['compression']=dict(profile='ASTC sRGB 4x4 thorough',meanAbsoluteChannelError=float(delta.mean()),maxChannelError=float(delta.max()))
-    report['styleStudy']=dict(version=style_document['version'],baseline='Previous style at 2x resolution',styleSHA256=shared.digest(json.dumps(style_document,sort_keys=True).encode()),rendererSHA256=shared.digest(Path(__file__).with_name('materials.py' if a.materials else 'preview.py').read_bytes()),contours=a.contours if a.materials else True,landcoverFeatureCounts=dict(collections.Counter(category(f) or 'unclassified' for f in features)),mapSources=evidence,notes=style_document.get('notes','No habitat inferred from altitude or slope. Decorative symbols occur only inside mapped land-cover polygons.')+' No app integration. Geometry unchanged.')
+    report['styleStudy']=dict(version=style_document['version'],baseline='Previous style at 2x resolution',styleSHA256=shared.digest(json.dumps(style_document,sort_keys=True).encode()),rendererSHA256=shared.digest(Path(__file__).with_name('illustrated.py' if a.illustrated else ('materials.py' if a.materials else 'preview.py')).read_bytes()),contours=a.contours if (a.materials or a.illustrated) else True,landcoverFeatureCounts=dict(collections.Counter(category(f) or 'unclassified' for f in features)),mapSources=evidence,notes=style_document.get('notes','No habitat inferred from altitude or slope. Decorative symbols occur only inside mapped land-cover polygons.')+' No app integration. Geometry unchanged.')
     for k in ('baselinePixelsReproduced','encoderSHA256'):report.pop(k,None)
     report['encoderSHA256']=shared.digest(a.encoder.read_bytes())
     (a.output/'source.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report['styleStudy'],indent=2),flush=True)

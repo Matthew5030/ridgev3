@@ -13,6 +13,7 @@ enum Failure: Error { case invalid(String) }
 func check(_ condition: Bool, _ message: String) throws { if !condition { throw Failure.invalid(message) } }
 func digest(_ d: Data) -> String { SHA256.hash(data:d).map { String(format:"%02x",$0) }.joined() }
 let root=URL(fileURLWithPath:CommandLine.arguments[1],isDirectory:true)
+let illustratedLighting=CommandLine.arguments.contains("--illustrated-lighting")
 let materialLightingAll=CommandLine.arguments.contains("--material-lighting-all")
 let materialLighting=CommandLine.arguments.contains("--material-lighting") || materialLightingAll
 let source=try JSONDecoder().decode(Source.self,from:Data(contentsOf:root.appendingPathComponent("source.json")))
@@ -33,18 +34,30 @@ vertex O flat(uint id [[vertex_id]],constant U& u [[buffer(1)]]) {
 fragment float4 ink(O in [[stage_in]],texture2d<float> map [[texture(0)]],sampler s [[sampler(0)]],constant U& u [[buffer(1)]]) {
   float3 c=map.sample(s,in.uv).rgb;
   if(u.mode.x>0) { float sunlight=max(0.0,dot(normalize(in.n),normalize(float3(-.45,.85,-.4))));
-    if(u.mode.y>0) { c*=float3(.76,.86,1.0)*.34+float3(1.07,1.025,.94)*(.82*sunlight); }
+    if(u.mode.y>1.5) {
+      float light=.55+.22*smoothstep(.12,.50,sunlight)+.24*smoothstep(.58,.95,sunlight);
+      float3 tint=mix(float3(.83,.89,1.035),float3(1.055,1.025,.955),smoothstep(.12,.90,sunlight));
+      c*=light*tint;
+    }
+    else if(u.mode.y>0) { c*=float3(.76,.86,1.0)*.34+float3(1.07,1.025,.94)*(.82*sunlight); }
     else { c*=.86+.16*sunlight;c*=mix(float3(1),float3(1.015,1.005,.985),sunlight); } }
   return float4(c,1);
 }
+fragment float4 sky(O in [[stage_in]]) {
+  float t=smoothstep(0.0,1.0,in.uv.y);
+  return float4(mix(float3(.48,.69,.82),float3(.84,.89,.88),t),1);
+}
 """
 let library=try device.makeLibrary(source:shader,options:nil)
-func pipeline(flat:Bool,samples:Int)throws->MTLRenderPipelineState {
-  let d=MTLRenderPipelineDescriptor();d.vertexFunction=library.makeFunction(name:flat ? "flat":"terrain");d.fragmentFunction=library.makeFunction(name:"ink")
+func pipeline(flat:Bool,samples:Int,background:Bool=false)throws->MTLRenderPipelineState {
+  let d=MTLRenderPipelineDescriptor();d.vertexFunction=library.makeFunction(name:flat ? "flat":"terrain");d.fragmentFunction=library.makeFunction(name:background ? "sky":"ink")
   d.colorAttachments[0].pixelFormat = .rgba8Unorm_srgb;d.depthAttachmentPixelFormat = .depth32Float;d.rasterSampleCount=samples
   return try device.makeRenderPipelineState(descriptor:d)
 }
 let terrainPipeline=try pipeline(flat:false,samples:4), flatPipeline=try pipeline(flat:true,samples:1)
+let skyPipeline=try pipeline(flat:true,samples:4,background:true)
+let skyDepthDescription=MTLDepthStencilDescriptor();skyDepthDescription.isDepthWriteEnabled=false;skyDepthDescription.depthCompareFunction = .always
+let skyDepth=device.makeDepthStencilState(descriptor:skyDepthDescription)!
 let sd=MTLSamplerDescriptor();sd.minFilter = .linear;sd.magFilter = .linear;sd.mipFilter = .linear;sd.maxAnisotropy=16;sd.sAddressMode = .clampToEdge;sd.tAddressMode = .clampToEdge
 let sampler=device.makeSamplerState(descriptor:sd)!
 let dd=MTLDepthStencilDescriptor();dd.isDepthWriteEnabled=true;dd.depthCompareFunction = .lessEqual;let depthState=device.makeDepthStencilState(descriptor:dd)!
@@ -104,7 +117,13 @@ func draw(_ t:Target,_ map:MTLTexture,_ flat:Bool,_ uniforms:VaryingUniforms)thr
   pass.depthAttachment.texture=t.depth;pass.depthAttachment.loadAction = .clear;pass.depthAttachment.storeAction = .dontCare;pass.depthAttachment.clearDepth=1
   let command=queue.makeCommandBuffer()!,e=command.makeRenderCommandEncoder(descriptor:pass)!
   e.setRenderPipelineState(flat ? flatPipeline:terrainPipeline);e.setDepthStencilState(depthState);e.setCullMode(.none)
-  var u=uniforms;if materialLighting && !flat && (materialLightingAll || map !== maps["current"]) { u.mode.y=1 };e.setVertexBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1);e.setFragmentBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1)
+  var u=uniforms;if materialLighting && !flat && (materialLightingAll || map !== maps["current"]) { u.mode.y=1 };if illustratedLighting && !flat && map !== maps["current"] { u.mode.y=2 };
+  if illustratedLighting && !flat {
+    e.setRenderPipelineState(skyPipeline);e.setDepthStencilState(skyDepth)
+    e.setVertexBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1)
+    e.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3)
+    e.setRenderPipelineState(terrainPipeline);e.setDepthStencilState(depthState)
+  };e.setVertexBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1);e.setFragmentBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1)
   e.setFragmentTexture(map,index:0);e.setFragmentSamplerState(sampler,index:0)
   if flat { e.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3) }
   else { e.setVertexBuffer(vertices,offset:0,index:0);e.drawIndexedPrimitives(type:.triangle,indexCount:source.indexCount,indexType:.uint32,indexBuffer:indices,indexBufferOffset:0) }
@@ -150,6 +169,6 @@ for name in ["current","hd","astc"] {
   _=try draw(mapTarget,maps[name]!,true,VaryingUniforms(matrix:matrix_identity_float4x4,crop:SIMD4(0,0,1,1),mode:SIMD4(0,0,0,0)))
   try save(mapTarget.color,"map-\(name).png")
 }
-let report:[String:Any]=["device":device.name,"variants":stats,"geometryGPUBytes":vertices.allocatedSize+indices.allocatedSize,"vertexCount":source.vertexCount,"triangleCount":source.indexCount/3,"renderSize":[1440,1000],"samples":4,"anisotropy":16,"timingNote":"20 interleaved warmed-up GPU frame samples per variant; render pass only, not full app or physical iPad performance.","nativeASTCUploadAndRendering":true,"materialLighting":materialLighting,"materialLightingAll":materialLightingAll]
+let report:[String:Any]=["device":device.name,"variants":stats,"geometryGPUBytes":vertices.allocatedSize+indices.allocatedSize,"vertexCount":source.vertexCount,"triangleCount":source.indexCount/3,"renderSize":[1440,1000],"samples":4,"anisotropy":16,"timingNote":"20 interleaved warmed-up GPU frame samples per variant; render pass only, not full app or physical iPad performance.","nativeASTCUploadAndRendering":true,"materialLighting":materialLighting,"materialLightingAll":materialLightingAll,"illustratedLighting":illustratedLighting]
 let data=try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]);try data.write(to:root.appendingPathComponent("gpu.json"))
 print(String(data:data,encoding:.utf8)!)

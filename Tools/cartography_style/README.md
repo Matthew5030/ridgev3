@@ -101,3 +101,22 @@ Generate using `--materials`, baseline `Crib-Goch-materials-v1`, output `Crib-Go
 Visual assessment: edges are less abrupt, but the result is still too soft/painted for the user's desired game-like terrain. **Do not treat this as an accepted final style.** Stop increasing baked colour noise. The next useful experiment is a small set of reusable material albedo/normal/roughness maps with compact per-area masks, terrain-aware/triplanar sampling, subtle normal strength and preserved map ink. Material normals would change lighting, not measured geometry. This is a proposed next experiment, not implemented functionality or measured memory usage. Water/building boundaries and route semantics need distinct handling; avoid using the broad blend as an access/land-cover query.
 
 This remains isolated from the production application. No nationwide reprocessing has started.
+
+## Illustrated / matte experiment
+
+The user requested a deliberately stylized, deliverable direction instead of semi-realistic materials. `illustrated.py` removes **all noise, icons and baked relief shading**. It uses a small sage/warm-stone/blue palette, quiet source-driven land-cover tints and the normalized soft transitions. Water/building geometry and mapped line positions remain fixed. Optional `--contours` draws understated planning contours; the reviewed screenshots use contours off. Geometry positions, normals, indices and camera are unchanged from the original texture lab.
+
+Reproduce with the existing preview command using `--illustrated` instead of `--materials`, baseline `Crib-Goch-materials-v2`, output `Crib-Goch-illustrated-v1`. `--illustrated` and `--materials` are mutually exclusive. Compile the updated Swift test renderer, then:
+
+```sh
+/tmp/ridge-texture-lab-render '/Volumes/MLB_EXT_4TB/Ridge Experiments/Crib-Goch-illustrated-v1' --material-lighting-all --illustrated-lighting
+python Tools/texture_lab/verify.py '/Volumes/MLB_EXT_4TB/Ridge Experiments/Crib-Goch-illustrated-v1'
+```
+
+The candidate uses soft stepped diffuse illumination (two smooth lighting transitions), cool shadow tint and warm sunlight, plus a blue-to-pale sky gradient. The `current` variant retains the previous material lighting; all views share the sky. This is a comparison of **art direction including lighting**, not an isolated texture-resolution or timing comparison. The sky is a background draw, not haze obscuring the terrain. No cast-shadow, displacement, new mesh or physical vegetation system is claimed.
+
+Apple M4 Pro results: **21.34 MiB** ASTC texture allocation, **4.53 MiB** unchanged geometry allocation, ~**0.159 ms** isolated close-view GPU render pass including the background. ASTC mip bundle compresses with zlib to **2,315,153 bytes**, much less than the earlier noisy material-v1 test's 21,008,932 bytes. This is a measured ~1 km² sample, not a nationwide size prediction.
+
+Flat GPU readbacks exactly match both the HD source and Arm's ASTC CPU reference. Candidate ASTC versus uncompressed close-view mean absolute colour-channel difference is **0.000925/255**, maximum **2/255**. Constant-elevation unknown terrain is verified as a uniform matte colour (no noise), with deterministic rerendering and unchanged height inputs. No physical iPad testing or production integration has occurred.
+
+Remote-review screenshots: `close-astc.png` and `wide-astc.png` in the illustrated experiment directory. The overview is the deliberately small fixed test cutout, not a change to the app's horizon. This remains a candidate awaiting the user's visual assessment; no UK rebuild has started.
