@@ -211,7 +211,8 @@ def contour_segments(heights, interval=10):
         yield level, segments
 
 
-def render_texture(features, heights, bounds, side):
+def render_texture(features, heights, bounds, side, style_scale=1):
+    if style_scale not in (1, 2): raise ValueError('Map style scale must be 1 or 2')
     image = Image.new('RGB', (side, side), '#ede9d9')
     draw = ImageDraw.Draw(image)
     fills = {'openLand':'#e3e3ce', 'accessLand':'#e3ddd6', 'woodland':'#c8d8bc', 'water':'#a8cbd1', 'building':'#9d9485'}
@@ -243,7 +244,7 @@ def render_texture(features, heights, bounds, side):
     sx, sy = (side - 1) / (contour_grid.shape[1] - 1), (side - 1) / (contour_grid.shape[0] - 1)
     for level, segments in contour_segments(contour_grid):
         for points in segments:
-            draw.line([(float(x * sx), float(y * sy)) for x, y in points], fill='#a79a80' if level % 50 == 0 else '#c5b99f', width=2 if level % 50 == 0 else 1)
+            draw.line([(float(x * sx), float(y * sy)) for x, y in points], fill='#a79a80' if level % 50 == 0 else '#c5b99f', width=(2 if level % 50 == 0 else 1) * style_scale)
     line_colors = {'water':'#76adb8', 'majorRoad':'#d8a979', 'minorRoad':'#b5a68b', 'track':'#9b8d70',
                    'footpath':'#ab6471', 'bridleway':'#866891', 'unknownPath':'#a49b95', 'boundary':'#ada79f'}
     def draw_line(geometry, kind):
@@ -252,11 +253,11 @@ def render_texture(features, heights, bounds, side):
             for p in coords: draw_line(dict(type='LineString', coordinates=p), kind)
         elif typ == 'LineString':
             points = [pixels(bounds, p, side) for p in coords]
-            width = {'majorRoad':7, 'minorRoad':5, 'water':2, 'track':3}.get(kind, 3)
+            width = {'majorRoad':7, 'minorRoad':5, 'water':2, 'track':3}.get(kind, 3) * style_scale
             if kind in ['footpath','bridleway','track','unknownPath','boundary']:
-                dashed(draw, points, line_colors[kind], width)
+                dashed(draw, points, line_colors[kind], width, dash=10 * style_scale, gap=6 * style_scale)
             else:
-                if kind.endswith('Road'): draw.line(points, fill='#fffdf3', width=width + 3, joint='curve')
+                if kind.endswith('Road'): draw.line(points, fill='#fffdf3', width=width + 3 * style_scale, joint='curve')
                 draw.line(points, fill=line_colors[kind], width=width, joint='curve')
     for kind in line_colors:
         for f in features:
