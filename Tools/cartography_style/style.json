@@ -1,0 +1,30 @@
+{
+  "version": "ridge-landscape-preview-1",
+  "description": "Source-mapped land cover over a gentle elevation tint. Patterns are cartographic symbols, not individual observed rocks or trees.",
+  "elevationRamp": [[0,"#d8dfba"],[350,"#d6d9b9"],[650,"#d9d4bf"],[1000,"#d4d1c8"],[1400,"#d0cfca"]],
+  "landcover": {
+    "grassland": {"label":"Mapped grassland / meadow","color":"#c7d2a6"},
+    "heath": {"label":"Mapped heath","color":"#cbbbaf","pattern":"heath","ink":"#aa9589"},
+    "scrub": {"label":"Mapped scrub","color":"#becaaa","pattern":"dots","ink":"#94a17e"},
+    "woodland": {"label":"Mapped woodland","color":"#abc49f","pattern":"woodland","ink":"#83a17c"},
+    "bare_rock": {"label":"Mapped bare rock","color":"#c3c2b9","pattern":"rock","ink":"#999b93"},
+    "scree": {"label":"Mapped scree","color":"#d0ccc0","pattern":"scree","ink":"#a9a498"},
+    "sand": {"label":"Mapped sand","color":"#e4d7b5","pattern":"dots","ink":"#c4b491"},
+    "shingle": {"label":"Mapped shingle","color":"#d6d0bf","pattern":"scree","ink":"#b3ad9c"},
+    "wetland": {"label":"Mapped wetland (not open water)","color":"#bbd0b7","pattern":"wetland","ink":"#82a99b"},
+    "water": {"label":"Mapped open water","color":"#9fc9d4"},
+    "building": {"label":"Building","color":"#a79a8c"}
+  },
+  "linework": {
+    "contour": {"label":"Contour · 10 m","color":"#b4a187"},
+    "indexContour": {"label":"Index contour · 50 m","color":"#948169"},
+    "water": {"label":"Mapped watercourse","color":"#6b9fac"},
+    "majorRoad": {"label":"Major road","color":"#d4a275"},
+    "minorRoad": {"label":"Minor road","color":"#b6a790"},
+    "track": {"label":"Track","color":"#927e65"},
+    "footpath": {"label":"Mapped footpath · access separate","color":"#9c536b"},
+    "bridleway": {"label":"Mapped bridleway · access separate","color":"#79617e"},
+    "unknownPath": {"label":"Unclassified mapped way","color":"#918981"},
+    "boundary": {"label":"Mapped boundary · type separate","color":"#a29a91"}
+  }
+}
