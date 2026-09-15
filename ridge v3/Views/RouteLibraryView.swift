@@ -61,7 +61,7 @@ struct RouteLibraryView: View {
                                     Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicateRoute(route) }.disabled(store.isRouting)
                                     Button("Delete route", systemImage: "trash", role: .destructive) { removal = route }.disabled(store.isRouting)
                                 }
-                                .overlay(alignment: .topTrailing) {
+                                .overlay(alignment: .bottomTrailing) {
                                     Menu {
                                         Button(favouriteIDs.contains(route.id) ? "Remove favourite" : "Add to favourites", systemImage: favouriteIDs.contains(route.id) ? "star.fill" : "star") { toggleFavourite(route.id) }
                                     Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
@@ -188,8 +188,7 @@ private struct LibraryRouteCard: View {
                 Image(systemName: terrainReady ? "checkmark.circle.fill" : "square.dashed")
                 Text(terrainReady ? "Ready to open in 3D" : "Terrain area needed · GPX available")
                 Spacer(minLength: 3)
-                Image(systemName: "arrow.up.right")
-            }.font(.system(size: 11, weight: .medium)).foregroundStyle(terrainReady ? RidgeTheme.forest : RidgeTheme.muted)
+            }.padding(.trailing, 38).font(.system(size: 11, weight: .medium)).foregroundStyle(terrainReady ? RidgeTheme.forest : RidgeTheme.muted)
             }.padding(20)
         }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 24))
             .clipShape(RoundedRectangle(cornerRadius: 24))
