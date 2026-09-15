@@ -49,6 +49,7 @@ struct MapTexture: Codable, Hashable, Sendable {
 }
 
 struct MapPlace: Codable, Hashable, Identifiable, Sendable {
+    var searchIdentity: String { name.lowercased() + String(format: "|%.6f|%.6f", coordinate.latitude, coordinate.longitude) }
     var id: String
     var name: String
     var coordinate: GeoPoint

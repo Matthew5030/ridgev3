@@ -192,6 +192,14 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
         let nearest = RouteEngine.nearestRouteLocation(to: via, segments: inserted.segments.map(\.points))
         try check(nearest != nil && nearest!.point.distance(to: via) < 0.01, "Route hit testing finds a geographic location on a leg")
         print("PASS via point insertion, deletion, endpoint handling and undo")
+        let coarser = AtlasAreaPlanner.propose(bounds: original.manifest.bounds, entries: [sourceEntry], spacing: 16,
+                                               required: original.manifest.bounds, route: store.activeRoute)
+        store.expandAtlasArea(coarser, spacing: 16)
+        store.terrainViewReleased(); try await settle(store)
+        try check(store.activeTerrain?.level.spacing == 16, "Expansion honours the detail explicitly selected in the atlas")
+        let sameNameA = MapPlace(id: "a", name: "High Point", coordinate: first, kind: "peak")
+        let sameNameB = MapPlace(id: "b", name: "High Point", coordinate: second, kind: "peak")
+        try check(sameNameA.searchIdentity != sameNameB.searchIdentity, "Search preserves different places with identical names")
         print("PASS extension flow: \(checks) assertions")
     }
 }

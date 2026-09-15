@@ -2,6 +2,24 @@ import SwiftUI
 
 struct RouteLibraryView: View {
     @Bindable var store: AppStore
+    @State private var query = ""
+    @State private var favouritesOnly = false
+    @AppStorage("ridge.favouriteRoutes") private var favouriteData = Data()
+    private var favouriteIDs: Set<UUID> { Set((try? JSONDecoder().decode([UUID].self, from: favouriteData)) ?? []) }
+    private var visibleRoutes: [RidgeRoute] {
+        store.routes.filter { route in
+            (!favouritesOnly || favouriteIDs.contains(route.id)) &&
+            (query.isEmpty || route.name.localizedCaseInsensitiveContains(query) || route.notes.localizedCaseInsensitiveContains(query))
+        }.sorted { a, b in
+            if favouriteIDs.contains(a.id) != favouriteIDs.contains(b.id) { return favouriteIDs.contains(a.id) }
+            return a.modifiedAt > b.modifiedAt
+        }
+    }
+    private func toggleFavourite(_ id: UUID) {
+        var ids = favouriteIDs
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        if let data = try? JSONEncoder().encode(Array(ids)) { favouriteData = data }
+    }
     @State private var renameTarget: RidgeRoute?
     @State private var renameText = ""
     @State private var removal: RidgeRoute?
@@ -13,6 +31,14 @@ struct RouteLibraryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
+                if !store.routes.isEmpty {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundStyle(RidgeTheme.muted)
+                        TextField("Search routes and notes", text: $query).autocorrectionDisabled()
+                        if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Clear search") }
+                    }.padding(14).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 14))
+                    Toggle("Favourites only", isOn: $favouritesOnly).font(.subheadline).tint(RidgeTheme.forest)
+                }
                 if store.routes.isEmpty { emptyState }
                 else {
                     HStack(spacing: 7) {
@@ -21,14 +47,18 @@ struct RouteLibraryView: View {
                             .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
                     }.foregroundStyle(RidgeTheme.muted)
                     LazyVStack(spacing: 16) {
-                        ForEach(store.routes) { route in
+                        ForEach(visibleRoutes) { route in
                             let entry = store.entries.first { $0.id == route.regionID }
                             Button { store.openRoute(route) } label: {
                                 LibraryRouteCard(route: route, areaName: entry?.manifest.name,
                                                  terrainReady: entry?.installed == true)
                             }.buttonStyle(.plain)
+                                .overlay(alignment: .bottomTrailing) {
+                                    if favouriteIDs.contains(route.id) { Image(systemName: "star.fill").foregroundStyle(RidgeTheme.forest).padding(18).accessibilityLabel("Favourite route").allowsHitTesting(false) }
+                                }
                                 .contextMenu {
                                     Button("Open in 3D", systemImage: "mountain.2") { store.openRoute(route) }.disabled(store.isRouting)
+                                    Button(favouriteIDs.contains(route.id) ? "Remove favourite" : "Add to favourites", systemImage: favouriteIDs.contains(route.id) ? "star.fill" : "star") { toggleFavourite(route.id) }
                                     Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
                                     Button("Rename", systemImage: "pencil") { renameTarget = route; renameText = route.name }.disabled(store.isRouting)
                                     Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicateRoute(route) }.disabled(store.isRouting)
@@ -36,7 +66,8 @@ struct RouteLibraryView: View {
                                 }
                                 .overlay(alignment: .topTrailing) {
                                     Menu {
-                                        Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
+                                        Button(favouriteIDs.contains(route.id) ? "Remove favourite" : "Add to favourites", systemImage: favouriteIDs.contains(route.id) ? "star.fill" : "star") { toggleFavourite(route.id) }
+                                    Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
                                         Button("Rename", systemImage: "pencil") { renameTarget = route; renameText = route.name }.disabled(store.isRouting)
                                         Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicateRoute(route) }.disabled(store.isRouting)
                                         Button("Delete route", systemImage: "trash", role: .destructive) { removal = route }.disabled(store.isRouting)
@@ -47,6 +78,9 @@ struct RouteLibraryView: View {
                                     }.accessibilityLabel("Options for \(route.name)").padding(12)
                                 }
                         }
+                    }
+                    if visibleRoutes.isEmpty {
+                        Text(favouritesOnly ? "No favourite routes match. Turn off the filter to see all routes." : "No routes match your search.").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                     }
                     Text("A route begins in a landscape. Open a saved area to plan a new line in 3D.")
                         .font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(4).padding(.horizontal, 3)

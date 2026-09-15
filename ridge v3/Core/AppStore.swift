@@ -359,13 +359,13 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         else { install(source, spacing: spacing, selection: selection, displayName: proposal.preview?.name) }
     }
 
-    func expandAtlasArea(_ proposal: AtlasAreaProposal) {
+    func expandAtlasArea(_ proposal: AtlasAreaProposal, spacing: Int? = nil) {
         guard let terrain = activeTerrain, proposal.canOpen,
               let source = proposal.source, let selection = proposal.selection, let preview = proposal.preview,
               AtlasAreaPlanner.contains(preview.bounds, terrain.manifest.bounds),
               ((activeRoute?.points.map(\.coordinate) ?? []) + (activeRoute?.waypoints.map { $0.point.coordinate } ?? [])).allSatisfy(preview.bounds.contains) else { return }
         pendingExtension = AreaExtensionProposal(destination: preview.bounds.center, source: source, selection: selection, preview: preview, displayName: preview.name)
-        extensionSpacing = terrain.level.spacing
+        extensionSpacing = spacing ?? terrain.level.spacing
         extensionForRoute = false
         confirmExtension()
     }

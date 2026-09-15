@@ -15,6 +15,10 @@ struct ExploreView: View {
     var onFinish: (() -> Void)? = nil
     @Environment(\.scenePhase) private var scenePhase
     @State private var query = ""
+    @AppStorage("ridge.recentSearches") private var recentSearchData = Data()
+    @State private var selectedSpacing = 4
+    @State private var selectionMessage: String?
+    private var recentSearches: [String] { (try? JSONDecoder().decode([String].self, from: recentSearchData)) ?? [] }
     @State private var focus = AtlasFocus(point: GeoPoint(latitude: 53.6, longitude: -3.4), scale: 7400)
     @State private var selecting = false
     @State private var bounds: GeoBounds?
@@ -24,17 +28,24 @@ struct ExploreView: View {
     @State private var refreshing = false
     @State private var draggingSelection = false
     @State private var budgetRevision = 0
-    private var spacing: Int { expanding?.defaultSpacing ?? 4 }
+    private var spacing: Int { selectedSpacing }
     private var atlasEntries: [PackEntry] { store.selectableEntries.sorted { $0.manifest.name < $1.manifest.name } }
     private var busy: Bool { store.isPreparing || store.extensionInProgress }
-    private var proposalID: String { "\(String(describing: bounds))-\(draggingSelection)-\(budgetRevision)-\(store.entries.map { $0.id + String($0.installed) }.joined(separator: ","))" }
+    private var proposalID: String { "\(spacing)-\(String(describing: bounds))-\(draggingSelection)-\(budgetRevision)-\(store.entries.map { $0.id + String($0.installed) }.joined(separator: ","))" }
 
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width > geometry.size.height && geometry.size.width >= 700
             VStack(spacing: 0) {
                 header
-                if !query.isEmpty { searchResults.frame(maxHeight: 180) }
+                if !query.isEmpty { searchResults.frame(maxHeight: 210) }
+                else if !selecting && !recentSearches.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack { ForEach(recentSearches, id: \.self) { term in
+                            Button { query = term } label: { Label(term, systemImage: "clock").font(.subheadline).padding(10).background(RidgeTheme.panel, in: Capsule()) }
+                        } }.padding(.horizontal, 18)
+                    }.padding(.bottom, 6)
+                }
                 if wide {
                     HStack(spacing: 0) {
                         atlas
@@ -49,6 +60,7 @@ struct ExploreView: View {
             .task(id: proposalID) { await updateProposal() }
             .onAppear {
                 if let expanding {
+                    selectedSpacing = expanding.defaultSpacing
                     var initial = expanding.bounds
                     for point in (store.activeRoute?.points.map(\.coordinate) ?? []) + (store.activeRoute?.waypoints.map { $0.point.coordinate } ?? []) + [expansionFocus].compactMap({ $0 }) {
                         initial.minLatitude = min(initial.minLatitude, point.latitude); initial.maxLatitude = max(initial.maxLatitude, point.latitude)
@@ -151,11 +163,21 @@ struct ExploreView: View {
                         Button("Draw new", systemImage: "rectangle.dashed") { selectionBinding.wrappedValue = nil; lastValidBounds = nil }
                         Spacer(minLength: 0)
                     }.font(.system(size: 12, weight: .medium))
+                    HStack {
+                        Text("Terrain detail").font(.subheadline)
+                        Spacer()
+                        Picker("Terrain detail", selection: $selectedSpacing) {
+                            ForEach([1, 2, 4, 8, 16, 32], id: \.self) { Text("\($0) m").tag($0) }
+                        }.pickerStyle(.menu).disabled(busy)
+                    }
                     VStack(alignment: .leading, spacing: 6) {
                         if refreshing {
                             Label("Checking area…", systemImage: "hourglass").font(.caption).foregroundStyle(RidgeTheme.muted)
                         } else if let reason = proposal?.reason {
-                            Text(reason).font(.system(size: 12)).foregroundStyle(RidgeTheme.orange).fixedSize(horizontal: false, vertical: true)
+                            Text(reason).font(.subheadline).foregroundStyle(RidgeTheme.orange).fixedSize(horizontal: false, vertical: true)
+                            if let coarser = fittingCoarserSpacing {
+                                Button("Use \(coarser) m terrain for this area") { selectedSpacing = coarser }.font(.subheadline.weight(.semibold))
+                            }
                         } else {
                             Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Same sharp map")
                                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
@@ -169,6 +191,7 @@ struct ExploreView: View {
                 } else {
                     Text("Tap a highlighted tile, or drag across several tiles. Two fingers move the map; pinch to zoom. Selection stops at available coverage.")
                         .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
+                    if let selectionMessage { Text(selectionMessage).font(.subheadline).foregroundStyle(RidgeTheme.orange) }
                     Button("Select centre tile", systemImage: "viewfinder") { selectCentre() }.buttonStyle(RidgeButtonStyle())
                 }
             } else {
@@ -179,20 +202,49 @@ struct ExploreView: View {
         }.padding(20).background(RidgeTheme.panel)
     }
 
+    private var fittingCoarserSpacing: Int? {
+        guard let bounds, let preview = proposal?.preview, proposal?.allowance?.allowed == false else { return nil }
+        return preview.levels.map(\.spacing).filter { $0 > spacing }.sorted().first {
+            AtlasAreaPlanner.propose(bounds: bounds, entries: atlasEntries, spacing: $0,
+                                     required: expanding?.bounds, route: expanding == nil ? nil : store.activeRoute).canOpen
+        }
+    }
+
+    private func rememberSearch(_ term: String) {
+        let terms = [term] + recentSearches.filter { $0.caseInsensitiveCompare(term) != .orderedSame }
+        if let data = try? JSONEncoder().encode(Array(terms.prefix(6))) { recentSearchData = data }
+    }
+
+    private func placeContext(_ place: MapPlace) -> String {
+        let area = atlasEntries.filter { $0.manifest.bounds.contains(place.coordinate) }
+            .min { $0.manifest.bounds.areaSquareKilometers < $1.manifest.bounds.areaSquareKilometers }?.manifest.name
+        let location = area ?? String(format: "%.3f, %.3f", place.coordinate.latitude, place.coordinate.longitude)
+        return place.kind.capitalized + " · " + location
+    }
+
     private var searchResults: some View {
         ScrollView {
             VStack(spacing: 0) {
                 let areas = atlasEntries.filter { $0.manifest.name.localizedCaseInsensitiveContains(query) }
                 let places = (atlasEntries.flatMap { $0.manifest.places } + (store.atlas?.places ?? [])).filter { $0.name.localizedCaseInsensitiveContains(query) }
                 ForEach(areas) { entry in
-                    Button { query = ""; focusOn(entry.manifest.bounds) } label: { Label(entry.manifest.name, systemImage: "mountain.2").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
+                    Button { rememberSearch(entry.manifest.name); query = ""; focusOn(entry.manifest.bounds) } label: { Label(entry.manifest.name, systemImage: "mountain.2").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
                 }
-                ForEach(Array(Dictionary(grouping: places, by: \.name).compactMap { $0.value.first }.sorted { $0.name < $1.name }.prefix(6)), id: \.name) { place in
+                ForEach(Array(Dictionary(grouping: places, by: \.searchIdentity).compactMap { $0.value.first }.sorted { $0.name < $1.name }.prefix(12)), id: \.searchIdentity) { place in
                     Button {
-                        query = ""
+                        rememberSearch(place.name); query = ""
                         if selecting { selectionBinding.wrappedValue = bounds.flatMap { AtlasAreaPlanner.snapped(AtlasAreaPlanner.recentered($0, on: place.coordinate), entries: atlasEntries, preservingSize: true) } ?? AtlasAreaPlanner.tile(at: place.coordinate, entries: atlasEntries) }
                         focus = AtlasFocus(point: place.coordinate, scale: 1_000_000)
-                    } label: { Label(place.name, systemImage: "mappin").frame(maxWidth: .infinity, alignment: .leading).padding(12) }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: place.kind == "peak" ? "mountain.2" : "mappin")
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(place.name)
+                                Text(placeContext(place)).font(.caption).foregroundStyle(RidgeTheme.muted)
+                            }
+                            Spacer()
+                        }.frame(minHeight: 44).padding(.horizontal, 12).padding(.vertical, 4)
+                    }
                 }
                 if areas.isEmpty && places.isEmpty { Text("No matching places in the offline atlas.").font(.footnote).padding(12) }
             }
@@ -206,6 +258,7 @@ struct ExploreView: View {
                 snapped = AtlasAreaPlanner.snapped(GeoBounds(minLatitude: min(required.minLatitude, chosen.minLatitude), minLongitude: min(required.minLongitude, chosen.minLongitude), maxLatitude: max(required.maxLatitude, chosen.maxLatitude), maxLongitude: max(required.maxLongitude, chosen.maxLongitude)), entries: atlasEntries)
             }
             guard bounds != snapped else { return }
+            selectionMessage = nil
             bounds = snapped; proposal = nil; lastValidBounds = nil; refreshing = snapped != nil
         })
     }
@@ -215,8 +268,11 @@ struct ExploreView: View {
     }
     private func selectCentre() {
         guard let viewport else { return }
-        let point = atlasEntries.first(where: { $0.manifest.bounds.contains(viewport.center) }) != nil ? viewport.center : atlasEntries.first?.manifest.bounds.center
-        selectionBinding.wrappedValue = point.flatMap { AtlasAreaPlanner.tile(at: $0, entries: atlasEntries) }
+        guard let tile = AtlasAreaPlanner.tile(at: viewport.center, entries: atlasEntries) else {
+            selectionMessage = "No prepared terrain at the map centre. Move to highlighted coverage or search for a place."
+            return
+        }
+        selectionBinding.wrappedValue = tile
         if let bounds { focus = AtlasFocus(point: bounds.center, scale: 600_000, bounds: Self.padded(bounds, factor: 8)) }
     }
     private func resize(_ factor: Double) {
@@ -271,7 +327,7 @@ struct ExploreView: View {
         }
         proposal = checked
         guard checked.canOpen else { return }
-        if expanding != nil { onFinish?(); store.expandAtlasArea(checked) }
+        if expanding != nil { onFinish?(); store.expandAtlasArea(checked, spacing: spacing) }
         else { store.openAtlasArea(checked, spacing: spacing) }
     }
 }
