@@ -6,10 +6,13 @@ from materials import soft_weight,color
 import prepare_packs as shared
 
 CONFIG={
- 'version':'ridge-illustrated-preview-1',
+ 'version':'ridge-illustrated-planning-preview-1',
  'palette':{'grassland':'#a8bea0','heath':'#b9b39f','scrub':'#99b39d',
  'woodland':'#7d9f8c','bare_rock':'#c8c4b7','scree':'#c5c5b5','sand':'#d9c9a5',
  'shingle':'#c7c4b3','wetland':'#9dbbb0','water':'#71b3c4','building':'#b3a18c'},
+ 'contours':{'intervalMetres':10,'indexIntervalMetres':50,'minorColor':'#88795f','indexColor':'#79684e','minorWidth':2,'indexWidth':4,'minorOpacity':.46,'indexOpacity':.64},
+ 'linework':{'majorRoad':{'label':'Major road','color':'#cfb48c','width':10},'minorRoad':{'label':'Minor road','color':'#dfcdb0','width':7},'track':{'label':'Track','color':'#92795c','width':4},'footpath':{'label':'Mapped footpath','color':'#a95162','width':5},'bridleway':{'label':'Mapped bridleway','color':'#82678e','width':5},'unknownPath':{'label':'Unclassified mapped way','color':'#837d73','width':4},'water':{'label':'Watercourse','color':'#5598af','width':4},'boundary':{'label':'Mapped boundary','color':'#a39b8b','width':2}},
+ 'dashPixels':[20,12],
  'notes':'Smooth matte illustrated palette, no noise, icons or baked relief. Subtle mapped land-cover tints with normalized 24 m transitions. Dynamic stylized lighting is applied by the Metal test renderer. Geometry and source lines unchanged.'
 }
 
@@ -37,19 +40,23 @@ def render(features,heights,b,side=2368,contours=False):
     for paint,alpha in hard:base=base*(1-alpha[...,None])+paint*alpha[...,None]
     image=Image.fromarray(np.clip(base,0,255).astype('uint8'))
     if contours:
-        overlay=image.copy();d=ImageDraw.Draw(overlay)
-        for level,segments in shared.contour_segments(heights):
-            for points in segments:d.line([(x*(side-1)/(heights.shape[1]-1),y*(side-1)/(heights.shape[0]-1)) for x,y in points],fill='#847f6c',width=3 if level%50==0 else 1)
-        image=Image.blend(image,overlay,.26)
+        c=CONFIG['contours']
+        minor=Image.new('L',(side,side));index=Image.new('L',(side,side))
+        md=ImageDraw.Draw(minor);idx=ImageDraw.Draw(index)
+        for level,segments in shared.contour_segments(heights,c['intervalMetres']):
+            heavy=level%c['indexIntervalMetres']==0
+            for points in segments:
+                (idx if heavy else md).line([(x*(side-1)/(heights.shape[1]-1),y*(side-1)/(heights.shape[0]-1)) for x,y in points],fill=255,width=c['indexWidth'] if heavy else c['minorWidth'])
+        for mask,ink,opacity in [(minor,c['minorColor'],c['minorOpacity']),(index,c['indexColor'],c['indexOpacity'])]:
+            image.paste(ink,(0,0,side,side),mask.point(lambda value:round(value*opacity)))
     d=ImageDraw.Draw(image)
-    paints={'majorRoad':('#cfb48c',9),'minorRoad':('#dfcdb0',6),'track':('#98846c',3),
-            'footpath':('#b56e6b',3),'bridleway':('#94839e',3),'unknownPath':('#928d81',2),'water':('#70aabd',3)}
+    paints=CONFIG['linework']
     def line(g,k):
         if g['type']=='MultiLineString':
             for p in g['coordinates']:line({'type':'LineString','coordinates':p},k)
         elif g['type']=='LineString':
-            points=[shared.pixels(b,p,side) for p in g['coordinates']];ink,width=paints[k]
-            if k in ('footpath','bridleway','track','unknownPath'):shared.dashed(d,points,ink,width,dash=18,gap=11)
+            points=[shared.pixels(b,p,side) for p in g['coordinates']];ink,width=paints[k]['color'],paints[k]['width']
+            if k in ('footpath','bridleway','track','unknownPath','boundary'):shared.dashed(d,points,ink,width,dash=CONFIG['dashPixels'][0],gap=CONFIG['dashPixels'][1])
             else:
                 if k.endswith('Road'):d.line(points,fill='#f4ead7',width=width+4,joint='curve')
                 d.line(points,fill=ink,width=width,joint='curve')

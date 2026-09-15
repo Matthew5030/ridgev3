@@ -133,5 +133,6 @@ def main():
     report['styleStudy']=dict(version=style_document['version'],baseline='Previous style at 2x resolution',styleSHA256=shared.digest(json.dumps(style_document,sort_keys=True).encode()),rendererSHA256=shared.digest(Path(__file__).with_name('illustrated.py' if a.illustrated else ('materials.py' if a.materials else 'preview.py')).read_bytes()),contours=a.contours if (a.materials or a.illustrated) else True,landcoverFeatureCounts=dict(collections.Counter(category(f) or 'unclassified' for f in features)),mapSources=evidence,notes=style_document.get('notes','No habitat inferred from altitude or slope. Decorative symbols occur only inside mapped land-cover polygons.')+' No app integration. Geometry unchanged.')
     for k in ('baselinePixelsReproduced','encoderSHA256'):report.pop(k,None)
     report['encoderSHA256']=shared.digest(a.encoder.read_bytes())
+    (a.output/'style.json').write_text(json.dumps(style_document,indent=2)+'\n')
     (a.output/'source.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report['styleStudy'],indent=2),flush=True)
 if __name__=='__main__':main()

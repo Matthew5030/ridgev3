@@ -120,3 +120,15 @@ Apple M4 Pro results: **21.34 MiB** ASTC texture allocation, **4.53 MiB** unchan
 Flat GPU readbacks exactly match both the HD source and Arm's ASTC CPU reference. Candidate ASTC versus uncompressed close-view mean absolute colour-channel difference is **0.000925/255**, maximum **2/255**. Constant-elevation unknown terrain is verified as a uniform matte colour (no noise), with deterministic rerendering and unchanged height inputs. No physical iPad testing or production integration has occurred.
 
 Remote-review screenshots: `close-astc.png` and `wide-astc.png` in the illustrated experiment directory. The overview is the deliberately small fixed test cutout, not a change to the app's horizon. This remains a candidate awaiting the user's visual assessment; no UK rebuild has started.
+
+## Illustrated planning pass — contours and navigation ink restored
+
+Following approval of the illustrated appearance, the user requested contours and paths back. The `ridge-illustrated-planning-preview-1` palette/terrain lighting is unchanged. Added 10 m contours with stronger 50 m index lines; strengthened rose footpaths, purple bridleways, brown tracks and grey unclassified ways; retained roads/streams and restored subdued mapped boundary lines. Source line geometry is unchanged. All marks are rasterized into the 2× texture before ASTC compression, so they follow the same terrain surface without separate floating line meshes. This does not fix or change the application's interactive planned-route renderer.
+
+Contour colours, opacity, widths, intervals and path paints are declared in `illustrated.CONFIG`. The preview now emits `style.json` alongside `source.json`, so the exact legend/paint definition travels with the experiment. No repeated land-cover symbols have returned.
+
+Run `preview.py --illustrated --contours` with baseline `Crib-Goch-illustrated-v1` and output `Crib-Goch-illustrated-planning-v1`. Render with `--illustrated-lighting-all` for an identical illustrated camera/light comparison on both baseline and candidate. The previous `close-hd.png` was reproduced **pixel-for-pixel** as this experiment's `close-current.png`, and vertex/index hashes match. This confirms that the before/after changes only map ink, not terrain or lighting.
+
+Actual ASTC allocation stays **21.34 MiB**; the zlib-compressed mip bundle is **3,320,139 bytes** (~3.3 MB). Flat GPU readbacks exactly match both source PNG and ASTC CPU reference. Compressed versus uncompressed close view: mean absolute channel error **0.00248/255**, maximum **4/255**. Uniform-colour/immutable-height tests still pass. Mac-only experiment, not an application rollout or physical iPad test.
+
+Native screenshots: `close-astc.png` and `wide-astc.png` under `/Volumes/MLB_EXT_4TB/Ridge Experiments/Crib-Goch-illustrated-planning-v1`.
