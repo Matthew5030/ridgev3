@@ -79,7 +79,7 @@ struct RouteLibraryView: View {
                     if visibleRoutes.isEmpty {
                         Text(favouritesOnly ? "No favourite routes match. Turn off the filter to see all routes." : "No routes match your search.").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                     }
-                    Text("A route begins in a landscape. Open a saved area to plan a new line in 3D.")
+                    Text("Routes are saved automatically on this device.")
                         .font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(4).padding(.horizontal, 3)
                 }
             }.padding(24).frame(maxWidth: 1280).frame(maxWidth: .infinity)
@@ -107,7 +107,6 @@ struct RouteLibraryView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 8) {
-                Eyebrow(text: "Lines worth following")
                 Text("Routes").font(.system(size: 38, weight: .regular, design: .serif))
             }
             Spacer()
@@ -127,13 +126,13 @@ struct RouteLibraryView: View {
                     .font(.system(size: 56, weight: .ultraLight)).foregroundStyle(RidgeTheme.orange)
             }.padding(.top, 12).accessibilityHidden(true)
             VStack(spacing: 12) {
-                Text("Every good day\nstarts with a line.")
+                Text("No saved routes")
                     .font(.system(size: 30, weight: .regular, design: .serif)).multilineTextAlignment(.center)
-                Text("Choose a landscape, follow its contours and make a route your own. Your saved routes will live here.")
+                Text("Open an area to plan a route, or import a GPX file.")
                     .font(.system(size: 14)).lineSpacing(4).foregroundStyle(RidgeTheme.muted).multilineTextAlignment(.center)
             }
             VStack(spacing: 10) {
-                Button("Choose a landscape") { store.tab = .explore }.buttonStyle(RidgeButtonStyle())
+                Button("Find an area") { store.tab = .explore }.buttonStyle(RidgeButtonStyle())
                 Button { store.showGPXImporter = true } label: { Label("Import a GPX file", systemImage: "square.and.arrow.down") }
                     .buttonStyle(RidgeButtonStyle(secondary: true)).disabled(store.isRouting)
             }.padding(.top, 3)
@@ -186,7 +185,7 @@ private struct LibraryRouteCard: View {
             Rectangle().fill(RidgeTheme.line.opacity(0.7)).frame(height: 1)
             HStack(spacing: 8) {
                 Image(systemName: terrainReady ? "checkmark.circle.fill" : "square.dashed")
-                Text(terrainReady ? "Ready to open in 3D" : "Terrain area needed · GPX available")
+                Text(terrainReady ? "Available offline" : "Map needed for 3D")
                 Spacer(minLength: 3)
             }.padding(.trailing, 38).font(.system(size: 11, weight: .medium)).foregroundStyle(terrainReady ? RidgeTheme.forest : RidgeTheme.muted)
             }.padding(20)

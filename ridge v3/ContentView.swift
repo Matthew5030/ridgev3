@@ -84,7 +84,6 @@ struct PreparationOverlay: View {
                 Text(store.preparationLabel).font(.headline)
                 if let total = store.transferTotal { Text("\(RidgeTheme.bytes(store.transferredBytes)) of \(RidgeTheme.bytes(total))").font(.subheadline.monospacedDigit()).foregroundStyle(RidgeTheme.muted) }
                 if store.progress > 0 { ProgressView(value: store.progress).tint(RidgeTheme.forest).frame(width: 190) }
-                Text("A complete area. Ready to explore offline.").font(.footnote).foregroundStyle(RidgeTheme.muted)
                 Button("Cancel") { store.cancelPreparation() }.font(.subheadline.weight(.medium))
             }.padding(30).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 28)).padding(28)
         }

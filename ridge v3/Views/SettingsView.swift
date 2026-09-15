@@ -21,15 +21,13 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 28) {
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
-                        Eyebrow(text: "Make yourself at home")
-                        Text("Settings").font(.system(size: 32, weight: .regular, design: .serif))
+                                Text("Settings").font(.system(size: 32, weight: .regular, design: .serif))
                     }
                     Spacer()
                     Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.055), in: Circle()) }
                         .accessibilityLabel("Close settings")
                 }
                 gestureSection
-                introduction
                 offlineSection
                 downloadServerSection
                 legendSection
@@ -38,9 +36,9 @@ struct SettingsView: View {
                 attributionSection
                 HStack {
                     Image(systemName: "mountain.2").font(.system(size: 15, weight: .medium))
-                    Text("RIDGE").font(.system(size: 13, weight: .black, design: .rounded)).tracking(3)
+                    Text("Ridge").font(.system(size: 13, weight: .black, design: .rounded)).tracking(3)
                     Spacer()
-                    Text("VERSION \(version)").font(.system(size: 9, weight: .medium, design: .monospaced)).tracking(1)
+                    Text("Version \(version)").font(.system(size: 9, weight: .medium, design: .monospaced)).tracking(1)
                 }.foregroundStyle(RidgeTheme.muted).padding(.vertical, 12)
             }.padding(24).padding(.top, 12)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
@@ -62,8 +60,7 @@ struct SettingsView: View {
 
     private var gestureSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Eyebrow(text: "Moving around in 3D")
-            Text("Make the map feel natural.").font(.system(size: 23, weight: .regular, design: .serif))
+            Text("Map controls").font(.system(size: 23, weight: .regular, design: .serif))
             VStack(spacing: 10) {
                 ForEach(TerrainGestureStyle.allCases) { style in
                     Button { gestureStyle = style } label: {
@@ -85,27 +82,15 @@ struct SettingsView: View {
                         .accessibilityAddTraits(gestureStyle == style ? .isSelected : [])
                 }
             }
-            Text("Pinch to zoom. Double-tap to fit the area. Your choice applies immediately and is remembered on this device.")
+            Text("Pinch to zoom. Double-tap to fit the area.")
                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
         }
     }
 
-    private var introduction: some View {
-        HStack(spacing: 22) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("A different perspective.").font(.system(size: 24, weight: .regular, design: .serif))
-                Text("Real terrain. A carefully drawn map. Space to think about the way ahead.")
-                    .font(.system(size: 13)).lineSpacing(4).foregroundStyle(RidgeTheme.muted)
-            }
-            TerrainGlyph().frame(width: 76, height: 100).accessibilityHidden(true)
-        }.padding(23).frame(maxWidth: .infinity, alignment: .leading).background(RidgeTheme.lime.opacity(0.25), in: RoundedRectangle(cornerRadius: 24))
-    }
-
     private var offlineSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Eyebrow(text: "Made for offline exploring")
-            Text("Save once. Explore at your pace.").font(.system(size: 23, weight: .regular, design: .serif))
-            Text("The world atlas is included with Ridge. Save a prepared area to keep its terrain, map and walking network on your device. Moving the camera and planning a route make no network requests.")
+            Text("Offline maps").font(.system(size: 23, weight: .regular, design: .serif))
+            Text("Downloaded areas include terrain, maps and paths. You can view them and plan routes offline.")
                 .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
             if store.activeTerrain == nil {
             VStack(spacing: 0) {
@@ -125,9 +110,8 @@ struct SettingsView: View {
 
     private var downloadServerSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Eyebrow(text: "Download server")
-            Text("More terrain, when you need it.").font(.system(size: 23, weight: .regular, design: .serif))
-            Text("Connect to your local server to add its coverage to the map. Choose an area there, then download its terrain and maps. Saved areas open without the server.")
+            Text("Download server").font(.system(size: 23, weight: .regular, design: .serif))
+            Text("Connect to a download server to see available areas. Downloaded areas work offline.")
                 .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
             TextField("http://your-mac.local:8787", text: $serverAddress)
                 .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
@@ -160,26 +144,26 @@ struct SettingsView: View {
 
     private var legendSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Eyebrow(text: "Reading the landscape")
+            Eyebrow(text: "Map legend")
             MapLegendView()
                 .padding(20).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 22))
-            Text("Follow paths uses the saved walking network. Direct line joins the points you choose across the terrain, without following mapped paths. Both appear in orange.")
+            Text("Follow paths uses mapped paths. Direct line joins waypoints without following paths. Planned routes are shown in orange.")
                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
         }
     }
 
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Eyebrow(text: "On this device")
+            Eyebrow(text: "Storage")
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("\(savedCount)").font(.system(size: 30, weight: .medium, design: .rounded))
-                    Text("SAVED AREAS").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1).foregroundStyle(RidgeTheme.muted)
+                    Text("Saved areas").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1).foregroundStyle(RidgeTheme.muted)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 7) {
                     Text(savedAssetBytes.map(RidgeTheme.bytes) ?? "—").font(.system(size: 25, weight: .medium, design: .rounded))
-                    Text("SAVED AREA ASSETS").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1).foregroundStyle(RidgeTheme.muted)
+                    Text("Area files").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1).foregroundStyle(RidgeTheme.muted)
                 }
             }.padding(21).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 21))
             if let storageError { Text(storageError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
@@ -200,7 +184,7 @@ struct SettingsView: View {
 
     private var estimatesSection: some View {
         VStack(alignment: .leading, spacing: 11) {
-            Eyebrow(text: "Understanding the numbers")
+            Eyebrow(text: "Route estimates")
             Text("Terrain resolution is the distance between height samples. Choosing finer terrain does not change map-texture detail.")
             Text("Walking time is a planning estimate: 4 km/h, plus one hour for every 600 m of ascent. Ascent and descent ignore elevation changes below 3 m to reduce small terrain ripples. GPX segment breaks are kept separate.")
         }.font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
@@ -208,7 +192,7 @@ struct SettingsView: View {
 
     private var attributionSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Eyebrow(text: "The people behind the map")
+            Eyebrow(text: "Map sources and licences")
             ForEach(sources, id: \.self) { source in
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(alignment: .firstTextBaseline) {

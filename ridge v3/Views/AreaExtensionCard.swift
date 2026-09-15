@@ -19,7 +19,6 @@ struct AreaExtensionCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 5) {
-                    if !compact { Eyebrow(text: "Keep exploring") }
                     Text(store.extensionForRoute ? "Add detail along route" : "Add detail here")
                         .font(.system(compact ? .headline : .title2, design: .serif, weight: .medium))
                         .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +118,7 @@ struct AreaExtensionCard: View {
                     .accessibilityLabel(store.extensionInProgress ? "Preparing your area" : "Save and extend the whole area at \(store.extensionSpacing) metre terrain spacing")
                     .accessibilityHint("Saves the outlined area at \(store.extensionSpacing) metre terrain spacing.")
                 }
-                Button("Keep looking") { store.dismissExtension() }
+                Button("Back to map") { store.dismissExtension() }
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .disabled(store.extensionInProgress)

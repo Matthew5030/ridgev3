@@ -95,7 +95,7 @@ struct ExploreView: View {
             }
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(RidgeTheme.muted)
-                TextField("Where will you go?", text: $query).font(.system(size: 15)).autocorrectionDisabled()
+                TextField("Search places", text: $query).font(.system(size: 15)).autocorrectionDisabled()
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Clear search") }
             }.padding(12).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 15))
             if expanding == nil {
@@ -133,8 +133,7 @@ struct ExploreView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Eyebrow(text: selecting ? "Your area, ready offline" : "A place to begin")
-                    Text(expanding != nil ? "Expand your area" : selecting ? "Choose your landscape" : "Where will you go?")
+                    Text(expanding != nil ? "Expand area" : selecting ? "Select area" : "Search places")
                         .font(.system(size: 24, weight: .regular, design: .serif))
                 }
                 Spacer(minLength: 8)
@@ -185,7 +184,7 @@ struct ExploreView: View {
                                 Button("Use \(coarser) m terrain for this area") { selectedSpacing = coarser }.font(.subheadline.weight(.semibold))
                             }
                         } else {
-                            Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Same sharp map")
+                            Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Map detail unchanged")
                                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
                             Text(proposal?.saved != nil ? "Already saved on this device." : proposal?.source?.remoteSource != nil ? "Missing files download from your local server. Saved files are reused." : "Source data is on this device. No download needed.")
                                 .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
@@ -213,7 +212,7 @@ struct ExploreView: View {
                         }.padding(14).background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
                     }.buttonStyle(.plain).disabled(busy)
                 }
-                Text("Find a place, draw an area and explore it in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
+                Text("Select an area to download and open in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
                 Button { selecting = true; query = "" } label: { Label("Select area", systemImage: "rectangle.dashed").frame(maxWidth: .infinity) }.buttonStyle(RidgeButtonStyle())
                 Text("Marked areas have prepared terrain. Shaded areas are saved offline.").font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
             }

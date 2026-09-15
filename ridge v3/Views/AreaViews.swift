@@ -82,7 +82,7 @@ struct AreaDetailView: View {
                 if usesTileGrid {
                     VStack(alignment: .leading, spacing: 7) {
                         Eyebrow(text: manifest.name)
-                        Text("Choose your tiles").font(.system(size: 30, weight: .regular, design: .serif))
+                        Text("Select tiles").font(.system(size: 30, weight: .regular, design: .serif))
                     }
                     TileSelectionView(manifest: manifest, directory: entry.directory, selection: $selection)
                 } else if selecting || !selection.isWhole {
@@ -285,13 +285,13 @@ struct AreaLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                HStack { VStack(alignment: .leading, spacing: 8) { Eyebrow(text: "Your offline collection"); Text("My areas").font(.system(size: 38, weight: .regular, design: .serif)) }; Spacer(); addMenu }
+                HStack { VStack(alignment: .leading, spacing: 8) { Text("My areas").font(.system(size: 38, weight: .regular, design: .serif)) }; Spacer(); addMenu }
                 if saved.isEmpty {
                     VStack(spacing: 18) {
                         TerrainGlyph().frame(width: 125, height: 110)
-                        Text("A landscape to call your own.").font(.system(size: 23, design: .serif)).multilineTextAlignment(.center)
-                        Text("Save an area from the atlas. Its terrain, map and walking paths will all be here, even without a connection.").font(.subheadline).foregroundStyle(RidgeTheme.muted).multilineTextAlignment(.center).lineSpacing(4)
-                        Button("Explore the atlas") { store.tab = .explore }.buttonStyle(RidgeButtonStyle())
+                        Text("No saved areas").font(.system(size: 23, design: .serif)).multilineTextAlignment(.center)
+                        Text("Download an area to use its terrain, map and paths offline.").font(.subheadline).foregroundStyle(RidgeTheme.muted).multilineTextAlignment(.center).lineSpacing(4)
+                        Button("Find an area") { store.tab = .explore }.buttonStyle(RidgeButtonStyle())
                     }.padding(28).frame(maxWidth: .infinity).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 26)).padding(.top, 25)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400), spacing: 20, alignment: .top)], alignment: .leading, spacing: 20) {
@@ -314,8 +314,8 @@ struct AreaLibraryView: View {
                 }
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Eyebrow(text: "Your data, on your device")
-                    Text("Import a prepared area from Files, or download one using its direct link. Ridge never requests new terrain as you move around.").font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
+                    Eyebrow(text: "Add an area")
+                    Text("Use + to select an area, import a Ridge pack or download from a link.").font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
                 }.padding(.top, 10)
             }.padding(24).frame(maxWidth: 1280).frame(maxWidth: .infinity)
         }.foregroundStyle(RidgeTheme.ink)

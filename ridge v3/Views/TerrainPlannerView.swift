@@ -139,7 +139,7 @@ struct TerrainPlannerView: View {
             RoundControl(symbol: "arrow.left", label: "Back to your atlas") { store.closeTerrain() }.disabled(store.isRouting)
             VStack(alignment: .leading, spacing: 3) {
                 Text(terrain.manifest.name).font(.system(size: 21, weight: .medium, design: .serif)).lineLimit(1)
-                Text(store.editing ? "PLANNING IN 3D" : "YOUR TERRAIN, UNFOLDED").font(.system(size: 7, weight: .bold, design: .monospaced)).tracking(1.3).foregroundStyle(RidgeTheme.muted)
+                Text(store.editing ? "Editing route" : "3D map").font(.system(size: 7, weight: .bold, design: .monospaced)).tracking(1.3).foregroundStyle(RidgeTheme.muted)
             }.padding(.vertical, 8).padding(.horizontal, 10).background(RidgeTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 15))
             Spacer(minLength: 0)
             Menu {
@@ -169,7 +169,7 @@ struct TerrainPlannerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.viewingSceneEdge ? "Edge of your saved landscape" : "Beyond your detailed area")
                         .font(.system(size: 13, weight: .semibold))
-                    Text(store.viewingSceneEdge ? "The map ends here. Expand your area to check what terrain is available beyond it." : "This is a low-detail preview. Expand your area to check available detail here.")
+                    Text(store.viewingSceneEdge ? "The map ends here. Expand area to check what terrain is available beyond it." : "This is a low-detail preview. Expand area to check available detail here.")
                         .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                 }.foregroundStyle(RidgeTheme.ink)
             }
@@ -200,7 +200,7 @@ struct TerrainPlannerView: View {
     }
 
     private var routingIndicator: some View {
-        HStack(spacing: 9) { ProgressView().tint(RidgeTheme.forest); Text("Following your line…").font(.footnote.weight(.medium)) }
+        HStack(spacing: 9) { ProgressView().tint(RidgeTheme.forest); Text("Calculating route…").font(.footnote.weight(.medium)) }
             .padding(12).background(RidgeTheme.panel, in: Capsule())
     }
 
@@ -281,9 +281,8 @@ struct TerrainPlannerView: View {
             } else {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Eyebrow(text: "A different perspective")
-                        Text("Find your way through.").font(.system(size: 27, weight: .regular, design: .serif))
-                        Text("Turn the terrain. Trace a path. See what lies ahead.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
+                                Text("Route planning").font(.system(size: 27, weight: .regular, design: .serif))
+                        Text("Add waypoints to plan a route across this area.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
                     }
                     Spacer(minLength: 0)
                 }
@@ -300,7 +299,7 @@ struct TerrainPlannerView: View {
     private func routeHeader(_ route: RidgeRoute) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: store.editing ? "Your line across the landscape" : imported ? "Imported GPX track" : "Saved route")
+                Eyebrow(text: store.editing ? "Editing route" : imported ? "Imported GPX track" : "Saved route")
                 if store.isRouting { Text("Updating route…").font(.caption).foregroundStyle(RidgeTheme.muted) }
                 else if store.routeSaved { Label(UIDevice.current.userInterfaceIdiom == .pad ? "Saved on this iPad" : "Saved on this device", systemImage: "checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
                 Button { routeName = route.name; rename = true } label: { Text(route.name).font(.system(size: 21, weight: .medium, design: .serif)).lineLimit(1) }.disabled(store.isRouting)
@@ -509,10 +508,9 @@ struct TerrainHelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Eyebrow(text: "Field notes")
-                Text("Read the landscape.").font(.system(size: 32, design: .serif))
-                helpRow("hand.draw", "Move naturally", gestureStyle.guide)
-                helpRow("point.topleft.down.to.point.bottomright.curvepath", "Plan on the terrain", "Tap Plan a route, then place points on mapped paths. Follow paths uses the downloaded walking network. Direct line draws a manual connection.")
+                Text("Map help").font(.system(size: 32, design: .serif))
+                helpRow("hand.draw", "Map controls", gestureStyle.guide)
+                helpRow("point.topleft.down.to.point.bottomright.curvepath", "Planning a route", "Tap Plan a route, then place points on mapped paths. Follow paths uses the downloaded walking network. Direct line draws a manual connection.")
                 helpRow("square.dashed", "Detailed and overview terrain", "Expand area is always available on the 3D map. Tap distant terrain or move beyond your detailed area to see the coverage explanation, then expand around that location. Availability and size are checked before saving. You can keep sketching beyond detailed coverage; overview lines are manual connections, not followed paths.")
                 Divider()
                 Text("Map legend").font(.headline)

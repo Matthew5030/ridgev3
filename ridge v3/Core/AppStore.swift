@@ -226,7 +226,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                                        camera: lastCameraPose, proposal: proposal)
         let spacing = extensionSpacing
         extensionError = nil
-        startPreparation(.extending, label: "Extending your planning area", retireTerrain: true) { [self] token in
+        startPreparation(.extending, label: "Expanding area", retireTerrain: true) { [self] token in
             let expanded = try await self.prepareSelection(source, selection: selection, spacing: spacing,
                                                           displayName: proposal.displayName, token: token)
             try Task.checkCancellation()
@@ -611,7 +611,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         pendingExtension = nil; extensionError = nil
         selectedPoint = coordinate
         guard editing, !isRouting else { return }
-        guard activeRoute?.segments.contains(where: { $0.mode == "imported" }) != true else { editing = false; toast("Imported GPX tracks can be viewed and reversed. Start a new route to plan your own line."); return }
+        guard activeRoute?.segments.contains(where: { $0.mode == "imported" }) != true else { editing = false; toast("Imported GPX tracks can be viewed and reversed. Start a new route to add waypoints."); return }
         if let index = movingWaypoint { moveWaypoint(index, to: coordinate); return }
         if let index = insertingWaypoint {
             editRoute { try RouteEngine.insertingWaypoint(in: $0, segment: index, at: coordinate, terrain: $1) }
