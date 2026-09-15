@@ -73,7 +73,7 @@ private struct Failure: Error { var message: String }
         try JSONSerialization.data(withJSONObject: catalogue).write(to: served.appendingPathComponent("catalog.json"))
         let server = Process(), pipe = Pipe()
         server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        server.arguments = ["-u", "-c", "import http.server,os; os.chdir(\(String(reflecting: served.path))); s=http.server.ThreadingHTTPServer(('127.0.0.1',0),http.server.SimpleHTTPRequestHandler); print(s.server_port,flush=True); s.serve_forever()"]
+        server.arguments = ["-u", "-c", "import http.server,os,time\nclass Handler(http.server.SimpleHTTPRequestHandler):\n def copyfile(self, source, output):\n  while True:\n   data=source.read(16384)\n   if not data: break\n   output.write(data); output.flush()\n   if self.path.endswith('-1m.bin'): time.sleep(0.05)\nos.chdir(\(String(reflecting: served.path)))\ns=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)\nprint(s.server_port,flush=True)\ns.serve_forever()"]
         server.standardOutput = pipe; server.standardError = FileHandle.nullDevice
         try server.run(); defer { if server.isRunning { server.terminate(); server.waitUntilExit() } }
         let port = Int(String(data: pipe.fileHandleForReading.availableData, encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines))!

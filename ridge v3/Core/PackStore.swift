@@ -464,7 +464,10 @@ actor PackStore {
         for file in files {
             try Task.checkCancellation()
             let remote = manifestURL.deletingLastPathComponent().appendingPathComponent(file.0)
-            let (temporary, response) = try await session.download(from: remote)
+            let result: (URL, URLResponse)
+            if let meter { result = try await meter.download(URLRequest(url: remote), session: session) }
+            else { result = try await session.download(from: remote) }
+            let (temporary, response) = result
             defer { try? fm.removeItem(at: temporary) }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200, http.url?.scheme == "https" else { throw RidgeError.message("A file in this area could not be downloaded. Please retry.") }
             try Self.verify(temporary, size: file.1, hash: file.2)
@@ -645,13 +648,55 @@ struct SourceAsset: Codable, Hashable, Sendable {
 final class DownloadMeter: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var received: [Int: Int64] = [:]
+    private var downloads: [Int: CheckedContinuation<(URL, URLResponse), Error>] = [:]
+
+    private final class Ticket: @unchecked Sendable {
+        private let lock = NSLock()
+        private var task: URLSessionDownloadTask?
+        private var cancelled = false
+        func start(_ task: URLSessionDownloadTask) {
+            lock.lock(); self.task = task; let shouldCancel = cancelled; lock.unlock()
+            task.resume()
+            if shouldCancel { task.cancel() }
+        }
+        func cancel() {
+            lock.lock(); cancelled = true; let task = task; lock.unlock()
+            task?.cancel()
+        }
+    }
+
+    func download(_ request: URLRequest, session: URLSession) async throws -> (URL, URLResponse) {
+        let ticket = Ticket()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = session.downloadTask(with: request)
+                lock.lock(); downloads[task.taskIdentifier] = continuation; lock.unlock()
+                ticket.start(task)
+            }
+        } onCancel: { ticket.cancel() }
+    }
+
+    private func finish(_ task: URLSessionTask, _ result: Result<(URL, URLResponse), Error>) {
+        lock.lock(); let continuation = downloads.removeValue(forKey: task.taskIdentifier); lock.unlock()
+        continuation?.resume(with: result)
+    }
     private var lastReport = Date.distantPast
     private let total: Int64
     private let report: @Sendable (Int64, Int64) async -> Void
     init(total: Int64, report: @escaping @Sendable (Int64, Int64) async -> Void) {
         self.total = total; self.report = report
     }
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) { }
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        do {
+            guard let response = downloadTask.response else { throw URLError(.badServerResponse) }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("ridge-transfer-\(UUID())")
+            try FileManager.default.moveItem(at: location, to: file)
+            finish(downloadTask, .success((file, response)))
+        } catch { finish(downloadTask, .failure(error)) }
+    }
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error { finish(task, .failure(error)) }
+    }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         lock.lock()
@@ -696,7 +741,10 @@ enum SourceDownloads {
 
     private static func downloaded(_ url: URL, maximumBytes: Int64, session: URLSession) async throws -> URL {
         var request = URLRequest(url: url); request.cachePolicy = .reloadIgnoringLocalCacheData
-        let (temporary, response) = try await session.download(for: request)
+        let result: (URL, URLResponse)
+        if let meter = session.delegate as? DownloadMeter { result = try await meter.download(request, session: session) }
+        else { result = try await session.download(for: request) }
+        let (temporary, response) = result
         var keep = false
         defer { if !keep { try? FileManager.default.removeItem(at: temporary) } }
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
