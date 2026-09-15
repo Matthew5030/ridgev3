@@ -1,4 +1,4 @@
-# National-park adaptive terrain validation — 14 September 2026
+# National-park and UK terrain validation — 15 September 2026
 
 Built terrain assets for all **15 parks in the supplied boundary collection**.
 Coverage is partial wherever complete prepared native chunks are unavailable;
@@ -74,8 +74,9 @@ are retained in each public index.
 Actual Docker HTTP checks passed for all 15 preferred sources: index/asset
 checksums, representative and extreme chunks, zlib/RAT1 decoding, reconstructed
 mesh hashes, byte ranges, private-file exclusion and rejected write requests.
-The catalogue offers one preferred encoding per landscape; existing legacy URLs
-remain valid. The normal catalogue is separate and unchanged.
+The catalogue offers one preferred encoding per landscape. The unsupported
+North York Moors revision returns HTTP 410, as described below. The normal
+catalogue and its existing URLs are separate and unchanged.
 
 These are **prepared terrain files**, not complete routable map packs. The normal
 iOS app still uses its regular-grid reader and does not consume RAT1 yet. No
@@ -94,7 +95,7 @@ existing local Docker server, port 8787. `NATIONAL-PARKS.md` and
 The whole-UK inventory now applies the official EA 2022 DTM survey footprints
 before accepting EA-derived source chunks. The earlier prepared availability
 flags incorrectly admitted terrain outside those footprints. The corrected
-plan retains 589,443 native chunks in 342 grid sections and excludes 213,027
+plan retains 589,443 native chunks in 342 grid sections and excludes 212,986
 unsupported candidates. All known constant −0.3 m chunks are excluded.
 
 The footprint snapshot contains 21,380 checksum-locked features. GEOS linework
@@ -117,12 +118,41 @@ all **1,197 shared edges** agree exactly, including NoData masks. Four backgroun
 regression tests pass. This is coarse global elevation, not 1 m LiDAR and not
 covered by the detailed layer's 0.5 m error guarantee.
 
-The detailed UK conversion is in progress. Its catalogue advertises
-`rat1-zlib-range-v1` and only completed sections; `buildComplete` remains false
-until all planned sections pass. The first corrected HTTP range test and a
-later 28-section test passed, including full local container hashes, background
-descriptor checks, private-file exclusion and write refusal. Final totals will
-be recorded after the full build and download verification finish.
+The detailed UK conversion is complete. Its catalogue advertises
+`rat1-zlib-range-v1`, contains all **342 planned detailed sections**, and has
+`buildComplete: true`. The final HTTP verification passed in every section,
+including actual byte-range delivery, lossless decoded hashes, full local
+container hashes, background descriptor checks, private-file exclusion and
+write refusal. The final plan's SHA-256 matches the frozen build identity.
+
+| Final UK measurement | Result |
+| --- | ---: |
+| Independently downloadable detailed chunks | 589,443 |
+| Compressed adaptive terrain | 7,034,679,311 bytes |
+| Detailed section indices | 468,690,319 bytes |
+| Original native heightfields | 310,246,249,734 bytes |
+| Same heightfields compressed with zlib level 6 | 44,393,701,339 bytes |
+| Adaptive payload saving against compressed heightfields | 84.15% |
+| Maximum measured additional surface error | 0.499219 m |
+| Matching within-section shared edges | 1,149,759 |
+| Matching cross-section shared edges | 23,702 |
+
+All served UK terrain assets, including detailed and background metadata and
+boundaries, total **7,698,107,317 bytes (7.70 GB)**. Cartography and routing data
+are separate. The new compact files still require a RAT1 reader in the normal
+app; this asset build does not change the app's reader or renderer.
+
+The detailed layer contains 506,790 EA chunks, 80,574 Welsh chunks and 2,079
+Scottish chunks. It is **not nationwide 1 m LiDAR coverage**. Most of Scotland
+and Northern Ireland have only coarse context in this collection. The UK
+administrative polygon includes territorial water; its coverage ratio must
+not be presented as a UK land percentage.
+
+Completed revision: `uk-adaptive-0p5-v3`, served by the local Docker server at
+`/uk-adaptive-0p5-v3/catalog.json`. Private final reports are
+`Ridge Experiments/UK-adaptive-0p5-v3/UK-TERRAIN.json` and `UK-TERRAIN.md` on the
+external drive. The measured totals are storage/download sizes: the complete
+UK geometry is not intended to be loaded into one scene.
 
 
 ### South Wales join correction
@@ -142,5 +172,5 @@ unchanged source selections and were imported after full container checksum
 verification. Three import regression tests pass, including changed selections
 and damaged containers. The following pilot reached 84 sections and passed
 actual HTTP range, decoded-hash, background-descriptor and access-control
-checks at the new URLs. This is still an in-progress country-wide build; final
-whole-UK totals remain pending.
+checks at the new URLs. The repaired section subsequently passed the full UK
+build and final HTTP verification; completed totals are recorded above.

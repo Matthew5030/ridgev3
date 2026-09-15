@@ -17,6 +17,10 @@ def main():
     assert http['backgroundDescriptorVerified'] and http['actualRangeDelivery']
     assert background['allFilesDownloadedAndHashed'] and background['maxSharedEdgeDifferenceMetres']==0
     assert background['descriptorSHA256']==catalog['background']['sha256']
+    coast=json.loads((a.build/'coast-source-validation.json').read_bytes())
+    assert coast['maximumDifferenceMetres']==0 and coast['sharedSourceEdges']>0
+    assert coast['coordinateGridSHA256']==plan['officialSurveyCoverage']['coordinateGridSHA256']
+    assert coast['suppressedLegacyFallbacks']==plan['sourceSelectionPolicy']['suppressedFallbackCandidates']
     assert len(catalog['partitions'])==sum(t['chunkCount']>0 for t in plan['partitions'])
     totals=dict(chunks=0,triangles=0,vertices=0,meshBytes=0,sourceZlibBytes=0,sourceBytes=0,decodedBytes=0,expandedGeometryBytes=0,withinSectionSeams=0,indexBytes=0)
     sections=[];maximum_error=0;source_counts={}
@@ -38,7 +42,7 @@ def main():
     report=dict(complete=True,id=catalog['id'],totals=totals,sections=sections,sourceCounts=source_counts,
                 maximumMeasuredErrorMetres=maximum_error,compressedSourceSavingsPercent=savings,
                 withinSectionSeams=totals['withinSectionSeams'],crossSectionSeams=status['crossSectionSeams'],
-                background=background,officialSurveyCoverage=plan['officialSurveyCoverage'],sourceSelectionPolicy=plan['sourceSelectionPolicy'],coastalSourceValidation=json.loads((a.build/'coast-source-validation.json').read_bytes()),
+                background=background,officialSurveyCoverage=plan['officialSurveyCoverage'],sourceSelectionPolicy=plan['sourceSelectionPolicy'],coastalSourceValidation=coast,
                 rejectedUnsupportedEACandidates=plan['rejectedEACandidates'],
                 coveredPolygonKm2=plan['coveredPolygonKm2'],
                 coverageNote='The UK administrative polygon includes territorial water. Detailed coverage is not nationwide. Coarse background fills context only; it is not 1 m LiDAR.',
@@ -64,10 +68,11 @@ map textures and routing data are separate.
     for source,count in source_counts.items():text+=f'- {source}: {count:,} chunks.\n'
     text+=f'''
 The official EA footprint check excluded {plan['rejectedEACandidates']:,}
-unsupported candidates from the old prepared inventory. Source ownership rules
-also suppress {plan['sourceSelectionPolicy']['suppressedFallbackCandidates']:,} incompatible fallback candidates on the repaired Welsh coast. It requires the whole
-chunk plus interpolation support inside the survey footprint and preserves
-holes. Welsh and Scottish preparation retain their own explicit NoData policy.
+unsupported candidates from the old prepared inventory. The footprint check
+requires the whole chunk plus interpolation support inside the survey footprint
+and preserves holes. Source ownership rules also suppress
+{plan['sourceSelectionPolicy']['suppressedFallbackCandidates']:,} incompatible fallback candidates on the repaired Welsh coast.
+Welsh and Scottish preparation retain their own explicit NoData policy.
 The previous unfiltered UK catalogue was withdrawn.
 
 Detailed LiDAR is **not available throughout the UK**. The separately labelled
