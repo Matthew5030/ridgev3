@@ -10,14 +10,15 @@ from preview import category, mask_geometry
 import prepare_packs as shared
 
 CONFIG={
-    'version':'ridge-material-preview-1',
-    'palette':{'unknown':['#8f9473','#b0aa91'],'grassland':['#687a35','#a5a267'],
+    'version':'ridge-material-preview-2',
+    'palette':{'unknown':['#92977d','#aaa993'],'grassland':['#87916b','#a0a486'],
       'heath':['#6b6950','#9e8a67'],'scrub':['#596c3f','#899462'],
-      'woodland':['#355440','#68805a'],'bare_rock':['#626d70','#a6a69a'],
-      'scree':['#757974','#b4aea0'],'sand':['#baa676','#d9c99d'],
+      'woodland':['#355440','#68805a'],'bare_rock':['#858b86','#aaada1'],
+      'scree':['#8d9186','#adae9f'],'sand':['#baa676','#d9c99d'],
       'shingle':['#7e827b','#bab8a7'],'wetland':['#567965','#92a585'],
       'water':['#3f849a','#679eaa'],'building':['#877d70','#a59d8e']},
-    'notes':'World-coordinate procedural colour/grain, mapped land-cover masks with 1.2 m edge feather, LiDAR-derived local relief shading. Fine grain is synthetic material, not observed terrain. No discrete symbols or displacement.'
+    'transitionHalfWidthMetres':12.0,
+    'notes':'World-coordinate procedural colour/grain, normalized land-cover material weights with a 24 m visual transition band, LiDAR-derived local relief shading. Fine grain is synthetic material, not observed terrain. No discrete symbols or displacement.'
 }
 def color(hex):return np.array([int(hex[i:i+2],16) for i in (1,3,5)],dtype='float32')
 def mix(a,b,t):return a+(b-a)*t[...,None]
@@ -33,6 +34,20 @@ def noise(x,y,scale,seed):
     a=hash2(ix,iy,seed);b=hash2(ix+1,iy,seed);c=hash2(ix,iy+1,seed);d=hash2(ix+1,iy+1,seed)
     return (a+(b-a)*fx)*(1-fy)+(c+(d-c)*fx)*fy
 
+def soft_weight(mask, metres_per_pixel, variation):
+    """Visual blend only; original semantic geometry is never mutated.
+
+    Full material weight 12 m inside, zero 12 m outside, with a small
+    deterministic transition variation; neighbouring weights normalize later.
+    """
+    from scipy.ndimage import distance_transform_edt
+    inside=np.asarray(mask)>127
+    if not inside.any():return np.zeros(inside.shape,dtype='float32')
+    if inside.all():return np.ones(inside.shape,dtype='float32')
+    signed=(distance_transform_edt(inside)-distance_transform_edt(~inside))*metres_per_pixel
+    t=np.clip(.5+signed/(2*CONFIG['transitionHalfWidthMetres'])+(variation-.5)*.10,0,1)
+    return smooth(t).astype('float32')
+
 def render(features,heights,b,side=2368,contours=False):
     # Fixed equirectangular projection at 54°N: continuous across UK tiles,
     # close to metres here; no per-tile min/max or random seeds.
@@ -43,7 +58,8 @@ def render(features,heights,b,side=2368,contours=False):
     elevation=np.asarray(Image.fromarray(heights.astype('float32')*.1).resize((side,side),Image.Resampling.BILINEAR))
     valid=np.asarray(Image.fromarray((heights!=shared.NO_DATA).astype('uint8')*255).resize((side,side),Image.Resampling.NEAREST))>0
     base=mix(color(CONFIG['palette']['unknown'][0]),color(CONFIG['palette']['unknown'][1]),np.clip((elevation-200)/1000,0,1))
-    base*= (.88+.24*field)[...,None]
+    base*= (.97+.06*field)[...,None]
+    accumulated=np.zeros_like(base);total=np.zeros((side,side),dtype='float32');hard=[]
     for kind,colors in CONFIG['palette'].items():
         if kind=='unknown':continue
         mask=Image.new('L',(side,side))
@@ -52,28 +68,32 @@ def render(features,heights,b,side=2368,contours=False):
             fm=Image.new('L',(side,side));mask_geometry(fm,f['geometry'],b,side);mask=Image.fromarray(np.maximum(np.asarray(mask),np.asarray(fm)))
         if not mask.getbbox():continue
         metres_per_pixel=(b['maxLatitude']-b['minLatitude'])*111320/(side-1)
-        # Small visual antialias/feather, never shift mapped lines or geometry.
-        if kind not in ('water','building'):mask=mask.filter(ImageFilter.GaussianBlur(1.2/metres_per_pixel))
-        alpha=np.asarray(mask,dtype='float32')/255
+        alpha=np.asarray(mask,dtype='float32')/255 if kind in ('water','building') else soft_weight(mask,metres_per_pixel,middle)
         t=field
         if kind=='bare_rock':
-            # Irregular mineral streaks and fine fractures: continuous, no stamps.
-            warped=x*.69+y*.72+middle*9+broad*14
-            seams=np.exp(-np.abs(np.sin(warped*.63+fine*1.7))*22)
-            t=np.clip(.30*broad+.23*middle+.26*fine+.21*grain,0,1)
+            # Restrained mineral variation; remove the repeated vein pattern.
+            t=np.clip(.58*broad+.27*middle+.10*fine+.05*grain,0,1)
             material=mix(color(colors[0]),color(colors[1]),t)
-            material*= (1-.20*seams)[...,None]
+            material*= (.985+.03*grain)[...,None]
         elif kind in ('scree','shingle'):
             pebbles=noise(x+y*.24,y-x*.18,1.6,73)
-            t=np.clip(.25*broad+.20*middle+.35*pebbles+.20*grain,0,1)
+            t=np.clip(.52*broad+.29*middle+.14*pebbles+.05*grain,0,1)
             material=mix(color(colors[0]),color(colors[1]),t)
-            material*= (.78+.40*pebbles)[...,None]
+            material*= (.97+.06*pebbles)[...,None]
         elif kind=='water':material=mix(color(colors[0]),color(colors[1]),broad*.6)
         else:
-            t=np.clip(.30*broad+.40*middle+.20*fine+.10*grain,0,1)
+            t=np.clip(.58*broad+.30*middle+.09*fine+.03*grain,0,1)
             material=mix(color(colors[0]),color(colors[1]),t)
-            material*= (.85+.30*fine)[...,None]
-        base=base*(1-alpha[...,None])+material*alpha[...,None]
+            material*= (.98+.04*fine)[...,None]
+        if kind in ('water','building'):
+            hard.append((material,alpha))
+        else:
+            accumulated+=material*alpha[...,None];total+=alpha
+    # Adjacent surfaces blend into each other, not through an unrelated base
+    # colour. Exposed unknown retains its neutral, explicitly unknown material.
+    fallback=np.maximum(0,1-total)
+    base=(accumulated+base*fallback[...,None])/np.maximum(1,total)[...,None]
+    for material,alpha in hard:base=base*(1-alpha[...,None])+material*alpha[...,None]
     # Cavity shading comes from measured height differences, not noise geometry.
     # Noise adds only subdued grain lighting baked into the material.
     space=shared.spacing_meters(b,heights.shape[1],heights.shape[0]);h=heights.astype('float32')*.1
@@ -87,7 +107,7 @@ def render(features,heights,b,side=2368,contours=False):
     gy,gx=np.gradient(np.where(good,h,nearby),space['northSouth'],space['eastWest'])
     relief=np.clip((-gx+gy)/np.sqrt(1+gx*gx+gy*gy),-.8,.8);relief[~good]=0
     relief=np.asarray(Image.fromarray(relief.astype('float32')).resize((side,side),Image.Resampling.BILINEAR))
-    base*=(1-cavity*.38+relief*.17)[...,None]
+    base*=(1-cavity*.12+relief*.09)[...,None]
     base[~valid]=color('#a6a292')
     image=Image.fromarray(np.clip(base,0,255).astype('uint8'))
     # Navigation ink: contours are optional, subordinate to material shading.
