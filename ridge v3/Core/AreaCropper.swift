@@ -557,13 +557,14 @@ enum AreaCropper {
 
 extension PackStore {
     func downloadSelection(from entry: PackEntry, selection: AreaSelection, spacing: Int,
+                           transfer: (@Sendable (Int64, Int64) async -> Void)? = nil,
                            progress: @Sendable (Double) async -> Void) async throws -> RegionManifest? {
         guard entry.manifest.tiledTerrain != nil, let remote = entry.remoteSource else { return nil }
         let preview = AreaCropper.preview(manifest: entry.manifest, selection: selection, spacing: spacing)
         let allowance = TerrainBudget.allowance(for: preview, spacing: spacing)
         guard allowance.allowed else { throw RidgeError.message(allowance.reason ?? "Select a smaller area.") }
         try await SourceDownloads.ensure(AreaCropper.sourceAssets(manifest: entry.manifest, preview: preview, spacing: spacing),
-                                         at: entry.directory, remote: remote, progress: progress)
+                                         at: entry.directory, remote: remote, transfer: transfer, progress: progress)
         return preview
     }
 }

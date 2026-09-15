@@ -1,6 +1,10 @@
 import Foundation
 import CryptoKit
 
+private actor TransferLog {
+    var partial = false
+    func record(_ bytes: Int64, _ total: Int64) { if bytes > 0 && bytes < total { partial = true } }
+}
 private struct Failure: Error { var message: String }
 @MainActor @main struct TiledSourceTests {
     static var checks = 0
@@ -116,6 +120,14 @@ private struct Failure: Error { var message: String }
           catch { checks += 1 }
         try check(!fm.fileExists(atPath: entry.directory.appendingPathComponent(native.file).path), "Failed checksum does not publish a partial cached file")
         try originalNative.write(to: nativeURL)
+        let meterDirectory = root.appendingPathComponent("meter-test")
+        try fm.createDirectory(at: meterDirectory, withIntermediateDirectories: true)
+        let transferLog = TransferLog()
+        try await SourceDownloads.ensure([SourceAsset(file: native.file, byteCount: native.byteCount, sha256: native.sha256)],
+                                         at: meterDirectory, remote: url.appendingPathComponent("fixture"),
+                                         transfer: { bytes, total in await transferLog.record(bytes, total) }) { _ in }
+        let sawPartialFile = await transferLog.partial
+        try check(sawPartialFile, "Live byte progress arrives before a single large file completes")
         let downloaded = try await store.downloadSelection(from: entry, selection: selection, spacing: 4) { _ in }
         let crop = try AreaCropper.prepare(directory: entry.directory, manifest: manifest, selection: selection, spacing: 4,
                                            cartographySourceID: manifest.id, downloadedPreview: downloaded)

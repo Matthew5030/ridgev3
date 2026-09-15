@@ -441,7 +441,7 @@ actor PackStore {
     }
 
     @discardableResult
-    func download(manifest: RegionManifest, from manifestURL: URL, spacing: Int, progress: @Sendable (Double) async -> Void) async throws -> LoadedTerrain {
+    func download(manifest: RegionManifest, from manifestURL: URL, spacing: Int, transfer: (@Sendable (Int64, Int64) async -> Void)? = nil, progress: @Sendable (Double) async -> Void) async throws -> LoadedTerrain {
         try Self.validate(manifest)
         var manifest = manifest
         manifest.horizon = TerrainBudget.selectedHorizon(for: manifest, spacing: spacing)
@@ -457,10 +457,14 @@ actor PackStore {
         if let name = manifest.graphFile, let bytes = manifest.graphByteCount, let hash = manifest.graphSHA256 { files.append((name, bytes, hash)) }
         let total = files.reduce(Int64(0)) { $0 + $1.1 }
         var finished: Int64 = 0
+        await transfer?(0, total)
+        let meter = transfer.map { DownloadMeter(total: total, report: $0) }
+        let session = URLSession(configuration: .ephemeral, delegate: meter, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
         for file in files {
             try Task.checkCancellation()
             let remote = manifestURL.deletingLastPathComponent().appendingPathComponent(file.0)
-            let (temporary, response) = try await URLSession.shared.download(from: remote)
+            let (temporary, response) = try await session.download(from: remote)
             defer { try? fm.removeItem(at: temporary) }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200, http.url?.scheme == "https" else { throw RidgeError.message("A file in this area could not be downloaded. Please retry.") }
             try Self.verify(temporary, size: file.1, hash: file.2)
@@ -468,6 +472,7 @@ actor PackStore {
             finished += file.1
             await progress(Double(finished) / Double(max(1, total)) * 0.9)
         }
+        await transfer?(total, total)
         return try await install(from: stage, manifest: manifest, spacing: spacing) { value in await progress(0.9 + value * 0.1) }
     }
 
@@ -635,6 +640,31 @@ struct SourceAsset: Codable, Hashable, Sendable {
     var sha256: String
 }
 
+/// URLSession's delegate queue reports bytes while a file is still arriving.
+/// Keep the callback rate bounded; the UI also guards by preparation identity.
+final class DownloadMeter: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var received: [Int: Int64] = [:]
+    private var lastReport = Date.distantPast
+    private let total: Int64
+    private let report: @Sendable (Int64, Int64) async -> Void
+    init(total: Int64, report: @escaping @Sendable (Int64, Int64) async -> Void) {
+        self.total = total; self.report = report
+    }
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) { }
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+                    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        lock.lock()
+        received[downloadTask.taskIdentifier] = max(received[downloadTask.taskIdentifier] ?? 0, totalBytesWritten)
+        let bytes = min(total, received.values.reduce(0, +))
+        let now = Date()
+        let emit = now.timeIntervalSince(lastReport) >= 0.15 || bytes == total
+        if emit { lastReport = now }
+        lock.unlock()
+        if emit { Task { await report(bytes, total) } }
+    }
+}
+
 /// A file-download transport only. Camera motion and terrain rendering never
 /// call this type. Verified completed files survive interrupted downloads.
 enum SourceDownloads {
@@ -657,11 +687,11 @@ enum SourceDownloads {
         return c.url!
     }
 
-    private static func session() -> URLSession {
+    private static func session(delegate: URLSessionDelegate? = nil) -> URLSession {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 30; c.timeoutIntervalForResource = 300
         c.httpMaximumConnectionsPerHost = 4; c.urlCache = nil
-        return URLSession(configuration: c)
+        return URLSession(configuration: c, delegate: delegate, delegateQueue: nil)
     }
 
     private static func downloaded(_ url: URL, maximumBytes: Int64, session: URLSession) async throws -> URL {
@@ -716,6 +746,7 @@ enum SourceDownloads {
     }
 
     static func ensure(_ assets: [SourceAsset], at directory: URL, remote: URL,
+                       transfer: (@Sendable (Int64, Int64) async -> Void)? = nil,
                        progress: @Sendable (Double) async -> Void) async throws {
         _ = try validBase(remote)
         let fm = FileManager.default, receipt = directory.appendingPathComponent("downloaded.json")
@@ -738,7 +769,9 @@ enum SourceDownloads {
         let total = missing.reduce(Int64(0)) { $0 + $1.byteCount }
         let capacity = try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? .max
         guard capacity > total + 64 * 1_048_576 else { throw RidgeError.message("There is not enough free storage for this download. Select a smaller area.") }
-        let session = session(); defer { session.invalidateAndCancel() }
+        await transfer?(0, total)
+        let meter = transfer.map { DownloadMeter(total: total, report: $0) }
+        let session = session(delegate: meter); defer { session.invalidateAndCancel() }
         var completed: Int64 = 0
         try await withThrowingTaskGroup(of: SourceAsset.self) { group in
             var next = 0
@@ -758,7 +791,9 @@ enum SourceDownloads {
             while next < min(4, missing.count) { enqueue(missing[next]); next += 1 }
             while let asset = try await group.next() {
                 verified[asset.file] = asset.sha256
-                completed += asset.byteCount; await progress(Double(completed) / Double(total))
+                completed += asset.byteCount
+                await transfer?(completed, total)
+                await progress(Double(completed) / Double(total))
                 if next < missing.count { enqueue(missing[next]); next += 1 }
             }
         }

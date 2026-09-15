@@ -140,6 +140,7 @@ struct ExploreView: View {
             if busy && store.preparingFromAtlas {
                 ProgressView(value: store.progress > 0 ? store.progress : nil).tint(RidgeTheme.forest)
                 Text(store.preparationLabel).font(.subheadline)
+                if let total = store.transferTotal { Text("\(RidgeTheme.bytes(store.transferredBytes)) of \(RidgeTheme.bytes(total))").font(.subheadline.monospacedDigit()).foregroundStyle(RidgeTheme.muted) }
                 Button("Cancel") { store.cancelPreparation() }.font(.subheadline.weight(.semibold))
             } else if selecting {
                 if let bounds {

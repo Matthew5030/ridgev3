@@ -42,7 +42,8 @@ struct ContentView: View {
             .interactiveDismissDisabled(store.extensionInProgress)
         }
         .alert("Ridge", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
-            Button("OK", role: .cancel) { store.errorMessage = nil }
+            if let retry = store.retryPreparation { Button("Retry") { store.errorMessage = nil; retry() } }
+                Button("OK", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
         .overlay(alignment: .top) {
             if let notice = store.notice, store.activeTerrain == nil {
@@ -79,6 +80,7 @@ struct PreparationOverlay: View {
             VStack(spacing: 18) {
                 ProgressView().controlSize(.large).tint(RidgeTheme.forest)
                 Text(store.preparationLabel).font(.headline)
+                if let total = store.transferTotal { Text("\(RidgeTheme.bytes(store.transferredBytes)) of \(RidgeTheme.bytes(total))").font(.subheadline.monospacedDigit()).foregroundStyle(RidgeTheme.muted) }
                 if store.progress > 0 { ProgressView(value: store.progress).tint(RidgeTheme.forest).frame(width: 190) }
                 Text("A complete area. Ready to explore offline.").font(.footnote).foregroundStyle(RidgeTheme.muted)
                 Button("Cancel") { store.cancelPreparation() }.font(.subheadline.weight(.medium))

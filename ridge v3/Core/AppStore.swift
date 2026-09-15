@@ -22,6 +22,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     var isPreparing: Bool { preparationKind != nil }
     var preparationLabel = "Opening terrain"
     var progress: Double = 0
+    var transferredBytes: Int64 = 0
+    var transferTotal: Int64?
+    var acceptingTransfer = false
+    var retryPreparation: (() -> Void)?
     var isRouting = false
     var errorMessage: String?
     var notice: String?
@@ -395,13 +399,20 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         // selected folder's scope first and retains it until copying has finished.
         let importScope = scopedPackURL; scopedPackURL = nil
         pendingPack = nil
+        let retry: (() -> Void)? = (remote != nil || entry.remoteSource != nil) ? { [weak self] in
+            self?.pendingRemoteURL = remote
+            self?.install(entry, spacing: spacing, selection: selection, displayName: displayName)
+        } : nil
         startPreparation(.saving, label: remote == nil ? "Saving area offline" : "Downloading area", retireTerrain: true,
                          cleanup: { importScope?.stopAccessingSecurityScopedResource() }) { token in
             let terrain: LoadedTerrain
             if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil) {
                 terrain = try await self.prepareSelection(entry, selection: selection, spacing: spacing, displayName: displayName, token: token)
             } else if let remote {
-                terrain = try await self.packs.download(manifest: entry.manifest, from: remote, spacing: spacing) { [weak self] value in
+                self.acceptingTransfer = true
+                terrain = try await self.packs.download(manifest: entry.manifest, from: remote, spacing: spacing, transfer: { [weak self] bytes, total in
+                    await self?.updateTransfer(bytes, total: total, token: token)
+                }) { [weak self] value in
                     await self?.updateProgress(value, operationID: token)
                 }
             } else {
@@ -414,8 +425,11 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             try Task.checkCancellation()
             let route = try await self.routeForPresentation(requestedRoute, terrain: terrain)
             try Task.checkCancellation()
+            self.acceptingTransfer = false; self.transferTotal = nil
+            self.preparationLabel = "Opening 3D"
             self.present(terrain, route: route)
         }
+        retryPreparation = retry
     }
 
     /// One task owns preparation UI, cancellation and scene retirement. A
@@ -427,18 +441,20 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         operation?.cancel()
         let token = UUID(); operationID = token
         preparationKind = kind; preparationLabel = label; progress = 0
+        transferredBytes = 0; transferTotal = nil; acceptingTransfer = false; retryPreparation = nil
         if retireTerrain { activeTerrain = nil }
         operation = Task {
             defer {
                 cleanup()
                 if operationID == token {
-                    preparationKind = nil; preparingFromAtlas = false; operation = nil
+                    preparationKind = nil; preparingFromAtlas = false; operation = nil; acceptingTransfer = false
                 }
             }
             do {
                 if retireTerrain { await waitForTerrainRelease() }
                 try Task.checkCancellation()
                 try await work(token)
+                if operationID == token { retryPreparation = nil }
             } catch {
                 guard operationID == token else { return }
                 if let onFailure { await onFailure(error) }
@@ -450,11 +466,15 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     private func prepareSelection(_ entry: PackEntry, selection: AreaSelection, spacing: Int,
                                   displayName: String?, token: UUID) async throws -> LoadedTerrain {
         preparationLabel = entry.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
-        let downloadedPreview = try await packs.downloadSelection(from: entry, selection: selection, spacing: spacing) { [weak self] value in
+        acceptingTransfer = entry.remoteSource != nil
+        let downloadedPreview = try await packs.downloadSelection(from: entry, selection: selection, spacing: spacing, transfer: { [weak self] bytes, total in
+            await self?.updateTransfer(bytes, total: total, token: token)
+        }) { [weak self] value in
             await self?.updateProgress(value, operationID: token)
         }
         try Task.checkCancellation()
-        preparationLabel = "Preparing selected terrain"; progress = 0
+        acceptingTransfer = false; transferTotal = nil
+        preparationLabel = "Preparing terrain · saved files stay offline"; progress = 0
         let sourceID = cartographySourceID(for: entry)
         let worker = Task.detached(priority: .userInitiated) {
             try AreaCropper.prepare(directory: entry.directory, manifest: entry.manifest, selection: selection, spacing: spacing,
@@ -470,7 +490,17 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         }
     }
 
-    private func updateProgress(_ value: Double, operationID token: UUID) { if token == operationID { progress = value } }
+    private func updateTransfer(_ bytes: Int64, total: Int64, token: UUID) {
+        guard operationID == token, acceptingTransfer, total > 0 else { return }
+        transferredBytes = min(total, max(transferredBytes, bytes)); transferTotal = total
+        progress = Double(transferredBytes) / Double(total)
+        preparationLabel = transferredBytes == total ? "Checking downloaded files" : "Downloading maps and terrain"
+    }
+
+    private func updateProgress(_ value: Double, operationID token: UUID) {
+        guard token == operationID else { return }
+        progress = acceptingTransfer && transferTotal != nil ? max(progress, value) : value
+    }
 
     private func cartographySourceID(for entry: PackEntry) -> String? {
         if let sourceID = entry.manifest.cartographySourceID { return sourceID }
@@ -485,6 +515,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         // Extension owns its cancellation recovery and must finish reopening
         // the previous scene before dismissing the preparation UI.
         if extensionInProgress { return }
+        retryPreparation = nil; acceptingTransfer = false
         operationID = UUID(); preparationKind = nil; preparingFromAtlas = false; pendingRoute = nil
     }
 

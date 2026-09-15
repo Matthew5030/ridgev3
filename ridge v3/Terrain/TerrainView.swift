@@ -187,7 +187,7 @@ final class TerrainHostView: UIView {
     private var errorLabel: UILabel?
     private var cartographyWarning: UILabel?
     private var warningTask: Task<Void, Never>?
-    private var progress: UIActivityIndicatorView?
+    private var progress: UIView?
     private var loadTask: Task<Void, Never>?
     private var preparation: Task<TerrainRenderer, Error>?
     private var pendingRoute: [RoutePoint] = []
@@ -248,12 +248,17 @@ final class TerrainHostView: UIView {
         prepareLabels(terrain.manifest.places)
         let spinner = UIActivityIndicatorView(style: .large)
         spinner.color = UIColor(red: 0.24, green: 0.34, blue: 0.28, alpha: 1)
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.accessibilityLabel = "Preparing your terrain"
-        addSubview(spinner)
-        NSLayoutConstraint.activate([spinner.centerXAnchor.constraint(equalTo: centerXAnchor), spinner.centerYAnchor.constraint(equalTo: centerYAnchor)])
+        let loadingLabel = UILabel()
+        loadingLabel.text = "Opening 3D"
+        loadingLabel.font = .preferredFont(forTextStyle: .headline)
+        loadingLabel.textColor = spinner.color
+        let loading = UIStackView(arrangedSubviews: [spinner, loadingLabel])
+        loading.axis = .vertical; loading.alignment = .center; loading.spacing = 14
+        loading.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(loading)
+        NSLayoutConstraint.activate([loading.centerXAnchor.constraint(equalTo: centerXAnchor), loading.centerYAnchor.constraint(equalTo: centerYAnchor)])
         spinner.startAnimating()
-        progress = spinner
+        progress = loading
         let colorFormat = view.colorPixelFormat, depthFormat = view.depthStencilPixelFormat, samples = view.sampleCount
         let worker = Task.detached(priority: .userInitiated) {
             try TerrainRenderer(device: device, colorPixelFormat: colorFormat, depthPixelFormat: depthFormat, sampleCount: samples, terrain: terrain)

@@ -98,6 +98,7 @@ struct TerrainPlannerView: View {
                 Button("Cancel", role: .cancel) { }
             }
             .alert("Ridge", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
+                if let retry = store.retryPreparation { Button("Retry") { store.errorMessage = nil; retry() } }
                 Button("OK", role: .cancel) { store.errorMessage = nil }
             } message: { Text(store.errorMessage ?? "") }
             .confirmationDialog("Edit route", isPresented: Binding(get: { editTarget != nil }, set: { if !$0 { editTarget = nil } }), titleVisibility: .visible) {
