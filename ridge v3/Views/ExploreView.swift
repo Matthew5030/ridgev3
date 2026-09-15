@@ -43,7 +43,7 @@ struct ExploreView: View {
                 else if !selecting && !recentSearches.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack { ForEach(recentSearches, id: \.self) { term in
-                            Button { query = term } label: { Label(term, systemImage: "clock").font(.subheadline).padding(10).background(RidgeTheme.panel, in: Capsule()) }
+                            Button { query = term } label: { Label(term, systemImage: "clock").font(.subheadline).padding(10).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius)) }
                         } }.padding(.horizontal, 18)
                     }.padding(.bottom, 6)
                 }
@@ -97,7 +97,7 @@ struct ExploreView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(RidgeTheme.muted)
                 TextField("Search places", text: $query).font(.system(size: 15)).autocorrectionDisabled()
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Clear search") }
-            }.padding(12).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 15))
+            }.padding(12).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
             if expanding == nil {
                 Button { store.showSettings = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 40, height: 40) }.accessibilityLabel("Settings")
             }
@@ -113,7 +113,7 @@ struct ExploreView: View {
                          onViewport: { viewport = $0 }, snapToTiles: true)
             .overlay(alignment: .topLeading) {
                 Label(selecting ? "Tap a tile · Drag to select · Pinch to zoom" : "Drag to pan · Pinch to zoom", systemImage: selecting ? "rectangle.dashed" : "hand.draw")
-                    .font(.system(size: 11, weight: .medium)).padding(11).background(RidgeTheme.panel.opacity(0.94), in: Capsule()).padding(12).allowsHitTesting(false)
+                    .font(.system(size: 11, weight: .medium)).padding(11).background(RidgeTheme.panel.opacity(0.94), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius)).padding(12).allowsHitTesting(false)
             }
             .overlay(alignment: .bottomLeading) {
                 if !selecting {
@@ -121,7 +121,7 @@ struct ExploreView: View {
                         ForEach(Array(atlasEntries.prefix(3))) { entry in
                             Button { focusOn(entry.manifest.bounds) } label: {
                                 Label(entry.manifest.name, systemImage: "mountain.2").font(.system(size: 12, weight: .semibold))
-                                    .padding(12).background(RidgeTheme.panel.opacity(0.96), in: Capsule())
+                                    .padding(12).background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                             }.buttonStyle(.plain)
                         }
                     }.padding(12)
@@ -133,8 +133,8 @@ struct ExploreView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(expanding != nil ? "Expand area" : selecting ? "Select area" : "Search places")
-                        .font(.system(size: 24, weight: .regular, design: .serif))
+                    Text(expanding != nil ? "Expand area" : selecting ? "Select area" : "Offline maps")
+                        .font(RidgeTheme.sectionTitle)
                 }
                 Spacer(minLength: 8)
                 if selecting && !busy {
@@ -209,7 +209,7 @@ struct ExploreView: View {
                                 Text(store.routes.first { $0.id == session.routeID }?.name ?? session.areaName).font(.subheadline).lineLimit(1)
                             }
                             Spacer(); Image(systemName: "arrow.up.right")
-                        }.padding(14).background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
+                        }.padding(14).background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     }.buttonStyle(.plain).disabled(busy)
                 }
                 Text("Select an area to download and open in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
@@ -354,27 +354,6 @@ struct ExploreView: View {
     }
 }
 
-struct FeaturedAreaCard: View {
-    let entry: PackEntry
-    var compact = false
-    var body: some View {
-        HStack(spacing: compact ? 10 : 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(entry.installed ? "YOUR OFFLINE AREA" : "PREPARED LANDSCAPE").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1.2).foregroundStyle(RidgeTheme.muted)
-                Text(entry.manifest.name).font(.system(size: compact ? 20 : 23, weight: .medium, design: .serif)).foregroundStyle(RidgeTheme.ink)
-                Text(entry.manifest.subtitle).font(.system(size: 11)).foregroundStyle(RidgeTheme.muted).lineLimit(1)
-                HStack(spacing: 5) {
-                    Image(systemName: entry.installed ? "checkmark.circle.fill" : "arrow.down.circle")
-                    Text(entry.installed ? "SAVED OFFLINE" : String(format: "%.1f KM²", entry.manifest.bounds.areaSquareKilometers))
-                }.font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(RidgeTheme.forest).padding(.top, 6)
-            }
-            TerrainGlyph(color: RidgeTheme.forest.opacity(0.75)).frame(width: compact ? 36 : 58, height: compact ? 76 : 94)
-        }.frame(width: compact ? nil : 274, height: compact ? 114 : 128, alignment: .leading)
-            .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
-            .padding(compact ? 14 : 18).background(RidgeTheme.lime.opacity(0.24), in: RoundedRectangle(cornerRadius: 22)).overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(RidgeTheme.forest.opacity(0.09)))
-    }
-}
-
 struct OfflineAtlasView: View {
     let atlas: AtlasData?
     let entries: [PackEntry]
@@ -497,7 +476,7 @@ struct OfflineAtlasView: View {
                             Button { movingMap.toggle() } label: {
                                 Label(movingMap ? "Select tiles" : "Move map", systemImage: movingMap ? "square.grid.3x3" : "hand.draw")
                                     .font(.system(size: 12, weight: .semibold)).padding(12)
-                                    .background(RidgeTheme.panel, in: Capsule())
+                                    .background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                             }.buttonStyle(.plain)
                         }
                         RoundControl(symbol: "plus", label: "Zoom atlas in") { scale = min(4_000_000, scale * 1.8); reportViewport(geometry.size) }
@@ -665,7 +644,7 @@ struct OfflineAtlasView: View {
     }
 
     private func clusterTitle(_ group: AreaCluster) -> String {
-        group.entries.count == 1 ? group.entries[0].manifest.name.uppercased() : "PREPARED TERRAIN"
+        group.entries.count == 1 ? group.entries[0].manifest.name : "Available terrain"
     }
 
     private func clusterLabelRect(_ group: AreaCluster, size: CGSize) -> CGRect {
@@ -695,9 +674,9 @@ struct OfflineAtlasView: View {
                         if cellRect.intersects(viewport) { coverage.addRect(cellRect) }
                     }
                 }
-                context.fill(coverage, with: .color(RidgeTheme.lime.opacity(0.30)))
+                context.fill(coverage, with: .color(RidgeTheme.selection.opacity(0.30)))
             } else {
-                context.fill(Path(rect), with: .color(RidgeTheme.lime.opacity(0.19)))
+                context.fill(Path(rect), with: .color(RidgeTheme.selection.opacity(0.19)))
                 context.stroke(Path(rect), with: .color(RidgeTheme.forest.opacity(0.35)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             }
             if snapToTiles, let grid = entry.manifest.grid, cellsAreVisible(entry, size: size) {
@@ -734,7 +713,7 @@ struct OfflineAtlasView: View {
             context.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10)), with: .color(RidgeTheme.forest))
             let label = clusterLabelRect(group, size: size)
             context.fill(Path(roundedRect: label, cornerRadius: 10), with: .color(RidgeTheme.forest))
-            context.draw(Text(clusterTitle(group)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(RidgeTheme.paper), at: CGPoint(x: label.midX, y: label.midY))
+            context.draw(Text(clusterTitle(group)).font(.system(size: 9, weight: .bold, design: .default)).foregroundStyle(RidgeTheme.paper), at: CGPoint(x: label.midX, y: label.midY))
         }
     }
 }

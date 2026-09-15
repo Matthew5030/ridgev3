@@ -20,7 +20,7 @@ struct AreaExtensionCard: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(store.extensionForRoute ? "Add detail along route" : "Add detail here")
-                        .font(.system(compact ? .headline : .title2, design: .serif, weight: .medium))
+                        .font(.system(compact ? .headline : .title2, design: .default, weight: .medium))
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -28,7 +28,7 @@ struct AreaExtensionCard: View {
                 Button { store.dismissExtension() } label: {
                     Image(systemName: "xmark").font(.system(size: 13, weight: .semibold))
                         .frame(width: 40, height: 44)
-                        .background(RidgeTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
+                        .background(RidgeTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                 }
                 .disabled(store.extensionInProgress)
                 .accessibilityLabel("Close area extension")
@@ -42,7 +42,7 @@ struct AreaExtensionCard: View {
                                 Text(reason).fixedSize(horizontal: false, vertical: true)
                             } icon: { Image(systemName: "map") }
                             .font(.subheadline).foregroundStyle(RidgeTheme.muted)
-                            Text("You can keep exploring the surrounding terrain.")
+                            Text("Overview terrain is still available.")
                                 .font(.footnote).foregroundStyle(RidgeTheme.muted)
                         } else if let preview = proposal.preview {
                             areaSummary(additionalTiles: proposal.additionalTileCount)
@@ -126,8 +126,8 @@ struct AreaExtensionCard: View {
         }
         .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 8)
         .frame(height: store.pendingExtension?.unavailableReason == nil ? maximumHeight : min(maximumHeight, 310))
-        .background(RidgeTheme.panel.opacity(0.98), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
-        .overlay { UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28).strokeBorder(RidgeTheme.ink.opacity(0.06)) }
+        .background(RidgeTheme.panel.opacity(0.98), in: UnevenRoundedRectangle(topLeadingRadius: RidgeTheme.cardRadius, topTrailingRadius: RidgeTheme.cardRadius))
+        .overlay { UnevenRoundedRectangle(topLeadingRadius: RidgeTheme.cardRadius, topTrailingRadius: RidgeTheme.cardRadius).strokeBorder(RidgeTheme.ink.opacity(0.06)) }
         .onAppear { store.refreshExtensionBudget() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { store.refreshExtensionBudget() } }
         .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in store.refreshExtensionBudget() }
@@ -145,13 +145,13 @@ struct AreaExtensionCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(store.extensionManifest.map { String(format: "%.1f km²", $0.bounds.areaSquareKilometers) } ?? "Larger area")
-                        .font(.system(.title3, design: .rounded, weight: .semibold))
+                        .font(.system(.title3, design: .default, weight: .semibold))
                     Text("Detailed coverage").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(store.extensionAllowance.bytesOnDisk > 0 ? RidgeTheme.bytes(store.extensionAllowance.bytesOnDisk) : "—")
-                        .font(.system(.title3, design: .rounded, weight: .semibold))
+                        .font(.system(.title3, design: .default, weight: .semibold))
                     Text("Estimated total size").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }
@@ -161,7 +161,7 @@ struct AreaExtensionCard: View {
                 .font(.caption).foregroundStyle(RidgeTheme.muted)
             Label("Source pack available on this device", systemImage: "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(RidgeTheme.forest)
-            Text(store.activeRoute == nil ? "The outlined area adds detail to your saved landscape." : "The outlined area includes your route. Your sketch stays in place.")
+            Text(store.activeRoute == nil ? "The outline shows the area to download." : "The outline includes your route. Existing waypoints will be kept.")
                 .font(.footnote).foregroundStyle(RidgeTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -171,10 +171,10 @@ struct AreaExtensionCard: View {
         let allowance = TerrainBudget.allowance(for: preview, spacing: spacing, context: store.extensionBudgetContext)
         let selected = spacing == store.extensionSpacing
         return Button { store.setExtensionSpacing(spacing) } label: {
-            Text("\(spacing) m").font(.system(.caption, design: .rounded, weight: .semibold))
+            Text("\(spacing) m").font(.system(.caption, design: .default, weight: .semibold))
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .foregroundStyle(selected ? RidgeTheme.panel : allowance.allowed ? RidgeTheme.ink : RidgeTheme.muted.opacity(0.5))
-                .background(selected ? RidgeTheme.forest : RidgeTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                .background(selected ? RidgeTheme.forest : RidgeTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
         }
         .disabled(!allowance.allowed || store.extensionInProgress)
         .accessibilityLabel("\(spacing) metre terrain. \(allowance.allowed ? "Available" : "Unavailable for this area")")

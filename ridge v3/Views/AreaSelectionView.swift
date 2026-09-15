@@ -22,7 +22,7 @@ struct AreaSelectionView: View {
                         context.fill(Path(ellipseIn: CGRect(x: corner.x - 5, y: corner.y - 5, width: 10, height: 10)), with: .color(RidgeTheme.forest))
                     }
                     let preview = AreaCropper.preview(manifest: manifest, selection: selection)
-                    let label = Text(String(format: "%.1f × %.1f km", preview.bounds.widthMeters / 1000, preview.bounds.depthMeters / 1000)).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(RidgeTheme.paper)
+                    let label = Text(String(format: "%.1f × %.1f km", preview.bounds.widthMeters / 1000, preview.bounds.depthMeters / 1000)).font(.system(size: 11, weight: .semibold, design: .default)).foregroundStyle(RidgeTheme.paper)
                     let box = CGRect(x: max(8, min(size.width - 150, rect.midX - 72)), y: min(size.height - 38, max(8, rect.minY + 10)), width: 144, height: 28)
                     context.fill(Path(roundedRect: box, cornerRadius: 9), with: .color(RidgeTheme.forest.opacity(0.93)))
                     context.draw(label, at: CGPoint(x: box.midX, y: box.midY))

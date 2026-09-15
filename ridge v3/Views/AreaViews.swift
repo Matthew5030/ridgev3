@@ -7,9 +7,9 @@ struct AreaPreview: View {
     @State private var image: UIImage?
     var body: some View {
         ZStack {
-            RidgeTheme.lime.opacity(0.2)
+            RidgeTheme.selection.opacity(0.2)
             if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else { TerrainGlyph().padding(35) }
+            else { Image(systemName: "map").font(.largeTitle).foregroundStyle(RidgeTheme.muted).accessibilityHidden(true) }
         }.clipped().task(id: manifest.id) {
             let m = manifest, d = directory
             image = await Task.detached(priority: .utility) { Self.render(m, directory: d) }.value
@@ -81,19 +81,19 @@ struct AreaDetailView: View {
             VStack(alignment: .leading, spacing: usesTileGrid ? 16 : 24) {
                 if usesTileGrid {
                     VStack(alignment: .leading, spacing: 7) {
-                        Eyebrow(text: manifest.name)
-                        Text("Select tiles").font(.system(size: 30, weight: .regular, design: .serif))
+                        SectionLabel(text: manifest.name)
+                        Text("Select tiles").font(RidgeTheme.pageTitle)
                     }
                     TileSelectionView(manifest: manifest, directory: entry.directory, selection: $selection)
                 } else if selecting || !selection.isWhole {
-                    AreaSelectionView(manifest: manifest, directory: entry.directory, selection: $selection).allowsHitTesting(selecting).aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 24))
+                    AreaSelectionView(manifest: manifest, directory: entry.directory, selection: $selection).allowsHitTesting(selecting).aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
                 } else {
                 ZStack(alignment: .bottomLeading) {
                     AreaPreview(manifest: manifest, directory: entry.directory).frame(height: 210)
                     LinearGradient(colors: [.clear, RidgeTheme.ink.opacity(0.65)], startPoint: .center, endPoint: .bottom)
                     HStack { Image(systemName: "square.dashed"); Text(String(format: "%.1f × %.1f km", manifest.bounds.widthMeters / 1000, manifest.bounds.depthMeters / 1000)); Spacer(); Text("N ↑") }
-                        .font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(.white).padding(20)
-                }.clipShape(RoundedRectangle(cornerRadius: 24))
+                        .font(.system(size: 11, weight: .medium, design: .default)).foregroundStyle(.white).padding(20)
+                }.clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
                 }
                 if store.pendingRemoteURL == nil && !usesTileGrid {
                     HStack {
@@ -104,8 +104,8 @@ struct AreaDetailView: View {
                     if selecting { Text("Drag a rectangle, or tap two opposite corners. Smaller areas can use finer terrain with the same map detail.").font(.footnote).foregroundStyle(RidgeTheme.muted) }
                 }
                 if !usesTileGrid { VStack(alignment: .leading, spacing: 8) {
-                    Eyebrow(text: manifest.subtitle)
-                    Text(manifest.name).font(.system(size: 36, weight: .regular, design: .serif)).foregroundStyle(RidgeTheme.ink)
+                    SectionLabel(text: manifest.subtitle)
+                    Text(manifest.name).font(RidgeTheme.pageTitle).foregroundStyle(RidgeTheme.ink)
                     Text(manifest.summary).font(.system(size: 14)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
                 } }
                 if !usesTileGrid { VStack(alignment: .leading, spacing: 13) {
@@ -115,11 +115,11 @@ struct AreaDetailView: View {
                             let allowed = TerrainBudget.allowance(for: selectionPreview, spacing: value, context: budgetContext).allowed
                             Button { automaticDetail = false; spacing = value } label: {
                                 VStack(spacing: 4) {
-                                    Text("\(value)").font(.system(size: 19, weight: .semibold, design: .rounded))
-                                    Text("METRE").font(.system(size: 7, weight: .bold, design: .monospaced)).tracking(0.5)
+                                    Text("\(value)").font(.system(size: 19, weight: .semibold, design: .default))
+                                    Text("m").font(.system(size: 7, weight: .bold, design: .default))
                                 }.frame(maxWidth: .infinity).padding(.vertical, 14)
                                     .foregroundStyle(spacing == value ? RidgeTheme.panel : allowed ? RidgeTheme.ink : RidgeTheme.muted.opacity(0.45))
-                                    .background(spacing == value ? RidgeTheme.forest : RidgeTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+                                    .background(spacing == value ? RidgeTheme.forest : RidgeTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                             }.accessibilityLabel("\(value) metre terrain. \(allowed ? "Available" : (selectedManifest.levels.contains(where: { $0.spacing == value }) ? "Smaller area needed" : "Not included in this pack"))").accessibilityAddTraits(spacing == value ? .isSelected : [])
                         }
                     }
@@ -134,12 +134,12 @@ struct AreaDetailView: View {
                     }
                 }
                 HStack(alignment: .top) {
-                    detailMetric("AREA", value: String(format: selectedManifest.bounds.areaSquareKilometers < 1 ? "%.2f km²" : "%.1f km²", selectedManifest.bounds.areaSquareKilometers))
+                    detailMetric("Area", value: String(format: selectedManifest.bounds.areaSquareKilometers < 1 ? "%.2f km²" : "%.1f km²", selectedManifest.bounds.areaSquareKilometers))
                     Spacer()
-                    detailMetric(selection.isWhole ? "SAVE SIZE" : "EST. SIZE", value: allowance.bytesOnDisk > 0 ? RidgeTheme.bytes(allowance.bytesOnDisk) : "—")
+                    detailMetric(selection.isWhole ? "Download" : "Est. size", value: allowance.bytesOnDisk > 0 ? RidgeTheme.bytes(allowance.bytesOnDisk) : "—")
                     Spacer()
-                    detailMetric("PATHS", value: selectedManifest.graphFile == nil ? "Manual" : "Offline")
-                }.padding(18).background(RidgeTheme.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 18))
+                    detailMetric("Paths", value: selectedManifest.graphFile == nil ? "Manual" : "Offline")
+                }.padding(18).background(RidgeTheme.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                 VStack(spacing: 10) {
                     Button { saveSelection() } label: {
                         HStack { Image(systemName: store.pendingRemoteURL == nil ? "square.and.arrow.down" : "arrow.down"); Text("Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 18)
@@ -194,10 +194,10 @@ struct AreaDetailView: View {
                 ForEach([1, 2, 4, 8, 16, 32], id: \.self) { value in
                     let available = TerrainBudget.allowance(for: selectionPreview, spacing: value, context: budgetContext).allowed
                     Button { automaticDetail = false; spacing = value } label: {
-                        Text("\(value) m").font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("\(value) m").font(.system(size: 15, weight: .semibold, design: .default))
                             .frame(maxWidth: .infinity, minHeight: 42)
                             .foregroundStyle(spacing == value ? RidgeTheme.paper : available ? RidgeTheme.ink : RidgeTheme.muted.opacity(0.45))
-                            .background(spacing == value ? RidgeTheme.forest : RidgeTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                            .background(spacing == value ? RidgeTheme.forest : RidgeTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     }.accessibilityLabel("\(value) metre terrain. \(available ? "Available" : "Unavailable for this selection")").accessibilityAddTraits(spacing == value ? .isSelected : [])
                 }
             }
@@ -230,7 +230,7 @@ struct AreaDetailView: View {
             Label("Auto", systemImage: automaticDetail ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(automaticDetail ? RidgeTheme.lime.opacity(0.55) : RidgeTheme.ink.opacity(0.04), in: Capsule())
+                .background(automaticDetail ? RidgeTheme.selection.opacity(0.55) : RidgeTheme.ink.opacity(0.04), in: Capsule())
         }.foregroundStyle(RidgeTheme.forest)
             .accessibilityLabel("Automatic terrain detail")
             .accessibilityAddTraits(automaticDetail ? .isSelected : [])
@@ -256,7 +256,7 @@ struct AreaDetailView: View {
     }
 
     private func detailMetric(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 7) { Eyebrow(text: label); Text(value).font(.system(size: 18, weight: .medium, design: .rounded)).foregroundStyle(RidgeTheme.ink) }
+        VStack(alignment: .leading, spacing: 7) { SectionLabel(text: label); Text(value).font(.system(size: 18, weight: .medium, design: .default)).foregroundStyle(RidgeTheme.ink) }
     }
 }
 
@@ -285,14 +285,14 @@ struct AreaLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                HStack { VStack(alignment: .leading, spacing: 8) { Text("My areas").font(.system(size: 38, weight: .regular, design: .serif)) }; Spacer(); addMenu }
+                HStack { VStack(alignment: .leading, spacing: 8) { Text("My areas").font(RidgeTheme.pageTitle) }; Spacer(); addMenu }
                 if saved.isEmpty {
                     VStack(spacing: 18) {
-                        TerrainGlyph().frame(width: 125, height: 110)
-                        Text("No saved areas").font(.system(size: 23, design: .serif)).multilineTextAlignment(.center)
+                        Image(systemName: "map").font(.system(size: 32)).foregroundStyle(RidgeTheme.muted).accessibilityHidden(true)
+                        Text("No saved areas").font(RidgeTheme.sectionTitle).multilineTextAlignment(.center)
                         Text("Download an area to use its terrain, map and paths offline.").font(.subheadline).foregroundStyle(RidgeTheme.muted).multilineTextAlignment(.center).lineSpacing(4)
                         Button("Find an area") { store.tab = .explore }.buttonStyle(RidgeButtonStyle())
-                    }.padding(28).frame(maxWidth: .infinity).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 26)).padding(.top, 25)
+                    }.padding(28).frame(maxWidth: .infinity).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius)).padding(.top, 25)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400), spacing: 20, alignment: .top)], alignment: .leading, spacing: 20) {
                 ForEach(saved) { entry in
@@ -300,12 +300,12 @@ struct AreaLibraryView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             LibraryMapPreview(entry: entry, route: nil, packs: store.packs)
                             HStack {
-                                VStack(alignment: .leading, spacing: 6) { Text(entry.manifest.name).font(.system(size: 23, design: .serif)).lineLimit(2, reservesSpace: true); Text(entry.manifest.subtitle).font(.caption).lineLimit(2, reservesSpace: true).foregroundStyle(RidgeTheme.muted) }
+                                VStack(alignment: .leading, spacing: 6) { Text(entry.manifest.name).font(RidgeTheme.sectionTitle).lineLimit(2, reservesSpace: true); Text(entry.manifest.subtitle).font(.caption).lineLimit(2, reservesSpace: true).foregroundStyle(RidgeTheme.muted) }
                                 Spacer()
-                                Image(systemName: "arrow.up.right").font(.title3).padding(12).background(RidgeTheme.lime.opacity(0.45), in: Circle())
+                                Image(systemName: "chevron.right").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                             }.padding(20)
                             HStack { Label("Saved offline", systemImage: "checkmark.circle.fill"); Spacer(); Text(String(format: "%.1f km²", entry.manifest.bounds.areaSquareKilometers)) }.font(.caption).foregroundStyle(RidgeTheme.forest).padding(.horizontal, 20).padding(.bottom, 18)
-                        }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 24)).clipShape(RoundedRectangle(cornerRadius: 24))
+                        }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius)).clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
                     }.buttonStyle(.plain).contextMenu {
                         Button("Open terrain", systemImage: "mountain.2") { store.open(entry) }
                         Button("Change resolution", systemImage: "square.grid.3x3") { store.choose(entry) }
@@ -314,7 +314,7 @@ struct AreaLibraryView: View {
                 }
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Eyebrow(text: "Add an area")
+                    SectionLabel(text: "Add an area")
                     Text("Use + to select an area, import a Ridge pack or download from a link.").font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
                 }.padding(.top, 10)
             }.padding(24).frame(maxWidth: 1280).frame(maxWidth: .infinity)
@@ -328,7 +328,7 @@ struct AreaLibraryView: View {
             Button("Import area from Files", systemImage: "folder") { store.showPackImporter = true }
             Button("Download from a link", systemImage: "link") { store.showDownloadSheet = true }
             Button("Choose from atlas", systemImage: "globe.europe.africa") { store.tab = .explore }
-        } label: { Image(systemName: "plus").font(.title3).frame(width: 48, height: 48).background(RidgeTheme.forest, in: Circle()).foregroundStyle(RidgeTheme.panel) }.accessibilityLabel("Add offline area")
+        } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44).foregroundStyle(RidgeTheme.forest) }.accessibilityLabel("Add offline area")
     }
 }
 
@@ -339,10 +339,9 @@ struct DownloadLinkView: View {
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Eyebrow(text: "Add a landscape")
-            Text("Download an area").font(.system(size: 30, design: .serif))
+            Text("Download an area").font(RidgeTheme.pageTitle)
             Text("Paste the manifest link for a prepared Ridge area. You’ll see its coverage and size before downloading.").font(.subheadline).foregroundStyle(RidgeTheme.muted)
-            TextField("https://…/pack.json", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).padding(16).background(RidgeTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+            TextField("https://…/pack.json", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).padding(16).background(RidgeTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
             if let error { Text(error).font(.footnote).foregroundStyle(RidgeTheme.orange) }
             Button {
                 working = true

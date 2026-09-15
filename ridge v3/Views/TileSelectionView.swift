@@ -25,7 +25,7 @@ struct TileSelectionView: View {
                     modeButton("Rectangle", symbol: "rectangle.dashed", rectangle: true)
                 }.padding(4).background(RidgeTheme.ink.opacity(0.04), in: Capsule())
                 Spacer(minLength: 4)
-                Text("N ↑").font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(RidgeTheme.muted)
+                Text("N ↑").font(.system(size: 12, weight: .semibold, design: .default)).foregroundStyle(RidgeTheme.muted)
             }
             GeometryReader { geometry in
                 ZStack {
@@ -70,7 +70,7 @@ struct TileSelectionView: View {
                             }.font(.system(size: 14, weight: .semibold)).background(RidgeTheme.panel.opacity(0.96), in: Capsule())
                         }.padding(10)
                     }
-                }.clipShape(RoundedRectangle(cornerRadius: 22))
+                }.clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Precision tile grid, \(grid.columns) columns by \(grid.rows) rows. \(selectedCount) \(selectedCount == 1 ? "tile" : "tiles") selected.")
                     .accessibilityAction(named: "Select central tile") {
@@ -84,7 +84,7 @@ struct TileSelectionView: View {
                         .font(.system(size: 16, weight: .semibold))
                     if let selectedGrid {
                         Text(selectedCount == 1 ? (selectedGrid.cellName(column: 0, row: 0) ?? "Precision tile") : "\(selectedCount) original precision tiles")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(RidgeTheme.muted)
+                            .font(.system(size: 10, weight: .medium, design: .default)).foregroundStyle(RidgeTheme.muted)
                     }
                 }
                 Spacer()
@@ -146,11 +146,11 @@ struct TileSelectionView: View {
             for row in 0..<grid.rows { for column in 0..<grid.columns {
                 let p = screen(u: (Double(column) + 0.15) / Double(grid.columns), v: (Double(row) + 0.2) / Double(grid.rows), size: size)
                 guard CGRect(origin: .zero, size: size).contains(p) else { continue }
-                context.draw(Text("\(grid.originColumn + column)·\(grid.originRow + row)").font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundStyle(RidgeTheme.forest), at: p, anchor: .leading)
+                context.draw(Text("\(grid.originColumn + column)·\(grid.originRow + row)").font(.system(size: 8, weight: .medium, design: .default)).foregroundStyle(RidgeTheme.forest), at: p, anchor: .leading)
             } }
         }
         drawPlaces(context: &context, size: size)
-        context.fill(Path(selected), with: .color(RidgeTheme.lime.opacity(0.16)))
+        context.fill(Path(selected), with: .color(RidgeTheme.selection.opacity(0.16)))
         context.stroke(Path(selected), with: .color(RidgeTheme.paper), lineWidth: 5)
         context.stroke(Path(selected), with: .color(RidgeTheme.forest), lineWidth: 2.5)
         if selected.width > 20 && selected.height > 20 {

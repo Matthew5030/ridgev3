@@ -60,8 +60,8 @@ struct TerrainPlannerView: View {
                         .scrollBounceBehavior(.basedOnSize)
                         .frame(width: sideWidth)
                         .frame(maxHeight: panelCollapsed ? 72 : .infinity, alignment: .top)
-                        .background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 24))
-                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
+                        .clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
                         .padding(.vertical, 8).padding(.trailing, 12)
                     }
                 } else {
@@ -138,9 +138,9 @@ struct TerrainPlannerView: View {
         HStack(spacing: 12) {
             RoundControl(symbol: "arrow.left", label: "Back to your atlas") { store.closeTerrain() }.disabled(store.isRouting)
             VStack(alignment: .leading, spacing: 3) {
-                Text(terrain.manifest.name).font(.system(size: 21, weight: .medium, design: .serif)).lineLimit(1)
-                Text(store.editing ? "Editing route" : "3D map").font(.system(size: 7, weight: .bold, design: .monospaced)).tracking(1.3).foregroundStyle(RidgeTheme.muted)
-            }.padding(.vertical, 8).padding(.horizontal, 10).background(RidgeTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 15))
+                Text(terrain.manifest.name).font(RidgeTheme.sectionTitle).lineLimit(1)
+                Text(store.editing ? "Editing route" : "3D map").font(.caption).foregroundStyle(RidgeTheme.muted)
+            }.padding(.vertical, 8).padding(.horizontal, 10).background(RidgeTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
             Spacer(minLength: 0)
             Menu {
                 Button("Find a place", systemImage: "magnifyingglass") { showPlaces = true }
@@ -159,7 +159,7 @@ struct TerrainPlannerView: View {
                     Button("Export GPX", systemImage: "square.and.arrow.up") { exportRoute() }
                     Button("Delete route", systemImage: "trash", role: .destructive) { delete = true }
                 }
-            } label: { Image(systemName: "ellipsis").font(.system(size: 21, weight: .semibold)).frame(width: 46, height: 46).background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: 16)) }.disabled(store.isRouting).accessibilityLabel("Terrain and route actions")
+            } label: { Image(systemName: "ellipsis").font(.system(size: 21, weight: .semibold)).frame(width: 46, height: 46).background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius)) }.disabled(store.isRouting).accessibilityLabel("Terrain and route actions")
         }.padding(.horizontal, 22).padding(.top, 8)
     }
     @ViewBuilder private var offlineBadge: some View {
@@ -167,7 +167,7 @@ struct TerrainPlannerView: View {
         VStack(alignment: .leading, spacing: 8) {
             if outside {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(store.viewingSceneEdge ? "Edge of your saved landscape" : "Beyond your detailed area")
+                    Text(store.viewingSceneEdge ? "Edge of saved area" : "Outside detailed terrain")
                         .font(.system(size: 13, weight: .semibold))
                     Text(store.viewingSceneEdge ? "The map ends here. Expand area to check what terrain is available beyond it." : "This is a low-detail preview. Expand area to check available detail here.")
                         .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
@@ -191,12 +191,12 @@ struct TerrainPlannerView: View {
         }
         .padding(outside ? 12 : 0)
         .frame(maxWidth: outside ? 310 : nil, alignment: .leading)
-        .background(outside ? RidgeTheme.panel.opacity(0.97) : Color.clear, in: RoundedRectangle(cornerRadius: 17))
+        .background(outside ? RidgeTheme.panel.opacity(0.97) : Color.clear, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
     }
 
     private func noticeCard(_ notice: String) -> some View {
         Text(notice).font(.system(size: 13, weight: .medium)).lineSpacing(3).foregroundStyle(RidgeTheme.ink)
-            .padding(14).background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: 17)).frame(maxWidth: 285, alignment: .leading)
+            .padding(14).background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius)).frame(maxWidth: 285, alignment: .leading)
     }
 
     private var routingIndicator: some View {
@@ -217,8 +217,8 @@ struct TerrainPlannerView: View {
             } label: {
                 Image(systemName: "viewfinder").font(.system(size: 17, weight: .medium))
                     .frame(width: 46, height: 46)
-                    .background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(RidgeTheme.ink.opacity(0.06)))
+                    .background(RidgeTheme.panel.opacity(0.96), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
+                    .overlay(RoundedRectangle(cornerRadius: RidgeTheme.controlRadius).strokeBorder(RidgeTheme.ink.opacity(0.06)))
             }.accessibilityLabel("Fit or zoom terrain")
             RoundControl(symbol: "square.3.layers.3d.top.filled", label: "Look straight down within 3D") { store.camera = TerrainCameraCommand(action: .overhead) }
             RoundControl(symbol: "magnifyingglass", label: "Find a place in this area") { showPlaces = true }
@@ -248,15 +248,15 @@ struct TerrainPlannerView: View {
                         Button { store.requestDetailAlongRoute() } label: {
                             Label("Add detail along route", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity, minHeight: 44)
                         }.buttonStyle(.bordered).tint(RidgeTheme.forest).disabled(store.isRouting || store.extensionInProgress)
-                    }.padding(12).background(RidgeTheme.forest.opacity(0.06), in: RoundedRectangle(cornerRadius: 15))
+                    }.padding(12).background(RidgeTheme.forest.opacity(0.06), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                 }
                 if route.points.count > 1 {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        statMetric(RidgeTheme.distance(statistics.distanceMeters), unit: statistics.distanceMeters >= 1000 ? "km" : "m", title: "DISTANCE")
+                        statMetric(RidgeTheme.distance(statistics.distanceMeters), unit: statistics.distanceMeters >= 1000 ? "km" : "m", title: "Distance")
                         Spacer()
-                        statMetric(statistics.hasCompleteElevation ? "\(Int(statistics.ascentMeters.rounded()))" : "—", unit: "m ↑", title: "ASCENT")
+                        statMetric(statistics.hasCompleteElevation ? "\(Int(statistics.ascentMeters.rounded()))" : "—", unit: "m ↑", title: "Ascent")
                         Spacer()
-                        statMetric(statistics.hasCompleteElevation ? duration(statistics.estimatedMinutes) : "—", unit: "", title: "EST. WALK")
+                        statMetric(statistics.hasCompleteElevation ? duration(statistics.estimatedMinutes) : "—", unit: "", title: "Time est.")
                     }
                     if profileExpanded {
                         ElevationProfileView(samples: profileSamples, onSelect: { store.selectedPoint = $0.coordinate },
@@ -275,34 +275,34 @@ struct TerrainPlannerView: View {
                         } else {
                             Button { store.startRoute() } label: { Label("Plan a new route", systemImage: "plus") }.buttonStyle(RidgeButtonStyle())
                         }
-                        Button { exportRoute() } label: { Image(systemName: "square.and.arrow.up").font(.system(size: 19)).frame(width: 53, height: 53).background(RidgeTheme.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 18)) }.accessibilityLabel("Export route as GPX")
+                        Button { exportRoute() } label: { Image(systemName: "square.and.arrow.up").font(.system(size: 19)).frame(width: 53, height: 53).background(RidgeTheme.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius)) }.accessibilityLabel("Export route as GPX")
                     }.disabled(store.isRouting)
                 }
             } else {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                                Text("Route planning").font(.system(size: 27, weight: .regular, design: .serif))
+                        Text("Route planning").font(RidgeTheme.sectionTitle)
                         Text("Add waypoints to plan a route across this area.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
                     }
                     Spacer(minLength: 0)
                 }
                 Button { store.startRoute() } label: { HStack { Image(systemName: "point.topleft.down.to.point.bottomright.curvepath"); Text("Plan a route"); Spacer(); Image(systemName: "arrow.right") }.padding(.horizontal, 18) }.buttonStyle(RidgeButtonStyle())
-                HStack { Text(gestureStyle.shortGuide); Spacer(); Button("Guide") { showHelp = true }.fontWeight(.semibold) }.font(.system(size: 10)).foregroundStyle(RidgeTheme.muted)
+                HStack { Text(gestureStyle.shortGuide); Spacer(); Button("Guide") { showHelp = true }.fontWeight(.semibold) }.font(.caption).foregroundStyle(RidgeTheme.muted)
             }
             }
         }.padding(.horizontal, wide ? 18 : 22).padding(.top, 10).padding(.bottom, 18)
-            .background(RidgeTheme.panel.opacity(0.98), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
-            .overlay(alignment: .top) { UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28).strokeBorder(RidgeTheme.ink.opacity(0.05)) }
+            .background(RidgeTheme.panel.opacity(0.98), in: UnevenRoundedRectangle(topLeadingRadius: RidgeTheme.cardRadius, topTrailingRadius: RidgeTheme.cardRadius))
+            .overlay(alignment: .top) { UnevenRoundedRectangle(topLeadingRadius: RidgeTheme.cardRadius, topTrailingRadius: RidgeTheme.cardRadius).strokeBorder(RidgeTheme.ink.opacity(0.05)) }
             .frame(maxWidth: 600).padding(.horizontal, !wide && UIDevice.current.userInterfaceIdiom == .pad ? 28 : 0)
         }
     }
     private func routeHeader(_ route: RidgeRoute) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: store.editing ? "Editing route" : imported ? "Imported GPX track" : "Saved route")
+                SectionLabel(text: store.editing ? "Editing route" : imported ? "Imported GPX track" : "Saved route")
                 if store.isRouting { Text("Updating route…").font(.caption).foregroundStyle(RidgeTheme.muted) }
                 else if store.routeSaved { Label(UIDevice.current.userInterfaceIdiom == .pad ? "Saved on this iPad" : "Saved on this device", systemImage: "checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
-                Button { routeName = route.name; rename = true } label: { Text(route.name).font(.system(size: 21, weight: .medium, design: .serif)).lineLimit(1) }.disabled(store.isRouting)
+                Button { routeName = route.name; rename = true } label: { Text(route.name).font(RidgeTheme.sectionTitle).lineLimit(1) }.disabled(store.isRouting)
             }
             Spacer(minLength: 6)
             if route.points.count > 1 { Button { profileExpanded.toggle() } label: { Image(systemName: "chart.xyaxis.line").font(.system(size: 18)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.04), in: Circle()) }.accessibilityLabel("Toggle elevation profile") }
@@ -356,7 +356,7 @@ struct TerrainPlannerView: View {
     }
     private func statMetric(_ value: String, unit: String, title: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) { Text(value).font(.system(size: 27, weight: .medium, design: .rounded)); Text(unit).font(.system(size: 11)).foregroundStyle(RidgeTheme.muted) }
+            HStack(alignment: .firstTextBaseline, spacing: 4) { Text(value).font(.system(size: 27, weight: .medium, design: .default)); Text(unit).font(.system(size: 11)).foregroundStyle(RidgeTheme.muted) }
             Text(title).font(.caption2.weight(.semibold)).foregroundStyle(RidgeTheme.muted)
         }
     }
@@ -459,7 +459,7 @@ struct PlacesSheet: View {
                     }.buttonStyle(.plain)
                     if store.editing { Button { store.tapTerrain(place.coordinate); dismiss() } label: { Image(systemName: "plus.circle.fill").foregroundStyle(RidgeTheme.forest).font(.title3) }.buttonStyle(.borderless).accessibilityLabel("Add \(place.name) to route") }
                 }.padding(.vertical, 5).listRowBackground(RidgeTheme.panel)
-            }.searchable(text: $query, prompt: "Search this landscape").navigationTitle("Places").navigationBarTitleDisplayMode(.inline).scrollContentBackground(.hidden).background(RidgeTheme.paper)
+            }.searchable(text: $query, prompt: "Search this area").navigationTitle("Places").navigationBarTitleDisplayMode(.inline).scrollContentBackground(.hidden).background(RidgeTheme.paper)
         }.tint(RidgeTheme.forest)
     }
 }
@@ -476,10 +476,10 @@ struct WaypointsSheet: View {
                         store.insertingWaypoint = nil; store.movingWaypoint = index; store.camera = TerrainCameraCommand(action: .focus(waypoint.point.coordinate)); store.selectedPoint = waypoint.point.coordinate; dismiss()
                     } label: {
                         HStack(spacing: 14) {
-                            Text("\(index + 1)").font(.system(size: 12, weight: .bold, design: .monospaced)).frame(width: 32, height: 32).background(RidgeTheme.lime, in: Circle())
+                            Text("\(index + 1)").font(.system(size: 12, weight: .bold, design: .default)).frame(width: 32, height: 32).background(RidgeTheme.selection, in: Circle())
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(waypoint.name ?? (index == 0 ? "Start" : "Waypoint \(index + 1)"))
-                                Text(String(format: "%.5f, %.5f", waypoint.point.coordinate.latitude, waypoint.point.coordinate.longitude)).font(.system(size: 10, design: .monospaced)).foregroundStyle(RidgeTheme.muted)
+                                Text(String(format: "%.5f, %.5f", waypoint.point.coordinate.latitude, waypoint.point.coordinate.longitude)).font(.system(size: 10, design: .default)).foregroundStyle(RidgeTheme.muted)
                             }
                             Spacer(); Text(waypoint.point.elevation.map { "\(Int($0)) m" } ?? "—").font(.caption); Image(systemName: "arrow.up.left.and.arrow.down.right")
                         }.foregroundStyle(RidgeTheme.ink)
@@ -508,7 +508,7 @@ struct TerrainHelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Map help").font(.system(size: 32, design: .serif))
+                Text("Map help").font(RidgeTheme.pageTitle)
                 helpRow("hand.draw", "Map controls", gestureStyle.guide)
                 helpRow("point.topleft.down.to.point.bottomright.curvepath", "Planning a route", "Tap Plan a route, then place points on mapped paths. Follow paths uses the downloaded walking network. Direct line draws a manual connection.")
                 helpRow("square.dashed", "Detailed and overview terrain", "Expand area is always available on the 3D map. Tap distant terrain or move beyond your detailed area to see the coverage explanation, then expand around that location. Availability and size are checked before saving. You can keep sketching beyond detailed coverage; overview lines are manual connections, not followed paths.")

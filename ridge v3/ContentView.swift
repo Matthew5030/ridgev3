@@ -50,7 +50,7 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             if let notice = store.notice, store.activeTerrain == nil {
                 Text(notice).font(.subheadline.weight(.medium)).foregroundStyle(RidgeTheme.paper)
-                    .padding(16).background(RidgeTheme.ink, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(16).background(RidgeTheme.ink, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     .padding(.horizontal, 20).padding(.top, 70).allowsHitTesting(false)
             }
         }
@@ -66,7 +66,7 @@ struct ContentView: View {
                         Text(tab.rawValue).font(.system(size: 12, weight: .semibold))
                     }.frame(maxWidth: .infinity).padding(.vertical, 15)
                         .foregroundStyle(store.tab == tab ? RidgeTheme.forest : RidgeTheme.muted)
-                        .background(store.tab == tab ? RidgeTheme.forest.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 17))
+                        .background(store.tab == tab ? RidgeTheme.forest.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                 }.accessibilityAddTraits(store.tab == tab ? .isSelected : [])
             }
         }.padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 3)
@@ -85,7 +85,7 @@ struct PreparationOverlay: View {
                 if let total = store.transferTotal { Text("\(RidgeTheme.bytes(store.transferredBytes)) of \(RidgeTheme.bytes(total))").font(.subheadline.monospacedDigit()).foregroundStyle(RidgeTheme.muted) }
                 if store.progress > 0 { ProgressView(value: store.progress).tint(RidgeTheme.forest).frame(width: 190) }
                 Button("Cancel") { store.cancelPreparation() }.font(.subheadline.weight(.medium))
-            }.padding(30).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 28)).padding(28)
+            }.padding(30).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius)).padding(28)
         }
     }
 }

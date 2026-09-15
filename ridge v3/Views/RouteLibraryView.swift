@@ -36,16 +36,19 @@ struct RouteLibraryView: View {
                         Image(systemName: "magnifyingglass").foregroundStyle(RidgeTheme.muted)
                         TextField("Search routes and notes", text: $query).autocorrectionDisabled()
                         if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Clear search") }
-                    }.padding(14).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 14))
-                    Toggle("Favourites only", isOn: $favouritesOnly).font(.subheadline).tint(RidgeTheme.forest)
+                    }.padding(14).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
+                    HStack {
+                        Text("\(visibleRoutes.count) \(visibleRoutes.count == 1 ? "route" : "routes")").font(.subheadline).foregroundStyle(RidgeTheme.muted)
+                        Spacer()
+                        Button { favouritesOnly.toggle() } label: {
+                            Label("Favourites", systemImage: favouritesOnly ? "star.fill" : "star")
+                                .font(.subheadline).padding(.horizontal, 12).frame(minHeight: 44)
+                                .background(favouritesOnly ? RidgeTheme.selection : .clear, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
+                        }.buttonStyle(.plain).accessibilityAddTraits(favouritesOnly ? .isSelected : [])
+                    }
                 }
                 if store.routes.isEmpty { emptyState }
                 else {
-                    HStack(spacing: 7) {
-                        Circle().fill(RidgeTheme.forest).frame(width: 5, height: 5)
-                        Text("\(store.routes.count) \(store.routes.count == 1 ? "ROUTE" : "ROUTES") · SAVED ON THIS DEVICE")
-                            .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
-                    }.foregroundStyle(RidgeTheme.muted)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400), spacing: 20, alignment: .top)], alignment: .leading, spacing: 20) {
                         ForEach(visibleRoutes) { route in
                             let entry = store.entries.first { $0.id == route.regionID }
@@ -107,27 +110,23 @@ struct RouteLibraryView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Routes").font(.system(size: 38, weight: .regular, design: .serif))
+                Text("Routes").font(RidgeTheme.pageTitle)
             }
             Spacer()
             Button { store.showGPXImporter = true } label: {
                 Image(systemName: "square.and.arrow.down").font(.system(size: 19, weight: .medium))
-                    .frame(width: 48, height: 48).background(RidgeTheme.forest, in: Circle()).foregroundStyle(RidgeTheme.panel)
+                    .frame(width: 44, height: 44).foregroundStyle(RidgeTheme.forest)
             }.accessibilityLabel("Import GPX").disabled(store.isRouting)
         }
     }
 
     private var emptyState: some View {
         VStack(spacing: 22) {
-            ZStack {
-                Circle().fill(RidgeTheme.lime.opacity(0.22)).frame(width: 184, height: 184)
-                TerrainGlyph(color: RidgeTheme.forest.opacity(0.55)).frame(width: 145, height: 125).rotationEffect(.degrees(-13))
-                Image(systemName: "point.bottomleft.forward.to.point.topright.scurvepath")
-                    .font(.system(size: 56, weight: .ultraLight)).foregroundStyle(RidgeTheme.orange)
-            }.padding(.top, 12).accessibilityHidden(true)
+            Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                .font(.system(size: 32, weight: .regular)).foregroundStyle(RidgeTheme.muted).accessibilityHidden(true)
             VStack(spacing: 12) {
                 Text("No saved routes")
-                    .font(.system(size: 30, weight: .regular, design: .serif)).multilineTextAlignment(.center)
+                    .font(RidgeTheme.pageTitle).multilineTextAlignment(.center)
                 Text("Open an area to plan a route, or import a GPX file.")
                     .font(.system(size: 14)).lineSpacing(4).foregroundStyle(RidgeTheme.muted).multilineTextAlignment(.center)
             }
@@ -136,7 +135,7 @@ struct RouteLibraryView: View {
                 Button { store.showGPXImporter = true } label: { Label("Import a GPX file", systemImage: "square.and.arrow.down") }
                     .buttonStyle(RidgeButtonStyle(secondary: true)).disabled(store.isRouting)
             }.padding(.top, 3)
-        }.padding(26).frame(maxWidth: .infinity).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 28)).padding(.top, 8)
+        }.padding(26).frame(maxWidth: .infinity).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius)).padding(.top, 8)
     }
 
     private func export(_ route: RidgeRoute) {
@@ -163,11 +162,11 @@ private struct LibraryRouteCard: View {
             VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
-                    Eyebrow(text: entry?.manifest.name ?? (route.segments.contains { $0.mode == "imported" } ? "Imported GPX" : "Saved route"))
+                    Text(entry?.manifest.name ?? (route.segments.contains { $0.mode == "imported" } ? "Imported GPX" : "Saved route")).font(.subheadline).foregroundStyle(RidgeTheme.muted)
                     Spacer(minLength: 4)
                     if favourite { Image(systemName: "star.fill").font(.caption).foregroundStyle(RidgeTheme.forest).accessibilityLabel("Favourite route") }
                 }
-                Text(route.name).font(.system(size: 23, weight: .regular, design: .serif)).lineLimit(2, reservesSpace: true)
+                Text(route.name).font(RidgeTheme.sectionTitle).lineLimit(2, reservesSpace: true)
                 HStack(spacing: 6) {
                     Image(systemName: route.segments.contains { $0.mode == "imported" } ? "arrow.down.doc" : "point.topleft.down.to.point.bottomright.curvepath")
                     Text(route.modifiedAt, format: .dateTime.day().month(.abbreviated).year())
@@ -175,11 +174,11 @@ private struct LibraryRouteCard: View {
             }
             if let summary {
                 HStack(alignment: .firstTextBaseline) {
-                    metric("DISTANCE", value: RidgeTheme.distance(summary.distanceMeters), suffix: summary.distanceMeters >= 1000 ? "km" : "m")
+                    metric("Distance", value: RidgeTheme.distance(summary.distanceMeters), suffix: summary.distanceMeters >= 1000 ? "km" : "m")
                     Spacer(minLength: 8)
-                    metric("ASCENT EST.", value: summary.hasElevation ? "\(Int(summary.ascentMeters.rounded()))" : "—", suffix: summary.hasElevation ? "m" : "")
+                    metric("Ascent est.", value: summary.hasElevation ? "\(Int(summary.ascentMeters.rounded()))" : "—", suffix: summary.hasElevation ? "m" : "")
                     Spacer(minLength: 8)
-                    metric("WALK EST.", value: duration(summary.estimatedMinutes), suffix: "")
+                    metric("Time est.", value: duration(summary.estimatedMinutes), suffix: "")
                 }
             } else { ProgressView().tint(RidgeTheme.forest).frame(maxWidth: .infinity, minHeight: 66) }
             Rectangle().fill(RidgeTheme.line.opacity(0.7)).frame(height: 1)
@@ -189,9 +188,9 @@ private struct LibraryRouteCard: View {
                 Spacer(minLength: 3)
             }.padding(.trailing, 38).font(.system(size: 11, weight: .medium)).foregroundStyle(terrainReady ? RidgeTheme.forest : RidgeTheme.muted)
             }.padding(20)
-        }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 24))
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(RidgeTheme.forest.opacity(0.06)))
+        }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
+            .clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius).strokeBorder(RidgeTheme.forest.opacity(0.06)))
             .task(id: route.modifiedAt) {
                 let snapshot = route
                 let result = await Task.detached(priority: .utility) { RouteEngine.statistics(for: snapshot) }.value
@@ -201,9 +200,9 @@ private struct LibraryRouteCard: View {
 
     private func metric(_ title: String, value: String, suffix: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.7).foregroundStyle(RidgeTheme.muted)
+            Text(title).font(.caption).foregroundStyle(RidgeTheme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.system(size: 20, weight: .medium, design: .rounded))
+                Text(value).font(.system(size: 20, weight: .medium, design: .default))
                 Text(suffix).font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
             }
         }
