@@ -13,6 +13,7 @@ enum Failure: Error { case invalid(String) }
 func check(_ condition: Bool, _ message: String) throws { if !condition { throw Failure.invalid(message) } }
 func digest(_ d: Data) -> String { SHA256.hash(data:d).map { String(format:"%02x",$0) }.joined() }
 let root=URL(fileURLWithPath:CommandLine.arguments[1],isDirectory:true)
+let materialLighting=CommandLine.arguments.contains("--material-lighting")
 let source=try JSONDecoder().decode(Source.self,from:Data(contentsOf:root.appendingPathComponent("source.json")))
 guard let device=MTLCreateSystemDefaultDevice(),let queue=device.makeCommandQueue() else { throw Failure.invalid("No Metal GPU") }
 let shader="""
@@ -31,7 +32,8 @@ vertex O flat(uint id [[vertex_id]],constant U& u [[buffer(1)]]) {
 fragment float4 ink(O in [[stage_in]],texture2d<float> map [[texture(0)]],sampler s [[sampler(0)]],constant U& u [[buffer(1)]]) {
   float3 c=map.sample(s,in.uv).rgb;
   if(u.mode.x>0) { float sunlight=max(0.0,dot(normalize(in.n),normalize(float3(-.45,.85,-.4))));
-    c*=.86+.16*sunlight;c*=mix(float3(1),float3(1.015,1.005,.985),sunlight); }
+    if(u.mode.y>0) { c*=float3(.76,.86,1.0)*.34+float3(1.07,1.025,.94)*(.82*sunlight); }
+    else { c*=.86+.16*sunlight;c*=mix(float3(1),float3(1.015,1.005,.985),sunlight); } }
   return float4(c,1);
 }
 """
@@ -101,7 +103,7 @@ func draw(_ t:Target,_ map:MTLTexture,_ flat:Bool,_ uniforms:VaryingUniforms)thr
   pass.depthAttachment.texture=t.depth;pass.depthAttachment.loadAction = .clear;pass.depthAttachment.storeAction = .dontCare;pass.depthAttachment.clearDepth=1
   let command=queue.makeCommandBuffer()!,e=command.makeRenderCommandEncoder(descriptor:pass)!
   e.setRenderPipelineState(flat ? flatPipeline:terrainPipeline);e.setDepthStencilState(depthState);e.setCullMode(.none)
-  var u=uniforms;e.setVertexBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1);e.setFragmentBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1)
+  var u=uniforms;if materialLighting && !flat && map !== maps["current"] { u.mode.y=1 };e.setVertexBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1);e.setFragmentBytes(&u,length:MemoryLayout<VaryingUniforms>.stride,index:1)
   e.setFragmentTexture(map,index:0);e.setFragmentSamplerState(sampler,index:0)
   if flat { e.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3) }
   else { e.setVertexBuffer(vertices,offset:0,index:0);e.drawIndexedPrimitives(type:.triangle,indexCount:source.indexCount,indexType:.uint32,indexBuffer:indices,indexBufferOffset:0) }
@@ -147,6 +149,6 @@ for name in ["current","hd","astc"] {
   _=try draw(mapTarget,maps[name]!,true,VaryingUniforms(matrix:matrix_identity_float4x4,crop:SIMD4(0,0,1,1),mode:SIMD4(0,0,0,0)))
   try save(mapTarget.color,"map-\(name).png")
 }
-let report:[String:Any]=["device":device.name,"variants":stats,"geometryGPUBytes":vertices.allocatedSize+indices.allocatedSize,"vertexCount":source.vertexCount,"triangleCount":source.indexCount/3,"renderSize":[1440,1000],"samples":4,"anisotropy":16,"timingNote":"20 interleaved warmed-up GPU frame samples per variant; render pass only, not full app or physical iPad performance.","nativeASTCUploadAndRendering":true]
+let report:[String:Any]=["device":device.name,"variants":stats,"geometryGPUBytes":vertices.allocatedSize+indices.allocatedSize,"vertexCount":source.vertexCount,"triangleCount":source.indexCount/3,"renderSize":[1440,1000],"samples":4,"anisotropy":16,"timingNote":"20 interleaved warmed-up GPU frame samples per variant; render pass only, not full app or physical iPad performance.","nativeASTCUploadAndRendering":true,"materialLighting":materialLighting]
 let data=try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]);try data.write(to:root.appendingPathComponent("gpu.json"))
 print(String(data:data,encoding:.utf8)!)
