@@ -1292,6 +1292,22 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         var destination = camera
         switch action {
         case .home: destination = homeCamera()
+        case .fitRoute:
+            guard !route.isEmpty else { return }
+            var minimum = SIMD3<Float>(repeating: .infinity), maximum = SIMD3<Float>(repeating: -.infinity)
+            for point in route {
+                let uv = terrain.manifest.bounds.uv(point.coordinate)
+                let height = point.elevation.map { Float($0 - Double(minimumHeight)) / metersPerUnit }
+                    ?? sceneHeight(u: Float(uv.u), v: Float(uv.v)) ?? primaryFloor
+                let p = SIMD3(Float(uv.u - 0.5) * width, height, Float(uv.v - 0.5) * depthExtent)
+                minimum = simd_min(minimum, p); maximum = simd_max(maximum, p)
+            }
+            let target = (minimum + maximum) / 2
+            let radius = max(0.02, simd_length(maximum - minimum) / 2)
+            let aspect = max(0.1, Float(viewportSize.width / max(1, viewportSize.height)))
+            let angle = atan(tan(fieldOfView / 2) * min(1, aspect))
+            destination = RidgeCamera(target: target, yaw: camera.yaw, pitch: 60 * .pi / 180,
+                                      distance: radius / sin(angle) * 1.15)
         case .north: destination.yaw = camera.yaw + shortestAngle(from: camera.yaw, to: 0)
         case .overhead: destination.pitch = 86 * .pi / 180; destination.yaw = camera.yaw + shortestAngle(from: camera.yaw, to: 0)
         case .zoomIn: destination.distance /= 1.5
@@ -1362,7 +1378,10 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     /// are culled before UIKit performs its small screen-space collision pass.
     @MainActor
     func projectedPoint(_ point: GeoPoint) -> CGPoint? {
-        guard let view, var p = position(point) else { return nil }
+        guard let view else { return nil }
+        let uv = terrain.manifest.bounds.uv(point)
+        guard let height = sceneHeight(u: Float(uv.u), v: Float(uv.v)) else { return nil }
+        var p = SIMD3(Float(uv.u - 0.5) * width, height, Float(uv.v - 0.5) * depthExtent)
         p.y += max(0.0012, 3 / metersPerUnit)
         let clip = viewProjection * SIMD4(p.x, p.y, p.z, 1)
         guard clip.w > 0, clip.z >= 0, clip.z <= clip.w else { return nil }

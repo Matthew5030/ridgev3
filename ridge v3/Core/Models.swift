@@ -256,3 +256,11 @@ enum RouteEditTarget: Equatable, Sendable {
     case waypoint(UUID)
     case segment(Int)
 }
+
+struct RouteProfileSample: Equatable, Sendable {
+    var distance: Double
+    var point: RoutePoint
+    var breakBefore: Bool
+    var unknownBefore: Bool
+    var gradientPercent: Double? = nil
+}

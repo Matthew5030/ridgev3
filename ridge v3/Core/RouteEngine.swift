@@ -253,6 +253,44 @@ enum RouteEngine {
         return stats
     }
 
+    /// At most 1,002 display samples, computed once when the route changes.
+    /// Missing heights and GPX segment boundaries never become invented lines.
+    static func elevationProfile(_ segments: [RouteSegment]) -> [RouteProfileSample] {
+        let total = segments.reduce(0) { $0 + $1.points.count }
+        let step = max(1, (total + 999) / 1000)
+        var samples: [RouteProfileSample] = []
+        var distance = 0.0, ordinal = 0
+        var breakBefore = true, unknownBefore = false
+        for segment in segments {
+            breakBefore = true
+            for index in segment.points.indices {
+                let point = segment.points[index]
+                if index > 0 {
+                    distance += segment.points[index - 1].coordinate.distance(to: point.coordinate)
+                    unknownBefore = unknownBefore || segment.points[index - 1].elevation == nil || point.elevation == nil
+                }
+                if point.elevation == nil { breakBefore = true; unknownBefore = true }
+                if ordinal % step == 0 || ordinal == total - 1 {
+                    samples.append(RouteProfileSample(distance: distance, point: point, breakBefore: breakBefore, unknownBefore: unknownBefore))
+                    breakBefore = point.elevation == nil; unknownBefore = point.elevation == nil
+                }
+                ordinal += 1
+            }
+        }
+        var runStart = 0
+        for index in samples.indices {
+            if samples[index].breakBefore || samples[index].unknownBefore { runStart = index }
+            guard let elevation = samples[index].point.elevation, index > runStart else { continue }
+            var previous = index - 1
+            while previous > runStart && samples[index].distance - samples[previous].distance < 25 { previous -= 1 }
+            let span = samples[index].distance - samples[previous].distance
+            if (20...150).contains(span), let lower = samples[previous].point.elevation {
+                samples[index].gradientPercent = (elevation - lower) / span * 100
+            }
+        }
+        return samples
+    }
+
     static func insertingWaypoint(in route: RidgeRoute, segment index: Int, at coordinate: GeoPoint, terrain: LoadedTerrain) throws -> RidgeRoute {
         guard route.waypoints.count < 250, route.segments.indices.contains(index),
               route.waypoints.indices.contains(index + 1), !route.segments.contains(where: { $0.mode == "imported" }) else {

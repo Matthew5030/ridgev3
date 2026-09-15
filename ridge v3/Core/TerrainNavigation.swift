@@ -83,7 +83,7 @@ struct TerrainNavigationFrame: Sendable {
 /// A new identifier deliberately triggers the same camera action again.
 struct TerrainCameraCommand: Equatable, Sendable {
     enum Action: Equatable, Sendable {
-        case home, north, overhead, zoomIn, zoomOut
+        case home, north, overhead, zoomIn, zoomOut, fitRoute
         case focus(GeoPoint)
         case restore(TerrainCameraPose)
     }

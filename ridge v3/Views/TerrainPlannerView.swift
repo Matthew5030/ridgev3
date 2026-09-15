@@ -21,6 +21,8 @@ struct TerrainPlannerView: View {
     @State private var exportDocument: GPXDocument?
     @State private var exporting = false
     @State private var profileExpanded = true
+    @State private var profileSamples: [RouteProfileSample] = []
+    @State private var panelCollapsed = false
     @State private var panelHeight: CGFloat = 210
     @State private var location = RidgeLocation()
     private var imported: Bool { store.activeRoute?.segments.contains(where: { $0.mode == "imported" }) == true }
@@ -29,7 +31,7 @@ struct TerrainPlannerView: View {
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= 900 || (geometry.size.width >= 640 && geometry.size.width > geometry.size.height)
-            let sideWidth = min(360, max(280, geometry.size.width * 0.34))
+            let sideWidth = panelCollapsed ? 172.0 : min(360, max(280, geometry.size.width * 0.34))
             ZStack {
                 RidgeTheme.paper.ignoresSafeArea()
                 // Keep the same Metal view alive through orientation changes;
@@ -43,7 +45,7 @@ struct TerrainPlannerView: View {
                     .padding(.bottom, wide ? 38 : panelHeight)
                     .padding(.trailing, wide ? sideWidth + 20 : 0)
                 if wide {
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         VStack(alignment: .leading, spacing: 8) {
                             topBar
                             cameraControls(horizontal: true).padding(.horizontal, 22)
@@ -57,7 +59,7 @@ struct TerrainPlannerView: View {
                         }
                         .scrollBounceBehavior(.basedOnSize)
                         .frame(width: sideWidth)
-                        .frame(maxHeight: .infinity)
+                        .frame(maxHeight: panelCollapsed ? 72 : .infinity, alignment: .top)
                         .background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: 24))
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .padding(.vertical, 8).padding(.trailing, 12)
@@ -80,6 +82,13 @@ struct TerrainPlannerView: View {
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.sheet(isPresented: $showSettings) { SettingsView(store: store).presentationDragIndicator(.visible) }
         .fullScreenCover(isPresented: $showAreaSelection) { ExploreView(store: store, expanding: terrain.manifest, expansionFocus: store.areaExpansionFocus, onFinish: { showAreaSelection = false }).interactiveDismissDisabled(store.extensionInProgress) }
+        .task(id: store.activeRoute?.modifiedAt) {
+            let segments = store.activeRoute?.segments ?? []
+            let samples = await Task.detached { RouteEngine.elevationProfile(segments) }.value
+            if !Task.isCancelled { profileSamples = samples }
+        }
+        .onChange(of: store.editing) { _, editing in if editing { panelCollapsed = false } }
+        .onChange(of: store.pendingExtension != nil) { _, _ in if store.pendingExtension != nil { panelCollapsed = false } }
         .onPreferenceChange(PlannerPanelHeight.self) { if $0 > 0 { panelHeight = $0 } }
             .foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest).preferredColorScheme(.light)
             .sheet(isPresented: $showPlaces) { PlacesSheet(terrain: terrain, store: store).presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
@@ -200,6 +209,8 @@ struct TerrainPlannerView: View {
         return layout {
             RoundControl(symbol: "arrow.up", label: "Face north") { store.camera = TerrainCameraCommand(action: .north) }
             Menu {
+                Button("Fit route", systemImage: "point.topleft.down.to.point.bottomright.curvepath") { store.camera = TerrainCameraCommand(action: .fitRoute) }
+                    .disabled(store.activeRoute?.points.isEmpty != false)
                 Button("Fit whole terrain", systemImage: "viewfinder") { store.camera = TerrainCameraCommand(action: .home) }
                 Button("Zoom in", systemImage: "plus.magnifyingglass") { store.camera = TerrainCameraCommand(action: .zoomIn) }
                 Button("Zoom out", systemImage: "minus.magnifyingglass") { store.camera = TerrainCameraCommand(action: .zoomOut) }
@@ -222,6 +233,11 @@ struct TerrainPlannerView: View {
         } else {
             VStack(alignment: .leading, spacing: 14) {
             if !wide { Capsule().fill(RidgeTheme.line).frame(width: 30, height: 3).frame(maxWidth: .infinity).padding(.top, 2) }
+            Button { panelCollapsed.toggle() } label: {
+                HStack { Image(systemName: panelCollapsed ? "chevron.up" : "chevron.down"); Text(panelCollapsed ? "Show planner" : "Hide planner"); Spacer() }
+                    .font(.subheadline.weight(.semibold)).frame(minHeight: 36)
+            }.buttonStyle(.plain).accessibilityHint("Change how much terrain is visible")
+            if !panelCollapsed {
             if let route = store.activeRoute {
                 routeHeader(route)
                 if store.routeNeedsDetail {
@@ -242,8 +258,13 @@ struct TerrainPlannerView: View {
                         Spacer()
                         statMetric(statistics.hasCompleteElevation ? duration(statistics.estimatedMinutes) : "—", unit: "", title: "EST. WALK")
                     }
-                    if profileExpanded && !store.routeNeedsDetail {
-                        ElevationProfileView(segments: route.segments, onSelect: { store.selectedPoint = $0.coordinate }).frame(height: 74)
+                    if profileExpanded {
+                        ElevationProfileView(samples: profileSamples, onSelect: { store.selectedPoint = $0.coordinate },
+                                             onFocus: { point in
+                                                 let coverage = terrain.horizon?.layers.last?.metadata.bounds ?? terrain.manifest.bounds
+                                                 if coverage.contains(point.coordinate) { store.camera = TerrainCameraCommand(action: .focus(point.coordinate)) }
+                                                 else { store.requestExtension(at: point.coordinate) }
+                                             })
                     }
                 }
                 if store.editing { editingControls(route) }
@@ -269,6 +290,7 @@ struct TerrainPlannerView: View {
                 Button { store.startRoute() } label: { HStack { Image(systemName: "point.topleft.down.to.point.bottomright.curvepath"); Text("Plan a route"); Spacer(); Image(systemName: "arrow.right") }.padding(.horizontal, 18) }.buttonStyle(RidgeButtonStyle())
                 HStack { Text(gestureStyle.shortGuide); Spacer(); Button("Guide") { showHelp = true }.fontWeight(.semibold) }.font(.system(size: 10)).foregroundStyle(RidgeTheme.muted)
             }
+            }
         }.padding(.horizontal, wide ? 18 : 22).padding(.top, 10).padding(.bottom, 18)
             .background(RidgeTheme.panel.opacity(0.98), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
             .overlay(alignment: .top) { UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28).strokeBorder(RidgeTheme.ink.opacity(0.05)) }
@@ -284,7 +306,7 @@ struct TerrainPlannerView: View {
                 Button { routeName = route.name; rename = true } label: { Text(route.name).font(.system(size: 21, weight: .medium, design: .serif)).lineLimit(1) }.disabled(store.isRouting)
             }
             Spacer(minLength: 6)
-            if route.points.count > 1 && !store.routeNeedsDetail { Button { profileExpanded.toggle() } label: { Image(systemName: "chart.xyaxis.line").font(.system(size: 18)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.04), in: Circle()) }.accessibilityLabel("Toggle elevation profile") }
+            if route.points.count > 1 { Button { profileExpanded.toggle() } label: { Image(systemName: "chart.xyaxis.line").font(.system(size: 18)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.04), in: Circle()) }.accessibilityLabel("Toggle elevation profile") }
         }
     }
     private func editingControls(_ route: RidgeRoute) -> some View {
@@ -336,7 +358,7 @@ struct TerrainPlannerView: View {
     private func statMetric(_ value: String, unit: String, title: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 4) { Text(value).font(.system(size: 27, weight: .medium, design: .rounded)); Text(unit).font(.system(size: 11)).foregroundStyle(RidgeTheme.muted) }
-            Text(title).font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1.2).foregroundStyle(RidgeTheme.muted)
+            Text(title).font(.caption2.weight(.semibold)).foregroundStyle(RidgeTheme.muted)
         }
     }
     private func duration(_ minutes: Double) -> String {
@@ -351,48 +373,74 @@ struct TerrainPlannerView: View {
 }
 
 struct ElevationProfileView: View {
-    let segments: [RouteSegment]
+    let samples: [RouteProfileSample]
     var onSelect: (RoutePoint) -> Void
+    var onFocus: (RoutePoint) -> Void
     @State private var selection: Int?
-    private var samples: [(distance: Double, point: RoutePoint, start: Bool)] {
-        var values: [(Double, RoutePoint, Bool)] = [], distance = 0.0
-        for segment in segments {
-            let strideLength = max(1, segment.points.count / 350)
-            for index in segment.points.indices {
-                if index > 0 { distance += segment.points[index - 1].coordinate.distance(to: segment.points[index].coordinate) }
-                if index % strideLength == 0 || index == segment.points.count - 1 { values.append((distance, segment.points[index], index == 0)) }
-            }
-        }
-        return values
-    }
+    private var selected: RouteProfileSample? { selection.flatMap { samples.indices.contains($0) ? samples[$0] : nil } }
+
     var body: some View {
-        GeometryReader { geometry in
-            let samples = samples, elevations = samples.compactMap { $0.point.elevation }
-            let minimum = elevations.min() ?? 0, maximum = elevations.max() ?? 1
-            let span = max(25, maximum - minimum), distance = max(1, samples.last?.distance ?? 1)
-            Canvas { context, size in
-                var path = Path(), hasPoint = false
-                for sample in samples {
-                    guard let elevation = sample.point.elevation else { hasPoint = false; continue }
-                    let p = CGPoint(x: sample.distance / distance * size.width, y: size.height - 14 - (elevation - minimum) / span * (size.height - 28))
-                    if !hasPoint || sample.start { path.move(to: p); hasPoint = true } else { path.addLine(to: p) }
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geometry in
+                let elevations = samples.compactMap { $0.point.elevation }
+                let minimum = elevations.min() ?? 0, maximum = elevations.max() ?? 1
+                let span = max(25, maximum - minimum), total = max(1, samples.last?.distance ?? 1)
+                Canvas { context, size in
+                    var path = Path(), hasPoint = false
+                    for (index, sample) in samples.enumerated() {
+                        let x = sample.distance / total * size.width
+                        if index > 0 && (sample.unknownBefore || sample.point.elevation == nil) {
+                            let previousX = samples[index - 1].distance / total * size.width
+                            context.fill(Path(CGRect(x: previousX, y: 5, width: max(2, x - previousX), height: size.height - 20)), with: .color(RidgeTheme.orange.opacity(0.14)))
+                        }
+                        guard let elevation = sample.point.elevation else { hasPoint = false; continue }
+                        let p = CGPoint(x: x, y: size.height - 14 - (elevation - minimum) / span * (size.height - 28))
+                        if !hasPoint || sample.breakBefore || sample.unknownBefore { path.move(to: p); hasPoint = true } else { path.addLine(to: p) }
+                    }
+                    context.stroke(path, with: .color(RidgeTheme.forest), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    context.draw(Text("\(Int(maximum)) m").font(.caption2).foregroundStyle(RidgeTheme.muted), at: CGPoint(x: size.width, y: 0), anchor: .topTrailing)
+                    context.draw(Text("0 km").font(.caption2).foregroundStyle(RidgeTheme.muted), at: CGPoint(x: 0, y: size.height), anchor: .bottomLeading)
+                    context.draw(Text(String(format: "%.1f km", total / 1000)).font(.caption2).foregroundStyle(RidgeTheme.muted), at: CGPoint(x: size.width, y: size.height), anchor: .bottomTrailing)
+                    if let selected {
+                        let x = selected.distance / total * size.width
+                        context.fill(Path(CGRect(x: x, y: 4, width: 1.5, height: size.height - 16)), with: .color(RidgeTheme.orange))
+                    }
+                }.contentShape(Rectangle()).gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    let fraction = min(1, max(0, value.location.x / max(1, geometry.size.width)))
+                    guard let index = samples.indices.min(by: { abs(samples[$0].distance / total - fraction) < abs(samples[$1].distance / total - fraction) }) else { return }
+                    select(index)
+                })
+                .accessibilityLabel("Elevation profile")
+                .accessibilityValue(selected.map { String(format: "%.1f kilometres", $0.distance / 1000) } ?? "Adjust to inspect the route")
+                .accessibilityAdjustableAction { direction in
+                    let step = max(1, samples.count / 20)
+                    select((selection ?? 0) + (direction == .increment ? step : -step))
                 }
-                let baseline = CGRect(x: 0, y: size.height - 12, width: size.width, height: 0.5)
-                context.fill(Path(baseline), with: .color(RidgeTheme.line))
-                context.stroke(path, with: .color(RidgeTheme.forest), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                context.draw(Text("\(Int(maximum)) m").font(.system(size: 8, design: .monospaced)).foregroundStyle(RidgeTheme.muted), at: CGPoint(x: size.width, y: 2), anchor: .topTrailing)
-                context.draw(Text("ELEVATION").font(.system(size: 7, design: .monospaced)).foregroundStyle(RidgeTheme.muted), at: CGPoint(x: 0, y: size.height), anchor: .bottomLeading)
-                if let selection, samples.indices.contains(selection), let elevation = samples[selection].point.elevation {
-                    let x = samples[selection].distance / distance * size.width
-                    context.fill(Path(CGRect(x: x, y: 8, width: 1, height: size.height - 20)), with: .color(RidgeTheme.orange))
-                    context.draw(Text("\(Int(elevation)) m").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(RidgeTheme.orange), at: CGPoint(x: min(size.width - 25, max(25, x)), y: 0), anchor: .top)
+            }.frame(height: 96)
+            if let selected {
+                ViewThatFits(in: .horizontal) {
+                    HStack { inspection(selected); Spacer(); focusButton(selected) }
+                    VStack(alignment: .leading, spacing: 8) { inspection(selected); focusButton(selected) }
                 }
-            }.contentShape(Rectangle()).gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                let fraction = min(1, max(0, value.location.x / geometry.size.width))
-                guard let index = samples.indices.min(by: { abs(samples[$0].distance / distance - fraction) < abs(samples[$1].distance / distance - fraction) }) else { return }
-                selection = index; onSelect(samples[index].point)
-            }).accessibilityLabel("Route elevation profile. Minimum \(Int(minimum)) metres, maximum \(Int(maximum)) metres.")
+            } else { Text("Slide along the profile to inspect your route.").font(.caption).foregroundStyle(RidgeTheme.muted) }
+            if samples.contains(where: { $0.unknownBefore || $0.point.elevation == nil }) {
+                Label("Shaded gaps need elevation detail", systemImage: "square.dashed").font(.caption).foregroundStyle(RidgeTheme.muted)
+            }
+        }.onChange(of: samples) { _, _ in selection = nil }
+    }
+    private func inspection(_ sample: RouteProfileSample) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(String(format: "%.2f km · ", sample.distance / 1000) + (sample.point.elevation.map { "\(Int($0)) m" } ?? "Elevation unknown")).font(.subheadline.monospacedDigit())
+            Text(sample.gradientPercent.map { String(format: "Approx. grade %+.0f%%", $0) } ?? "Grade unavailable here").font(.caption).foregroundStyle(RidgeTheme.muted)
         }
+    }
+    private func focusButton(_ sample: RouteProfileSample) -> some View {
+        Button("Show here", systemImage: "scope") { onFocus(sample.point) }.font(.subheadline).frame(minHeight: 44)
+    }
+    private func select(_ index: Int) {
+        guard !samples.isEmpty else { return }
+        let index = min(samples.count - 1, max(0, index))
+        selection = index; onSelect(samples[index].point)
     }
 }
 
