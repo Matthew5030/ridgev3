@@ -166,6 +166,32 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
         try check(store.activeTerrain?.manifest.id == original.manifest.id && store.errorMessage == nil,
                   "A superseded failed open cannot show a stale error over the new scene")
         print("PASS ordinary preparation, cancellation and supersession")
+        store.activeRoute = originalRoute; store.editing = true
+        store.insertingWaypoint = 0
+        let via = original.manifest.bounds.point(u: 0.45, v: 0.3)
+        store.tapTerrain(via); try await settle(store)
+        let inserted = store.activeRoute!
+        try check(inserted.waypoints.count == 3 && inserted.segments.count == 2 && inserted.waypoints[1].point.coordinate == via,
+                  "A via point splits the selected leg and persists its position")
+        try check(inserted.waypoints.first == originalRoute.waypoints.first && inserted.waypoints.last == originalRoute.waypoints.last,
+                  "Insertion preserves endpoint identities")
+        store.undo(); try await settle(store)
+        try check(store.activeRoute?.segments == originalRoute.segments, "Undo restores the original leg exactly")
+        store.redo(); try await settle(store)
+        store.deleteWaypoint(inserted.waypoints[1].id); try await settle(store)
+        try check(store.activeRoute?.waypoints == originalRoute.waypoints && store.activeRoute?.segments.count == 1,
+                  "Deleting an interior via point reconnects its neighbours")
+        store.undo(); try await settle(store)
+        try check(store.activeRoute?.segments == inserted.segments, "Deleting a via point is undoable")
+        var shorter = try RouteEngine.deletingWaypoint(in: inserted, id: inserted.waypoints[0].id, terrain: original)
+        try check(shorter.segments == Array(inserted.segments.dropFirst()), "Deleting the start preserves the remaining legs")
+        shorter = try RouteEngine.deletingWaypoint(in: shorter, id: shorter.waypoints.last!.id, terrain: original)
+        try check(shorter.waypoints.count == 1 && shorter.segments.isEmpty, "Deleting the finish retains the remaining start")
+        shorter = try RouteEngine.deletingWaypoint(in: shorter, id: shorter.waypoints[0].id, terrain: original)
+        try check(shorter.waypoints.isEmpty && shorter.segments.isEmpty, "The last point can be removed without a broken segment")
+        let nearest = RouteEngine.nearestRouteLocation(to: via, segments: inserted.segments.map(\.points))
+        try check(nearest != nil && nearest!.point.distance(to: via) < 0.01, "Route hit testing finds a geographic location on a leg")
+        print("PASS via point insertion, deletion, endpoint handling and undo")
         print("PASS extension flow: \(checks) assertions")
     }
 }

@@ -249,3 +249,9 @@ struct RidgeRoute: Codable, Identifiable, Hashable, Sendable {
         return segments.enumerated().flatMap { index, segment in index == 0 ? segment.points : Array(segment.points.dropFirst(segment.points.first == segments[index - 1].points.last ? 1 : 0)) }
     }
 }
+
+/// A tap on existing route geometry must not append an accidental endpoint.
+enum RouteEditTarget: Equatable, Sendable {
+    case waypoint(UUID)
+    case segment(Int)
+}

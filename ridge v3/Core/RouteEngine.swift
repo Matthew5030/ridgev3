@@ -253,6 +253,66 @@ enum RouteEngine {
         return stats
     }
 
+    static func insertingWaypoint(in route: RidgeRoute, segment index: Int, at coordinate: GeoPoint, terrain: LoadedTerrain) throws -> RidgeRoute {
+        guard route.waypoints.count < 250, route.segments.indices.contains(index),
+              route.waypoints.indices.contains(index + 1), !route.segments.contains(where: { $0.mode == "imported" }) else {
+            throw RouteError.invalidFile("This route cannot accept another via point here.")
+        }
+        let mode: RoutePlanningMode = route.segments[index].mode == "paths" ? .paths : .direct
+        let first = try planningSegment(from: route.waypoints[index].point.coordinate, to: coordinate, mode: mode, terrain: terrain)
+        guard let point = first.points.last else { throw RouteError.invalidCoordinate }
+        let second = try planningSegment(from: point.coordinate, to: route.waypoints[index + 1].point.coordinate, mode: mode, terrain: terrain)
+        var result = route
+        result.waypoints.insert(RouteWaypoint(point: point), at: index + 1)
+        result.segments.replaceSubrange(index...index, with: [first, second])
+        try validate(result)
+        return result
+    }
+
+    static func deletingWaypoint(in route: RidgeRoute, id: UUID, terrain: LoadedTerrain) throws -> RidgeRoute {
+        guard let index = route.waypoints.firstIndex(where: { $0.id == id }),
+              !route.segments.contains(where: { $0.mode == "imported" }) else {
+            throw RouteError.invalidFile("This point cannot be removed from an imported track.")
+        }
+        var result = route
+        if index > 0 && index < route.waypoints.count - 1 {
+            // Preserve a manual leg as manual; deleting a point must not turn
+            // an explicitly sketched connection into an inferred walking path.
+            let mode: RoutePlanningMode = route.segments[index - 1].mode == "paths" && route.segments[index].mode == "paths" ? .paths : .direct
+            let joined = try planningSegment(from: route.waypoints[index - 1].point.coordinate,
+                                            to: route.waypoints[index + 1].point.coordinate, mode: mode, terrain: terrain)
+            result.segments.replaceSubrange((index - 1)...index, with: [joined])
+        } else if !result.segments.isEmpty {
+            result.segments.remove(at: index == 0 ? 0 : result.segments.count - 1)
+        }
+        result.waypoints.remove(at: index)
+        try validate(result)
+        return result
+    }
+
+    static func nearestRouteLocation(to point: GeoPoint, segments: [[RoutePoint]]) -> (segment: Int, point: GeoPoint)? {
+        let longitudeScale = cos(point.latitude * .pi / 180)
+        var best = Double.infinity
+        var result: (Int, GeoPoint)?
+        for (index, segment) in segments.enumerated() {
+            for (a, b) in zip(segment, segment.dropFirst()) {
+                let dx = (b.coordinate.longitude - a.coordinate.longitude) * longitudeScale
+                let dy = b.coordinate.latitude - a.coordinate.latitude
+                let x = (point.longitude - a.coordinate.longitude) * longitudeScale
+                let y = point.latitude - a.coordinate.latitude
+                let length = dx * dx + dy * dy
+                let t = length > 0 ? min(1, max(0, (x * dx + y * dy) / length)) : 0
+                let distance = pow(x - t * dx, 2) + pow(y - t * dy, 2)
+                if distance < best {
+                    best = distance
+                    result = (index, GeoPoint(latitude: a.coordinate.latitude + t * dy,
+                                             longitude: a.coordinate.longitude + t * (b.coordinate.longitude - a.coordinate.longitude)))
+                }
+            }
+        }
+        return result
+    }
+
     static func validate(_ route: RidgeRoute) throws {
         guard !route.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, route.name.count <= 160 else { throw RouteError.invalidName }
         guard route.notes.count <= 100_000, route.segments.count <= 10_000,

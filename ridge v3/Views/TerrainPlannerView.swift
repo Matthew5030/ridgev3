@@ -6,6 +6,7 @@ import Observation
 struct TerrainPlannerView: View {
     @Bindable var store: AppStore
     let terrain: LoadedTerrain
+    @State private var editTarget: RouteEditTarget?
     @State private var showPlaces = false
     @State private var showDetails = false
     @State private var showNotes = false
@@ -36,7 +37,8 @@ struct TerrainPlannerView: View {
                 TerrainView(terrain: terrain, route: store.activeRoute?.points ?? [], waypoints: store.activeRoute?.waypoints ?? [], editing: store.editing && !store.isRouting,
                             command: store.camera, selectedPoint: store.selectedPoint, routeSegments: store.activeRoute?.segments.map(\.points) ?? [],
                             extensionBounds: store.extensionManifest?.bounds, extensionGrid: store.extensionManifest?.grid,
-                            onNavigationChange: store.updateNavigation, onRelease: { store.terrainViewReleased() }) { store.tapTerrain($0) }
+                            onNavigationChange: store.updateNavigation, onRelease: { store.terrainViewReleased() },
+                            onRouteEdit: store.editing && !imported && store.movingWaypoint == nil && store.insertingWaypoint == nil ? { editTarget = $0 } : nil) { store.tapTerrain($0) }
                     .padding(.top, wide ? 124 : 90)
                     .padding(.bottom, wide ? 38 : panelHeight)
                     .padding(.trailing, wide ? sideWidth + 20 : 0)
@@ -98,6 +100,19 @@ struct TerrainPlannerView: View {
             .alert("Ridge", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
                 Button("OK", role: .cancel) { store.errorMessage = nil }
             } message: { Text(store.errorMessage ?? "") }
+            .confirmationDialog("Edit route", isPresented: Binding(get: { editTarget != nil }, set: { if !$0 { editTarget = nil } }), titleVisibility: .visible) {
+                if case .waypoint(let id) = editTarget {
+                    Button("Move waypoint") {
+                        store.movingWaypoint = store.activeRoute?.waypoints.firstIndex { $0.id == id }
+                        store.insertingWaypoint = nil; editTarget = nil
+                    }
+                    Button("Delete waypoint", role: .destructive) { store.deleteWaypoint(id); editTarget = nil }
+                }
+                if case .segment(let index) = editTarget {
+                    Button("Add a via point") { store.insertingWaypoint = index; store.movingWaypoint = nil; editTarget = nil }
+                }
+                Button("Cancel", role: .cancel) { editTarget = nil }
+            }
             .confirmationDialog("Delete this route?", isPresented: $delete, titleVisibility: .visible) {
                 Button("Delete route", role: .destructive) { if let route = store.activeRoute { store.deleteRoute(route) } }
             }
@@ -278,7 +293,9 @@ struct TerrainPlannerView: View {
                 Spacer()
                 Button { showDetails = true } label: { Text("\(route.waypoints.count) \(route.waypoints.count == 1 ? "point" : "points")").font(.system(size: 12, weight: .medium)); Image(systemName: "list.bullet").font(.system(size: 12)) }
             }
-            if let moving = store.movingWaypoint {
+            if store.insertingWaypoint != nil {
+                HStack { Text("Tap a position for your via point."); Spacer(); Button("Cancel") { store.insertingWaypoint = nil } }.font(.footnote).foregroundStyle(RidgeTheme.orange)
+            } else if let moving = store.movingWaypoint {
                 HStack { Text("Tap a new position for point \(moving + 1)."); Spacer(); Button("Cancel") { store.movingWaypoint = nil } }.font(.footnote).foregroundStyle(RidgeTheme.orange)
             } else if route.waypoints.count < 2 {
                 Text(store.viewingSurroundings ? (route.waypoints.isEmpty ? "Tap the terrain to start a route sketch." : "Tap your next point to extend the sketch.") : (route.waypoints.isEmpty ? "Tap the terrain to place your start." : "Start placed. Tap your next point to trace the route.")).font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
@@ -406,7 +423,7 @@ struct WaypointsSheet: View {
                 Section { Text("Select a point to move it, then tap its new position on the terrain.").font(.footnote).foregroundStyle(RidgeTheme.muted) }
                 ForEach(Array((store.activeRoute?.waypoints ?? []).enumerated()), id: \.element.id) { index, waypoint in
                     Button {
-                        store.movingWaypoint = index; store.camera = TerrainCameraCommand(action: .focus(waypoint.point.coordinate)); store.selectedPoint = waypoint.point.coordinate; dismiss()
+                        store.insertingWaypoint = nil; store.movingWaypoint = index; store.camera = TerrainCameraCommand(action: .focus(waypoint.point.coordinate)); store.selectedPoint = waypoint.point.coordinate; dismiss()
                     } label: {
                         HStack(spacing: 14) {
                             Text("\(index + 1)").font(.system(size: 12, weight: .bold, design: .monospaced)).frame(width: 32, height: 32).background(RidgeTheme.lime, in: Circle())

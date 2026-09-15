@@ -1377,6 +1377,21 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         return CGPoint(x: CGFloat((ndc.x + 1) / 2) * view.bounds.width, y: CGFloat((1 - ndc.y) / 2) * view.bounds.height)
     }
 
+    @MainActor
+    func routeEditTarget(at location: CGPoint) -> RouteEditTarget? {
+        updateMatrices()
+        let nearby = waypoints.compactMap { waypoint -> (UUID, CGFloat)? in
+            guard let p = projectedPoint(waypoint.point.coordinate) else { return nil }
+            let distance = hypot(p.x - location.x, p.y - location.y)
+            return distance <= 24 ? (waypoint.id, distance) : nil
+        }.min { $0.1 < $1.1 }
+        if let nearby { return .waypoint(nearby.0) }
+        guard let ground = pick(at: location),
+              let nearest = RouteEngine.nearestRouteLocation(to: ground, segments: routeSegments),
+              let p = projectedPoint(nearest.point), hypot(p.x - location.x, p.y - location.y) <= 18 else { return nil }
+        return .segment(nearest.segment)
+    }
+
     /// Visit the exact triangles submitted to Metal and return the closest hit
     /// across all loaded resolutions. A surrounding ridge cannot be picked through.
     @MainActor

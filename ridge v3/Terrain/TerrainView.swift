@@ -17,6 +17,7 @@ struct TerrainView: UIViewRepresentable {
     var extensionGrid: TerrainGrid? = nil
     var onNavigationChange: ((TerrainNavigationState) -> Void)? = nil
     var onRelease: (() -> Void)? = nil
+    var onRouteEdit: ((RouteEditTarget) -> Void)? = nil
     var onTap: (GeoPoint) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -25,6 +26,7 @@ struct TerrainView: UIViewRepresentable {
         let host = TerrainHostView()
         context.coordinator.host = host
         context.coordinator.onTap = onTap
+        context.coordinator.onRouteEdit = onRouteEdit
         context.coordinator.editing = editing
         context.coordinator.installGestures(on: host, style: gestureStyle)
         host.accessibilityHint = gestureHint
@@ -43,6 +45,7 @@ struct TerrainView: UIViewRepresentable {
 
     func updateUIView(_ uiView: TerrainHostView, context: Context) {
         context.coordinator.onTap = onTap
+        context.coordinator.onRouteEdit = onRouteEdit
         context.coordinator.editing = editing
         context.coordinator.setGestureStyle(gestureStyle)
         uiView.onNavigationChange = onNavigationChange
@@ -97,6 +100,7 @@ struct TerrainView: UIViewRepresentable {
         var lastCommand: TerrainCameraCommand?
         var editing = false
         var onTap: ((GeoPoint) -> Void)?
+        var onRouteEdit: ((RouteEditTarget) -> Void)?
 
         private var gestureStyle: TerrainGestureStyle?
         private var orbitGesture: UIPanGestureRecognizer?
@@ -162,7 +166,12 @@ struct TerrainView: UIViewRepresentable {
         }
 
         @objc private func tap(_ gesture: UITapGestureRecognizer) {
-            guard let host, let point = host.renderer?.pick(at: gesture.location(in: host)) else { return }
+            guard let host else { return }
+            if editing, let onRouteEdit, let target = host.renderer?.routeEditTarget(at: gesture.location(in: host)) {
+                UISelectionFeedbackGenerator().selectionChanged()
+                onRouteEdit(target); return
+            }
+            guard let point = host.renderer?.pick(at: gesture.location(in: host)) else { return }
             UISelectionFeedbackGenerator().selectionChanged()
             onTap?(point)
         }

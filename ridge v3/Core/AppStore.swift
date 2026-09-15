@@ -18,6 +18,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     var camera = TerrainCameraCommand()
     var selectedPoint: GeoPoint?
     var movingWaypoint: Int?
+    var insertingWaypoint: Int?
     var isPreparing: Bool { preparationKind != nil }
     var preparationLabel = "Opening terrain"
     var progress: Double = 0
@@ -499,7 +500,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     }
 
     private func present(_ terrain: LoadedTerrain, route: RidgeRoute? = nil) {
-        activeRoute = route; editing = false; selectedPoint = nil; movingWaypoint = nil
+        activeRoute = route; editing = false; selectedPoint = nil; movingWaypoint = nil; insertingWaypoint = nil
         undoStack = []; redoStack = []
         planningMode = terrain.graph?.edges.isEmpty == false ? .paths : .direct
         camera = TerrainCameraCommand()
@@ -511,7 +512,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     func closeTerrain() {
         guard !isRouting, !extensionInProgress else { return }
         activeTerrain = nil; activeRoute = nil; editing = false; selectedPoint = nil
-        undoStack = []; redoStack = []; movingWaypoint = nil
+        undoStack = []; redoStack = []; movingWaypoint = nil; insertingWaypoint = nil
         pendingExtension = nil; extensionError = nil
         lastCameraPose = nil; lastViewedPoint = nil; viewingSurroundings = false; viewingSceneEdge = false
     }
@@ -519,7 +520,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     func startRoute() {
         guard !isRouting, let terrain = activeTerrain else { return }
         activeRoute = RidgeRoute(name: "\(terrain.manifest.name) route", regionID: terrain.manifest.id)
-        undoStack = []; redoStack = []; editing = true; movingWaypoint = nil
+        undoStack = []; redoStack = []; editing = true; movingWaypoint = nil; insertingWaypoint = nil
         toast(viewingSurroundings ? "Tap the terrain to start a route sketch." : (planningMode == .paths ? "Tap a mapped path to place your start." : "Tap the terrain to place your start."))
     }
 
@@ -536,6 +537,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         guard editing, !isRouting else { return }
         guard activeRoute?.segments.contains(where: { $0.mode == "imported" }) != true else { editing = false; toast("Imported GPX tracks can be viewed and reversed. Start a new route to plan your own line."); return }
         if let index = movingWaypoint { moveWaypoint(index, to: coordinate); return }
+        if let index = insertingWaypoint {
+            editRoute { try RouteEngine.insertingWaypoint(in: $0, segment: index, at: coordinate, terrain: $1) }
+            return
+        }
         guard let route = activeRoute, route.waypoints.count < 250 else { toast("A route can contain up to 250 control points."); return }
         isRouting = true
         let mode = planningMode
@@ -569,6 +574,22 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         }
     }
 
+    func deleteWaypoint(_ id: UUID) {
+        editRoute { try RouteEngine.deletingWaypoint(in: $0, id: id, terrain: $1) }
+    }
+
+    private func editRoute(_ edit: @escaping @Sendable (RidgeRoute, LoadedTerrain) throws -> RidgeRoute) {
+        guard !isRouting, !extensionInProgress, let route = activeRoute, let terrain = activeTerrain else { return }
+        isRouting = true
+        Task {
+            defer { isRouting = false }
+            do {
+                let updated = try await Task.detached(priority: .userInitiated) { try edit(route, terrain) }.value
+                if await commit(updated, previous: route) { movingWaypoint = nil; insertingWaypoint = nil; selectedPoint = nil }
+            } catch { toast(error.localizedDescription) }
+        }
+    }
+
     private func moveWaypoint(_ index: Int, to coordinate: GeoPoint) {
         guard !isRouting, let terrain = activeTerrain, let route = activeRoute,
               !route.segments.contains(where: { $0.mode == "imported" }), route.waypoints.indices.contains(index) else { return }
@@ -595,7 +616,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                     return updated
                 }.value
                 if await commit(updated, previous: route) {
-                    movingWaypoint = nil
+                    movingWaypoint = nil; insertingWaypoint = nil
                     toast("Waypoint moved.")
                 }
             } catch { toast(error.localizedDescription) }
@@ -604,7 +625,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
 
     func finishRoute() {
         guard !isRouting else { return }
-        editing = false; movingWaypoint = nil; selectedPoint = nil
+        editing = false; movingWaypoint = nil; insertingWaypoint = nil; selectedPoint = nil
         if activeRoute?.points.isEmpty != false { activeRoute = nil; toast("Empty route discarded.") }
         else { toast("Route saved on this device.") }
     }
@@ -649,7 +670,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         Task {
             defer { isRouting = false }
             guard await persist(previous), activeRoute?.id == current.id else { return }
-            undoStack.removeLast(); redoStack.append(current); activeRoute = previous; movingWaypoint = nil
+            undoStack.removeLast(); redoStack.append(current); activeRoute = previous; movingWaypoint = nil; insertingWaypoint = nil
         }
     }
     func redo() {
@@ -659,7 +680,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         Task {
             defer { isRouting = false }
             guard await persist(next), activeRoute?.id == current.id else { return }
-            redoStack.removeLast(); undoStack.append(current); activeRoute = next; movingWaypoint = nil
+            redoStack.removeLast(); undoStack.append(current); activeRoute = next; movingWaypoint = nil; insertingWaypoint = nil
         }
     }
     private func commit(_ updated: RidgeRoute, previous: RidgeRoute) async -> Bool {
@@ -727,7 +748,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             do {
                 try await routeStore.delete(id: route.id)
                 routes.removeAll { $0.id == route.id }
-                if activeRoute?.id == route.id { activeRoute = nil; editing = false; undoStack = []; redoStack = []; movingWaypoint = nil }
+                if activeRoute?.id == route.id { activeRoute = nil; editing = false; undoStack = []; redoStack = []; movingWaypoint = nil; insertingWaypoint = nil }
             }
             catch { errorMessage = error.localizedDescription }
         }
