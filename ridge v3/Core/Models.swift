@@ -165,12 +165,13 @@ struct RegionManifest: Codable, Hashable, Identifiable, Sendable {
     /// Terrain, horizon and routes remain owned by the saved area.
     var cartographySourceID: String? = nil
     var tiledTerrain: TiledTerrainSource? = nil
+    var adaptive: AdaptiveTerrainSource? = nil
     var totalBytes: Int64 {
         let layers = horizon?.layers ?? []
         let maps = cartographySourceID == nil ? cartography.map { [$0.totalBytes] }
             ?? (textures + (detailTextures ?? []) + layers.flatMap(\.textures)).map(\.byteCount)
             : []
-        let sizes = (levels + layers.flatMap(\.levels)).map(\.byteCount) + maps + [graphByteCount ?? 0]
+        let sizes = (levels + layers.flatMap(\.levels)).map(\.byteCount) + maps + [graphByteCount ?? 0, adaptive?.downloadBytes ?? 0]
         return sizes.reduce(0) { sum, size in
             let result = sum.addingReportingOverflow(max(0, size))
             return result.overflow ? .max : result.partialValue
@@ -201,7 +202,9 @@ struct LoadedTerrain: Sendable {
     var budgetContext: TerrainBudget.Context? = nil
     var horizon: LoadedHorizon? = nil
     var cartography: LoadedCartography? = nil
+    var adaptiveMeshes: [AdaptiveMesh] = []
     func elevation(at point: GeoPoint) -> Double? {
+        if !adaptiveMeshes.isEmpty { return adaptiveMeshes.first(where: { $0.chunk.bounds.contains(point) })?.elevation(at: point) }
         guard manifest.bounds.contains(point), level.width >= 2, level.height >= 2 else { return nil }
         let uv = manifest.bounds.uv(point)
         let x = min(Double(level.width - 1), max(0, uv.u * Double(level.width - 1)))
@@ -278,4 +281,12 @@ struct RouteProfileSample: Equatable, Sendable {
     var breakBefore: Bool
     var unknownBefore: Bool
     var gradientPercent: Double? = nil
+}
+
+struct SourceAsset: Codable, Hashable, Sendable {
+    var file: String
+    var byteCount: Int64
+    var sha256: String
+    var remoteFile: String? = nil
+    var byteOffset: Int64? = nil
 }

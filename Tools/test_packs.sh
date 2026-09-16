@@ -5,10 +5,13 @@ RIDGE_TEST_BUILD=$(mktemp -d "${TMPDIR:-/tmp}/ridge-pack-build.XXXXXX")
 trap 'rm -rf "$RIDGE_TEST_BUILD"' EXIT HUP INT TERM
 xcrun swiftc -swift-version 6 -parse-as-library \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/Models.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptiveTerrain.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptiveArea.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/CartographyAtlas.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/TileGrid.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/TerrainBudget.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/PackStore.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptivePackStore.swift" \
   "$RIDGE_PROJECT_ROOT/Tests/BudgetFixtures.swift" \
   "$RIDGE_PROJECT_ROOT/Tests/PackStoreTests.swift" \
   -o "$RIDGE_TEST_BUILD/PackStoreTests"

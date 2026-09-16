@@ -21,7 +21,7 @@ struct AreaPreview: View {
         return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
             UIColor(red: 0.94, green: 0.94, blue: 0.86, alpha: 1).setFill(); renderer.fill(CGRect(origin: .zero, size: size))
             var maps = manifest.textures.map { ($0, 0) }
-            if let overview = manifest.tiledTerrain?.overview { maps = [(overview, 0)] }
+            if let overview = manifest.adaptive?.overview ?? manifest.tiledTerrain?.overview { maps = [(overview, 0)] }
             if maps.isEmpty, let atlas = manifest.cartography {
                 maps = atlas.tiles.compactMap { tile in
                     let bounds = tile.image.bounds
@@ -108,7 +108,7 @@ struct AreaDetailView: View {
                     Text(manifest.name).font(RidgeTheme.pageTitle).foregroundStyle(RidgeTheme.ink)
                     Text(manifest.summary).font(.system(size: 14)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
                 } }
-                if !usesTileGrid { VStack(alignment: .leading, spacing: 13) {
+                if !usesTileGrid && manifest.adaptive == nil { VStack(alignment: .leading, spacing: 13) {
                     HStack { Text("Terrain detail").font(.headline); Spacer(); automaticButton }
                     HStack(spacing: 6) {
                         ForEach([1, 2, 4, 8, 16, 32], id: \.self) { value in
@@ -185,6 +185,7 @@ struct AreaDetailView: View {
     }
     private var gridFooter: some View {
         VStack(spacing: 10) {
+            if manifest.adaptive == nil {
             HStack {
                 Text("Terrain detail").font(.system(size: 12, weight: .semibold))
                 Spacer()
@@ -201,11 +202,12 @@ struct AreaDetailView: View {
                     }.accessibilityLabel("\(value) metre terrain. \(available ? "Available" : "Unavailable for this selection")").accessibilityAddTraits(spacing == value ? .isSelected : [])
                 }
             }
+            } else { Text("Adaptive terrain").font(.subheadline) }
             if let reason = allowance.reason {
                 Text(reason).font(.system(size: 11)).foregroundStyle(RidgeTheme.orange).frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 HStack(spacing: 8) {
-                    Text(selectedManifest.horizon != nil ? "\(spacing) m · horizon included" : automaticDetail ? "\(spacing) m selected for this device" : "\(spacing) m · your choice")
+                    Text(manifest.adaptive != nil ? "Adaptive terrain · horizon included" : selectedManifest.horizon != nil ? "\(spacing) m · horizon included" : automaticDetail ? "\(spacing) m selected for this device" : "\(spacing) m · your choice")
                     Spacer(minLength: 0)
                     Text("Est. \(RidgeTheme.bytes(allowance.bytesOnDisk))")
                 }.font(.system(size: 10)).foregroundStyle(RidgeTheme.muted)

@@ -61,7 +61,7 @@ actor PackStore {
             try Task.checkCancellation()
             do {
                 let manifest = try inspect(directory: directory)
-                guard manifest.tiledTerrain != nil, manifest.id == directory.lastPathComponent else { throw RidgeError.message("The terrain source folder does not match its index.") }
+                guard (manifest.tiledTerrain != nil || manifest.adaptive?.isSource == true), manifest.id == directory.lastPathComponent else { throw RidgeError.message("The terrain source folder does not match its index.") }
                 let origin = directory.appendingPathComponent("origin.json")
                 let remote = fm.fileExists(atPath: origin.path) ? try decoder.decode(URL.self, from: Data(contentsOf: origin)) : nil
                 if let remote { _ = try SourceDownloads.validBase(remote) }
@@ -253,6 +253,7 @@ actor PackStore {
                         supplementalCartography: (CartographyAtlas, URL)? = nil) throws -> LoadedTerrain {
         try Task.checkCancellation()
         try Self.validate(manifest)
+        if manifest.adaptive != nil { return try decodeAdaptive(manifest, directory: directory) }
         let resolvedCartography = try supplementalCartography ?? compatibleBundledCartography(for: manifest)
         let selected = spacing ?? manifest.defaultSpacing
         let budgetContext = TerrainBudget.currentContext()
@@ -321,7 +322,7 @@ actor PackStore {
         return heights
     }
 
-    private func decodeBackdrop(_ backdrop: TerrainBackdrop, manifest: RegionManifest, directory: URL) throws -> LoadedBackdrop {
+    func decodeBackdrop(_ backdrop: TerrainBackdrop, manifest: RegionManifest, directory: URL) throws -> LoadedBackdrop {
         guard backdrop.levels.count == 1, let level = backdrop.levels.first else { throw RidgeError.message("The surrounding terrain detail is incomplete.") }
         let heights = try decodeHeights(level, manifest: manifest, directory: directory)
         let urls = try backdrop.textures.map { texture -> URL in
@@ -374,7 +375,7 @@ actor PackStore {
         return nil
     }
 
-    private func decodeCartography(_ atlas: CartographyAtlas, directory: URL, trustedBundled: Bool = false) throws -> LoadedCartography {
+    func decodeCartography(_ atlas: CartographyAtlas, directory: URL, trustedBundled: Bool = false) throws -> LoadedCartography {
         try atlas.validate()
         var images: [URL] = [], previews: [URL] = []
         if trustedBundled {
@@ -496,6 +497,30 @@ actor PackStore {
     }
 
     static func validate(_ m: RegionManifest) throws {
+        if let adaptive = m.adaptive {
+            guard m.schemaVersion == 1, safeName(m.id), !m.name.isEmpty, m.name.count <= 200,
+                  m.bounds.isValid, m.bounds.widthMeters < 100_000, m.bounds.depthMeters < 100_000,
+                  m.levels.isEmpty, m.defaultSpacing == 0, m.tiledTerrain == nil,
+                  m.heightScale.isFinite, m.heightScale > 0, m.heightScale <= 100 else { throw RidgeError.message("Invalid adaptive area metadata.") }
+            try adaptive.validate(bounds: m.bounds, grid: m.grid)
+            if adaptive.index != nil { return }
+            guard let atlas = m.cartography else { throw RidgeError.message("An adaptive area needs its independent map atlas.") }
+            try atlas.validate(covering: m.horizon?.layers.last?.bounds ?? m.bounds)
+            for texture in atlas.allTextures { guard safeName(texture.file), validHash(texture.sha256) else { throw RidgeError.message("Invalid adaptive map asset.") } }
+            for graph in adaptive.graphs {
+                guard safeName(graph.file), validHash(graph.sha256), graph.byteCount > 0, graph.byteCount <= 40_000_000, graph.bounds.isValid else { throw RidgeError.message("Invalid adaptive walking network.") }
+            }
+            if let graph = m.graphFile { guard safeName(graph), validHash(m.graphSHA256 ?? ""), (1...40_000_000).contains(m.graphByteCount ?? 0) else { throw RidgeError.message("Invalid saved walking network.") } }
+            var inner = m.bounds
+            for layer in m.horizon?.layers ?? [] {
+                guard contains(layer.bounds, inner), layer.bounds.widthMeters < 100_000, layer.bounds.depthMeters < 100_000,
+                      layer.levels.count == 1, let level = layer.levels.first,
+                      (2...4097).contains(level.width), (2...4097).contains(level.height),
+                      level.byteCount == Int64(level.sampleCount) * 2, safeName(level.file), validHash(level.sha256) else { throw RidgeError.message("Invalid adaptive surrounding terrain.") }
+                inner = layer.bounds
+            }
+            return
+        }
         guard m.schemaVersion == 1, safeName(m.id), !m.name.isEmpty, m.name.count <= 200, m.bounds.isValid,
               m.bounds.widthMeters < 100_000, m.bounds.depthMeters < 100_000,
               m.heightScale.isFinite, m.heightScale > 0, m.heightScale <= 100,
@@ -631,7 +656,7 @@ actor PackStore {
         guard url.deletingLastPathComponent().path == root.resolvingSymlinksInPath().path else { throw RidgeError.message("An area asset points outside its folder.") }
         return url
     }
-    fileprivate static func verify(_ url: URL, size: Int64, hash: String) throws {
+    static func verify(_ url: URL, size: Int64, hash: String) throws {
         try Task.checkCancellation()
         let actual = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
         guard actual == size else { throw RidgeError.message("An area file is incomplete. Import or download the pack again.") }
@@ -647,11 +672,7 @@ actor PackStore {
     }
 }
 
-struct SourceAsset: Codable, Hashable, Sendable {
-    var file: String
-    var byteCount: Int64
-    var sha256: String
-}
+
 
 /// URLSession's delegate queue reports bytes while a file is still arriving.
 /// Keep the callback rate bounded; the UI also guards by preparation identity.
@@ -742,27 +763,36 @@ enum SourceDownloads {
         return c.url!
     }
 
-    private static func session(delegate: URLSessionDelegate? = nil) -> URLSession {
+    static func session(delegate: URLSessionDelegate? = nil) -> URLSession {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 30; c.timeoutIntervalForResource = 300
         c.httpMaximumConnectionsPerHost = 4; c.urlCache = nil
         return URLSession(configuration: c, delegate: delegate, delegateQueue: nil)
     }
 
-    private static func downloaded(_ url: URL, maximumBytes: Int64, session: URLSession) async throws -> URL {
+    static func downloaded(_ url: URL, maximumBytes: Int64, session: URLSession, byteOffset: Int64? = nil) async throws -> URL {
         var request = URLRequest(url: url); request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let offset = byteOffset {
+            guard offset >= 0, maximumBytes > 0, offset <= Int64.max - maximumBytes else { throw RidgeError.message("Invalid terrain range.") }
+            request.setValue("bytes=\(offset)-\(offset + maximumBytes - 1)", forHTTPHeaderField: "Range")
+            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        }
         let result: (URL, URLResponse)
         if let meter = session.delegate as? DownloadMeter { result = try await meter.download(request, session: session) }
         else { result = try await session.download(for: request) }
         let (temporary, response) = result
         var keep = false
         defer { if !keep { try? FileManager.default.removeItem(at: temporary) } }
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+        guard let http = response as? HTTPURLResponse, http.statusCode == (byteOffset == nil ? 200 : 206),
               http.url?.host?.lowercased() == url.host?.lowercased(), http.url?.port == url.port,
               http.url?.scheme?.lowercased() == url.scheme?.lowercased(),
               let size = (try FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? NSNumber)?.int64Value,
               size > 0, size <= maximumBytes else {
             throw RidgeError.message("The download server did not return a complete prepared file. Check the server and try again.")
+        }
+        if let offset = byteOffset {
+            let prefix = "bytes \(offset)-\(offset + maximumBytes - 1)/"
+            guard http.value(forHTTPHeaderField: "Content-Range")?.hasPrefix(prefix) == true, size == maximumBytes else { throw RidgeError.message("The server returned the wrong terrain range.") }
         }
         try Task.checkCancellation(); keep = true; return temporary
     }
@@ -770,9 +800,13 @@ enum SourceDownloads {
     static func register(base: URL, directory: URL) async throws -> Int {
         let base = try validBase(base), session = session()
         defer { session.invalidateAndCancel() }
-        let catalogueURL = try await downloaded(base.appendingPathComponent("catalog.json"), maximumBytes: 1_048_576, session: session)
+        let catalogueURL = try await downloaded(base.appendingPathComponent("catalog.json"), maximumBytes: 16_777_216, session: session)
         defer { try? FileManager.default.removeItem(at: catalogueURL) }
-        let catalogue = try JSONDecoder().decode(Catalogue.self, from: Data(contentsOf: catalogueURL))
+        let data = try Data(contentsOf: catalogueURL)
+        if (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["schemaVersion"] as? Int == 2 {
+            return try await registerAdaptive(data, base: base, directory: directory)
+        }
+        let catalogue = try JSONDecoder().decode(Catalogue.self, from: data)
         guard catalogue.schemaVersion == 1, catalogue.sources.count <= 32,
               Set(catalogue.sources.map(\.id)).count == catalogue.sources.count else { throw RidgeError.message("This server has an invalid source catalogue.") }
         guard !catalogue.sources.isEmpty else { throw RidgeError.message("The server is running, but its prepared terrain catalogue has not been published yet.") }
@@ -814,6 +848,7 @@ enum SourceDownloads {
         var missing: [SourceAsset] = []
         for asset in assets {
             try Task.checkCancellation()
+            guard PackStore.safeName(asset.remoteFile ?? asset.file) else { throw RidgeError.message("Invalid remote asset name.") }
             let url = try PackStore.assetPathForDownload(asset.file, in: directory)
             let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
             if verified[asset.file] == asset.sha256, size == asset.byteCount { continue }
@@ -835,7 +870,7 @@ enum SourceDownloads {
             var next = 0
             func enqueue(_ asset: SourceAsset) {
                 group.addTask {
-                    let temporary = try await downloaded(remote.appendingPathComponent(asset.file), maximumBytes: asset.byteCount, session: session)
+                    let temporary = try await downloaded(remote.appendingPathComponent(asset.remoteFile ?? asset.file), maximumBytes: asset.byteCount, session: session, byteOffset: asset.byteOffset)
                     defer { try? FileManager.default.removeItem(at: temporary) }
                     try PackStore.verify(temporary, size: asset.byteCount, hash: asset.sha256)
                     try Task.checkCancellation()

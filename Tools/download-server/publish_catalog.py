@@ -9,6 +9,11 @@ import re
 p = argparse.ArgumentParser()
 p.add_argument('directory', type=Path)
 a = p.parse_args()
+# Adaptive publication is explicit and immutable. Never accidentally replace it
+# with a scan of legacy source folders retained for rollback.
+current = a.directory / 'catalog.json'
+if current.exists() and json.loads(current.read_bytes()).get('schemaVersion') == 2:
+    raise SystemExit('Adaptive catalogue is active; use adaptive_terrain/publish_app_sources.py.')
 entries = []
 for path in sorted(a.directory.glob('*/pack.json')):
     raw = path.read_bytes(); m = json.loads(raw)

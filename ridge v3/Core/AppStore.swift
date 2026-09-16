@@ -336,7 +336,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     /// tile selections belong in My areas rather than competing on the atlas.
     var selectableEntries: [PackEntry] {
         entries.filter { candidate in
-            !entries.contains { source in
+            (candidate.manifest.adaptive != nil || !entries.contains { $0.manifest.adaptive != nil }) && !entries.contains { source in
                 source.id != candidate.id && source.manifest.grid != nil &&
                 source.manifest.bounds.areaSquareKilometers > candidate.manifest.bounds.areaSquareKilometers * 1.00001 &&
                 source.manifest.bounds.contains(GeoPoint(latitude: candidate.manifest.bounds.minLatitude, longitude: candidate.manifest.bounds.minLongitude)) &&
@@ -441,7 +441,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         startPreparation(.saving, label: remote == nil ? "Saving area offline" : "Downloading area", retireTerrain: true,
                          cleanup: { importScope?.stopAccessingSecurityScopedResource() }) { token in
             let terrain: LoadedTerrain
-            if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil) {
+            if remote == nil && (!selection.isWhole || entry.manifest.horizon != nil || entry.manifest.adaptive != nil) {
                 terrain = try await self.prepareSelection(entry, selection: selection, spacing: spacing, displayName: displayName, token: token)
             } else if let remote {
                 self.acceptingTransfer = true
@@ -501,6 +501,15 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
 
     private func prepareSelection(_ entry: PackEntry, selection: AreaSelection, spacing: Int,
                                   displayName: String?, token: UUID) async throws -> LoadedTerrain {
+        if entry.manifest.adaptive != nil {
+            preparationLabel = entry.remoteSource == nil ? "Opening terrain" : "Downloading maps and terrain"
+            acceptingTransfer = entry.remoteSource != nil
+            return try await packs.prepareAdaptive(entry, selection: selection, displayName: displayName, transfer: { [weak self] bytes, total in
+                await self?.updateTransfer(bytes, total: total, token: token)
+            }) { [weak self] value in
+                await self?.updateProgress(value, operationID: token)
+            }
+        }
         preparationLabel = entry.remoteSource == nil ? "Preparing selected area" : "Downloading maps and terrain"
         acceptingTransfer = entry.remoteSource != nil
         let downloadedPreview = try await packs.downloadSelection(from: entry, selection: selection, spacing: spacing, transfer: { [weak self] bytes, total in

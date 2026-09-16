@@ -51,6 +51,7 @@ enum AreaCropper {
     /// Invalid selections have no levels, so TerrainBudget rejects them without throwing in UI.
     static func preview(manifest: RegionManifest, selection: AreaSelection, spacing: Int? = nil,
                         context: TerrainBudget.Context = TerrainBudget.currentContext()) -> RegionManifest {
+        if manifest.adaptive != nil { return AdaptiveArea.preview(manifest, selection: selection) }
         guard let plan = try? plan(manifest, selection) else {
             var invalid = manifest; invalid.levels = []; return invalid
         }

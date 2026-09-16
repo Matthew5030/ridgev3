@@ -54,6 +54,7 @@ enum AtlasAreaPlanner {
         let column = min(grid.columns - 1, max(0, Int(floor(uv.u * Double(grid.columns) + 1e-9))))
         let row = min(grid.rows - 1, max(0, Int(floor(uv.v * Double(grid.rows) + 1e-9))))
         if let tiled = source.tiledTerrain, !tiled.cells[row * grid.columns + column].complete { return nil }
+        if let adaptive = source.adaptive, !adaptive.coverage[row * grid.columns + column] { return nil }
         let nw = source.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row) / Double(grid.rows))
         let se = source.bounds.point(u: Double(column + 1) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
         return GeoBounds(minLatitude: se.latitude, minLongitude: nw.longitude, maxLatitude: nw.latitude, maxLongitude: se.longitude)
@@ -73,7 +74,7 @@ enum AtlasAreaPlanner {
     /// Older saves can have a shorter horizon. Re-selecting the same primary
     /// rectangle should prepare the wider scene instead of reopening that crop.
     static func reusable(_ saved: RegionManifest, for preview: RegionManifest, spacing: Int) -> Bool {
-        guard saved.id == preview.id, saved.bounds == preview.bounds, saved.defaultSpacing == spacing else { return false }
+        guard saved.id == preview.id, saved.bounds == preview.bounds, (saved.adaptive != nil || saved.defaultSpacing == spacing) else { return false }
         return contains(saved.horizon?.layers.last?.bounds ?? saved.bounds,
                         preview.horizon?.layers.last?.bounds ?? preview.bounds)
     }
@@ -100,9 +101,12 @@ enum AtlasAreaPlanner {
             if $0.manifest.bounds.areaSquareKilometers != $1.manifest.bounds.areaSquareKilometers { return $0.manifest.bounds.areaSquareKilometers > $1.manifest.bounds.areaSquareKilometers }
             return $0.id < $1.id
         }
-        guard let source = sources.first(where: { $0.manifest.levels.contains { $0.spacing == spacing } }) else {
+        guard let source = sources.first(where: { $0.manifest.adaptive != nil || $0.manifest.levels.contains { $0.spacing == spacing } }) else {
             result.reason = sources.isEmpty ? "Prepared terrain is not available for this whole rectangle. Choose an area inside the marked coverage, or add terrain data in Settings." : "This source does not include \(spacing) m terrain. Choose another area or import compatible data."
             return result
+        }
+        if source.manifest.adaptive?.index != nil {
+            result.reason = "Reading the terrain index for this area…"; return result
         }
         let a = source.manifest.bounds.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
         let b = source.manifest.bounds.uv(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
@@ -116,12 +120,12 @@ enum AtlasAreaPlanner {
             }
         }
         var preview = AreaCropper.preview(manifest: source.manifest, selection: selection, spacing: spacing, context: context)
-        guard !preview.levels.isEmpty else { result.reason = "This rectangle cannot be prepared from the available terrain."; return result }
+        guard preview.adaptive != nil || !preview.levels.isEmpty else { result.reason = "This rectangle cannot be prepared from the available terrain."; return result }
         let nearest = source.manifest.places.min { $0.coordinate.distance(to: preview.bounds.center) < $1.coordinate.distance(to: preview.bounds.center) }
         preview.name = nearest.map { "Around " + $0.name } ?? source.manifest.name + " area"
         let allowance = TerrainBudget.allowance(for: preview, spacing: spacing, context: context)
         result.source = source; result.selection = selection; result.preview = preview; result.allowance = allowance
-        result.saved = entries.first { $0.installed && $0.manifest.levels.count == 1 && reusable($0.manifest, for: preview, spacing: spacing) }
+        result.saved = entries.first { $0.installed && ($0.manifest.adaptive != nil || $0.manifest.levels.count == 1) && reusable($0.manifest, for: preview, spacing: spacing) }
         if !allowance.allowed { result.reason = "Make the area smaller to open it at this detail. " + (allowance.reason ?? "This selection exceeds the device’s current memory budget.") }
         return result
     }

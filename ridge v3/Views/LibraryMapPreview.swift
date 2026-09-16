@@ -74,7 +74,7 @@ private actor LibraryMapRenderer {
             }
             if let entry {
                 var maps: [(MapTexture, Int)] = []
-                if let overview = entry.manifest.tiledTerrain?.overview { maps.append((overview, 0)) }
+                if let overview = entry.manifest.adaptive?.overview ?? entry.manifest.tiledTerrain?.overview { maps.append((overview, 0)) }
                 maps += entry.manifest.textures.map { ($0, 0) }
                 if let atlas = entry.manifest.cartography {
                     maps += atlas.tiles.filter { $0.image.bounds.intersects(viewport) }.map { ($0.image, CartographyAtlas.gutter) }

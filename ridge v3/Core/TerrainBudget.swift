@@ -129,6 +129,7 @@ enum TerrainBudget {
     }
 
     static func allowance(for manifest: RegionManifest, spacing: Int, context: Context = currentContext()) -> TerrainAllowance {
+        if manifest.adaptive != nil { return AdaptiveArea.allowance(manifest, context: context) }
         guard let level = manifest.levels.first(where: { $0.spacing == spacing }) else {
             return rejected("\(spacing) m terrain is not included in this source. Choose an available resolution or import a source containing it.")
         }
@@ -150,6 +151,7 @@ enum TerrainBudget {
     /// Deterministic context fallback for a fixed primary spacing. Source
     /// alternatives are reduced to one level per saved layer before copying.
     static func selectedHorizon(for manifest: RegionManifest, spacing: Int, context: Context = currentContext()) -> TerrainHorizon? {
+        if manifest.adaptive != nil { return manifest.horizon }
         guard let level = manifest.levels.first(where: { $0.spacing == spacing }),
               let samples = sampleCount(width: level.width, height: level.height) else { return nil }
         for horizon in horizonCandidates(manifest.horizon) {
@@ -184,12 +186,14 @@ enum TerrainBudget {
     }
 
     static func recommendedSpacing(for manifest: RegionManifest, context: Context = currentContext()) -> Int? {
-        manifest.levels.map(\.spacing).sorted().first { allowance(for: manifest, spacing: $0, context: context).allowed }
+        if manifest.adaptive != nil { return 0 }
+        return manifest.levels.map(\.spacing).sorted().first { allowance(for: manifest, spacing: $0, context: context).allowed }
     }
 
     /// Start new selections at 4 m for faster preparation and lighter geometry.
     /// Finer detail remains an explicit choice; Auto still finds the finest fit.
     static func defaultSpacing(for manifest: RegionManifest, context: Context = currentContext()) -> Int? {
+        if manifest.adaptive != nil { return 0 }
         let levels = manifest.levels.map(\.spacing)
         let choices = levels.filter { $0 >= 4 }.sorted() + levels.filter { $0 < 4 }.sorted(by: >)
         return choices.first { allowance(for: manifest, spacing: $0, context: context).allowed }

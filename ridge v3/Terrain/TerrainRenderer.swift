@@ -114,6 +114,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private var cartography: CartographyRenderer?
     private var terrainVertices: MTLBuffer?
     private var terrainDraws: [TerrainDraw] = []
+    private var adaptiveDraws: [RidgeMesh] = []
     private var backdrops: [BackdropMesh] = []
     private var contextSurfaces: [BackdropSurface] = []
     private var outerContextRect = SIMD4<Float>(0, 0, 1, 1)
@@ -179,7 +180,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             throw TerrainRenderError.unavailable("This terrain grid exceeds the supported scene budget or is incomplete. Choose a coarser resolution.")
         }
         let finiteHeights = terrain.heights.lazy.filter { $0.isFinite }
-        guard let minimum = finiteHeights.min(), let maximum = finiteHeights.max() else {
+        guard let minimum = terrain.adaptiveMeshes.map(\.minimum).min() ?? finiteHeights.min(), let maximum = terrain.adaptiveMeshes.map(\.maximum).max() ?? finiteHeights.max() else {
             throw TerrainRenderError.unavailable("This area has no usable elevation samples.")
         }
         self.terrain = terrain
@@ -291,7 +292,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         displayLink?.invalidate()
         displayLink = nil
         animation = nil
-        terrainVertices = nil
+        terrainVertices = nil; adaptiveDraws.removeAll()
         terrainDraws.removeAll()
         backdrops.removeAll(); contextSurfaces.removeAll(); areaBoundary = nil
         extensionBoundary = nil; extensionCells = nil
@@ -383,6 +384,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             }
         }
         encoder.setFragmentTexture(fallbackTexture, index: 0)
+        for mesh in adaptiveDraws { draw(mesh, encoder: encoder, material: 0, color: SIMD4(repeating: 1), lit: true) }
         if let areaBoundary, coverageBoundaryOpacity > 0 { draw(areaBoundary, encoder: encoder, material: 1, color: SIMD4(0.25, 0.36, 0.32, coverageBoundaryOpacity)) }
         encoder.setDepthStencilState(overlayDepth)
         if let extensionCells { draw(extensionCells, encoder: encoder, material: 1, color: SIMD4(0.12, 0.40, 0.47, 0.34)) }
@@ -423,6 +425,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     }
 
     private func buildTerrain() throws {
+        if !terrain.adaptiveMeshes.isEmpty { try buildAdaptiveTerrain(); return }
         var rectangles: [SIMD4<Float>] = []
         let mapTextures = terrain.cartography == nil ? terrain.manifest.textures : []
         for (index, texture) in mapTextures.enumerated() {
@@ -566,6 +569,46 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         if backdropPlans.count > 1 { clearContextRect = backdropPlans[0].surface.rect }
     }
 
+    private func buildAdaptiveTerrain() throws {
+        let resident = terrain.adaptiveMeshes.reduce(Int64(0)) { $0 + Int64($1.data.count + $1.buckets.reduce(0) { $0 + $1.count * 4 }) }
+        let allowance = AdaptiveArea.allowance(terrain.manifest, context: TerrainBudget.currentContext(), residentBytes: resident)
+        guard allowance.allowed else { throw TerrainRenderError.unavailable(allowance.reason ?? "Select a smaller area.") }
+        gridU = [0, 1]; gridV = [0, 1]
+        for mesh in terrain.adaptiveMeshes {
+            try Task.checkCancellation()
+            let rect = normalizedRect(mesh.chunk.bounds)
+            let vertexBuffer = try makeTerrainBuffer(count: mesh.chunk.vertices, stride: MemoryLayout<RidgeVertex>.stride, label: "Adaptive terrain vertices")
+            let vertices = vertexBuffer.contents().bindMemory(to: RidgeVertex.self, capacity: mesh.chunk.vertices)
+            for i in 0..<mesh.chunk.vertices {
+                if i % 4096 == 0 { try Task.checkCancellation() }
+                let p = mesh.vertex(i)
+                let u = rect.x + p.x / 512 * rect.z, v = rect.y + p.z / 512 * rect.w
+                vertices.advanced(by: i).initialize(to: RidgeVertex(position: SIMD3((u - 0.5) * width, (p.y - minimumHeight) / metersPerUnit, (v - 0.5) * depthExtent), normal: .zero, uv: SIMD2(u,v)))
+                if abs(v) < 1e-6 || abs(v - 1) < 1e-6 { gridU.append(u) }
+                if abs(u) < 1e-6 || abs(u - 1) < 1e-6 { gridV.append(v) }
+            }
+            let indexBuffer = try makeTerrainBuffer(count: mesh.chunk.triangles * 3, stride: 4, label: "Prepared adaptive triangles")
+            let indices = indexBuffer.contents().bindMemory(to: UInt32.self, capacity: mesh.chunk.triangles * 3)
+            for t in 0..<mesh.chunk.triangles {
+                if t % 4096 == 0 { try Task.checkCancellation() }
+                let a = mesh.index(t * 3), b = mesh.index(t * 3 + 1), c = mesh.index(t * 3 + 2)
+                indices[t * 3] = UInt32(a); indices[t * 3 + 1] = UInt32(b); indices[t * 3 + 2] = UInt32(c)
+                let n = simd_cross(vertices[b].position - vertices[a].position, vertices[c].position - vertices[a].position)
+                vertices[a].normal += n; vertices[b].normal += n; vertices[c].normal += n
+            }
+            for i in 0..<mesh.chunk.vertices {
+                let n = vertices[i].normal
+                vertices[i].normal = simd_length_squared(n) > 1e-20 ? simd_normalize(n) : SIMD3(0,1,0)
+            }
+            adaptiveDraws.append(RidgeMesh(vertices: vertexBuffer, indices: indexBuffer, count: mesh.chunk.triangles * 3))
+        }
+        gridU = uniqueSorted(gridU); gridV = uniqueSorted(gridV)
+        for plan in try planBackdrops() {
+            backdrops.append(try buildBackdrop(plan)); contextSurfaces.append(plan.surface); outerContextRect = plan.surface.rect
+        }
+        if contextSurfaces.count > 1 { clearContextRect = contextSurfaces[0].rect }
+    }
+
     private func normalizedRect(_ bounds: GeoBounds) -> SIMD4<Float> {
         let a = terrain.manifest.bounds.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
         let b = terrain.manifest.bounds.uv(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
@@ -653,6 +696,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     }
 
     private func surfaceHeight(_ surface: BackdropSurface, u: Float, v: Float) -> Float? {
+        if !terrain.adaptiveMeshes.isEmpty, surface.rect == SIMD4(0, 0, 1, 1) { return height(u: min(1,max(0,u)), v: min(1,max(0,v))) }
         let x = (u - surface.rect.x) / surface.rect.z, y = (v - surface.rect.y) / surface.rect.w
         guard x >= -0.000001, x <= 1.000001, y >= -0.000001, y <= 1.000001 else { return nil }
         let px = min(1, max(0, x)) * Float(surface.columns - 1), py = min(1, max(0, y)) * Float(surface.rows - 1)
@@ -1123,6 +1167,9 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     }
 
     private func height(u: Float, v: Float) -> Float? {
+        if !terrain.adaptiveMeshes.isEmpty {
+            return terrain.elevation(at: terrain.manifest.bounds.point(u: Double(u), v: Double(v))).map { (Float($0) - minimumHeight) / metersPerUnit }
+        }
         guard u >= 0, u <= 1, v >= 0, v <= 1 else { return nil }
         let columns = terrain.level.width, rows = terrain.level.height
         let x = u * Float(columns - 1), y = v * Float(rows - 1)
@@ -1439,6 +1486,22 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             remember(walkGrid(origin: origin, direction: direction, u: gridU, v: gridV) { row, column in
                 let a = row * gridU.count + column, b = a + 1, c = a + gridU.count, d = c + 1
                 return nearestTriangle(origin: origin, direction: direction, vertices: vertices, triangles: [(a, c, b), (b, c, d)])
+            })
+        }
+        for (index, mesh) in terrain.adaptiveMeshes.enumerated() {
+            let rect = normalizedRect(mesh.chunk.bounds)
+            let u = (0...32).map { rect.x + Float($0) / 32 * rect.z }, v = (0...32).map { rect.y + Float($0) / 32 * rect.w }
+            let vertices = adaptiveDraws[index].vertices.contents().assumingMemoryBound(to: RidgeVertex.self)
+            remember(walkGrid(origin: origin, direction: direction, u: u, v: v) { row, column in
+                var closest: Float?
+                for triangle in mesh.buckets[row * 32 + column] {
+                    let t = Int(triangle) * 3
+                    if let hit = triangleIntersection(origin: origin, direction: direction,
+                        a: vertices[mesh.index(t)].position, b: vertices[mesh.index(t + 1)].position, c: vertices[mesh.index(t + 2)].position) {
+                        closest = min(closest ?? .infinity, hit)
+                    }
+                }
+                return closest
             })
         }
         for mesh in backdrops {

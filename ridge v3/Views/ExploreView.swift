@@ -168,23 +168,17 @@ struct ExploreView: View {
                         Button("Draw new", systemImage: "rectangle.dashed") { selectionBinding.wrappedValue = nil; lastValidBounds = nil }
                         Spacer(minLength: 0)
                     }.font(.system(size: 12, weight: .medium))
-                    HStack {
-                        Text("Terrain detail").font(.subheadline)
-                        Spacer()
-                        Picker("Terrain detail", selection: $selectedSpacing) {
-                            ForEach([1, 2, 4, 8, 16, 32], id: \.self) { Text("\($0) m").tag($0) }
-                        }.pickerStyle(.menu).disabled(busy)
-                    }
+                    Text("Adaptive terrain").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                     VStack(alignment: .leading, spacing: 6) {
                         if refreshing {
                             Label("Checking area…", systemImage: "hourglass").font(.caption).foregroundStyle(RidgeTheme.muted)
                         } else if let reason = proposal?.reason {
                             Text(reason).font(.subheadline).foregroundStyle(RidgeTheme.orange).fixedSize(horizontal: false, vertical: true)
-                            if let coarser = fittingCoarserSpacing {
+                            if proposal?.preview?.adaptive == nil, let coarser = fittingCoarserSpacing {
                                 Button("Use \(coarser) m terrain for this area") { selectedSpacing = coarser }.font(.subheadline.weight(.semibold))
                             }
                         } else {
-                            Text(proposal?.preview?.horizon != nil ? "Surrounding terrain included · \(spacing) m terrain" : "\(spacing) m terrain · Map detail unchanged")
+                            Text("Prepared detail · surrounding terrain included")
                                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
                             Text(proposal?.saved != nil ? "Already saved on this device." : proposal?.source?.remoteSource != nil ? "Missing files download from your local server. Saved files are reused." : "Source data is on this device. No download needed.")
                                 .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
@@ -324,7 +318,13 @@ struct ExploreView: View {
         guard let bounds else { proposal = nil; refreshing = false; return }
         refreshing = true
         do { try await Task.sleep(for: .milliseconds(130)) } catch { return }
-        let entries = store.entries, spacing = spacing, required = expanding?.bounds, route = expanding == nil ? nil : store.activeRoute
+        do {
+            if try await store.packs.hydrateAdaptiveSources(covering: bounds) { await store.refresh() }
+        } catch {
+            guard !Task.isCancelled else { return }
+            proposal = AtlasAreaProposal(requested: bounds, reason: error.localizedDescription); refreshing = false; return
+        }
+        let entries = store.selectableEntries, spacing = spacing, required = expanding?.bounds, route = expanding == nil ? nil : store.activeRoute
         let context = TerrainBudget.currentContext()
         var result = await Task.detached(priority: .userInitiated) { AtlasAreaPlanner.propose(bounds: bounds, entries: entries, spacing: spacing, required: required, route: route, context: context) }.value
         if let preview = result.preview, let saved = try? await store.packs.installedManifest(id: preview.id),
@@ -343,7 +343,7 @@ struct ExploreView: View {
     private func openSelection() {
         guard let bounds else { return }
         // Recheck live memory at the commit point; never silently lower detail.
-        var checked = AtlasAreaPlanner.propose(bounds: bounds, entries: store.entries, spacing: spacing, required: expanding?.bounds, route: expanding == nil ? nil : store.activeRoute)
+        var checked = AtlasAreaPlanner.propose(bounds: bounds, entries: store.selectableEntries, spacing: spacing, required: expanding?.bounds, route: expanding == nil ? nil : store.activeRoute)
         if proposal?.preview?.id == checked.preview?.id, proposal?.preview?.bounds == checked.preview?.bounds {
             checked.saved = proposal?.saved
         }
@@ -658,16 +658,16 @@ struct OfflineAtlasView: View {
         for entry in entries.sorted(by: { $0.manifest.bounds.areaSquareKilometers > $1.manifest.bounds.areaSquareKilometers }) where showsBounds(entry, size: size) {
             let rect = rectangle(entry.manifest.bounds, size: size)
             guard rect.intersects(viewport) else { continue }
-            if let source = entry.manifest.tiledTerrain, let grid = entry.manifest.grid {
+            if let grid = entry.manifest.grid, let available = entry.manifest.adaptive?.coverage ?? entry.manifest.tiledTerrain?.cells.map(\.complete) {
                 // Merge each row's available cells into runs. This shows real
                 // coverage at park scale without drawing thousands of outlines.
                 var coverage = Path()
                 for row in 0..<grid.rows {
                     var column = 0
                     while column < grid.columns {
-                        guard source.cells[row * grid.columns + column].complete else { column += 1; continue }
+                        guard available[row * grid.columns + column] else { column += 1; continue }
                         let left = column
-                        while column < grid.columns, source.cells[row * grid.columns + column].complete { column += 1 }
+                        while column < grid.columns, available[row * grid.columns + column] { column += 1 }
                         let a = entry.manifest.bounds.point(u: Double(left) / Double(grid.columns), v: Double(row) / Double(grid.rows))
                         let b = entry.manifest.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
                         let cellRect = rectangle(GeoBounds(minLatitude: b.latitude, minLongitude: a.longitude, maxLatitude: a.latitude, maxLongitude: b.longitude), size: size)

@@ -6,6 +6,8 @@ trap 'rm -rf "$RIDGE_TEST_BUILD"' EXIT HUP INT TERM
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 xcrun swiftc -swift-version 6 -parse-as-library \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/Models.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptiveTerrain.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptiveArea.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/TileGrid.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/CartographyAtlas.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/TerrainBudget.swift" \

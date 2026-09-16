@@ -28,7 +28,7 @@ enum AreaExtensionPlanner {
         guard routePoints.allSatisfy(\.isValid) else { return unavailable(destination, "The current route contains an invalid coordinate. Resolve it before extending the area.") }
         let required = [destination] + corners(current.bounds) + routePoints
         let sources = entries.filter { entry in
-            entry.directory.isFileURL && entry.manifest.bounds.isValid && required.allSatisfy(entry.manifest.bounds.contains)
+            (current.adaptive == nil || entry.manifest.adaptive != nil) && entry.directory.isFileURL && entry.manifest.bounds.isValid && required.allSatisfy(entry.manifest.bounds.contains)
         }.sorted { lhs, rhs in
             let leftMatch = matchingGrid(lhs.manifest.grid, current.grid)
             let rightMatch = matchingGrid(rhs.manifest.grid, current.grid)
@@ -85,7 +85,7 @@ enum AreaExtensionPlanner {
                 }
             }
             let preview = AreaCropper.preview(manifest: source.manifest, selection: selection, context: context)
-            guard !preview.levels.isEmpty, required.allSatisfy(preview.bounds.contains) else { continue }
+            guard (preview.adaptive != nil || !preview.levels.isEmpty), required.allSatisfy(preview.bounds.contains) else { continue }
             return AreaExtensionProposal(destination: destination, source: source, selection: selection, preview: preview,
                                          additionalTileCount: additionalTiles(current: current.grid, proposed: preview.grid))
         }
