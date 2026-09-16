@@ -245,8 +245,30 @@ actor PackStore {
     }
 
     func load(id: String, spacing: Int? = nil) throws -> LoadedTerrain {
-        guard let manifest = try installedManifest(id: id) else { throw RidgeError.message("Save this area offline before opening it.") }
+        guard var manifest = try installedManifest(id: id) else { throw RidgeError.message("Save this area offline before opening it.") }
+        if manifest.adaptive != nil { manifest = try restoringAdaptivePlaces(in: manifest) }
         return try decode(manifest: manifest, directory: root.appendingPathComponent(id), spacing: spacing)
+    }
+
+    /// Older adaptive saves clipped names to their detail rectangle. The small
+    /// registered source header can restore surrounding names entirely offline.
+    func restoringAdaptivePlaces(in manifest: RegionManifest) throws -> RegionManifest {
+        guard manifest.adaptive?.isSource == false, manifest.horizon != nil, let grid = manifest.grid else { return manifest }
+        var result = manifest
+        let directories = (try? fm.contentsOfDirectory(at: sourceDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        for directory in directories where manifest.id.hasPrefix(directory.lastPathComponent + "-") {
+            try Task.checkCancellation()
+            let header = directory.appendingPathComponent("source.json")
+            guard let size = (try? fm.attributesOfItem(atPath: header.path)[.size] as? NSNumber)?.int64Value,
+                  size > 0, size <= 16_777_216,
+                  let data = try? Data(contentsOf: header),
+                  let source = try? decoder.decode(RegionManifest.self, from: data),
+                  source.id == directory.lastPathComponent, source.adaptive?.isSource == true,
+                  source.grid?.gridID == grid.gridID, source.grid?.worldTileID == grid.worldTileID,
+                  Self.contains(source.bounds, manifest.bounds), (try? Self.validate(source)) != nil else { continue }
+            result.places = AdaptiveArea.scenePlaces(in: result, supplement: source.places)
+        }
+        return result
     }
 
     private func decode(manifest: RegionManifest, directory: URL, spacing: Int?,
@@ -503,6 +525,11 @@ actor PackStore {
                   m.levels.isEmpty, m.defaultSpacing == 0, m.tiledTerrain == nil,
                   m.heightScale.isFinite, m.heightScale > 0, m.heightScale <= 100 else { throw RidgeError.message("Invalid adaptive area metadata.") }
             try adaptive.validate(bounds: m.bounds, grid: m.grid)
+            let placeBounds = m.horizon?.layers.last?.bounds ?? m.bounds
+            guard m.places.count <= 5000, m.places.allSatisfy({
+                $0.coordinate.isValid && placeBounds.contains($0.coordinate) &&
+                !$0.name.isEmpty && $0.name.count <= 1000 && ($0.elevation?.isFinite ?? true)
+            }) else { throw RidgeError.message("Invalid adaptive place labels.") }
             if let overview = adaptive.overview {
                 guard safeName(overview.file), validHash(overview.sha256), overview.byteCount > 0, overview.byteCount <= 16_777_216,
                       (1...8192).contains(overview.width), (1...8192).contains(overview.height), contains(overview.bounds, m.bounds) else { throw RidgeError.message("Invalid adaptive overview map.") }

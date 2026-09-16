@@ -46,6 +46,7 @@ import Foundation
         let imported=try GPXCodec.decode(gpx,regionID:loaded.manifest.id)
         guard imported.points.count==route.points.count else {fatalError("GPX changed")}
         let reopen=Date(),offline=try await store.load(id:loaded.manifest.id)
+        guard offline.manifest.places.contains(where: { $0.name == "Yr Wyddfa" && !offline.manifest.bounds.contains($0.coordinate) }) else { fatalError("Standalone adaptive save dropped surrounding peak names") }
         print("Offline reopen: \(Date().timeIntervalSince(reopen)) seconds")
         guard offline.adaptiveMeshes.count==9,offline.elevation(at:point)==loaded.elevation(at:point) else {fatalError("Offline mismatch")}
         let smaller=grid.selection(column:x,row:y)!

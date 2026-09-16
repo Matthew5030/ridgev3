@@ -200,7 +200,8 @@ final class TerrainHostView: UIView {
     private var pendingExtensionGrid: TerrainGrid?
     var onNavigationChange: ((TerrainNavigationState) -> Void)?
     var onRelease: (() -> Void)?
-    private var placeLabels: [(place: MapPlace, view: TerrainPlaceLabel)] = []
+    private var labelPlaces: [MapPlace] = []
+    private var placeLabels: [TerrainPlaceLabel] = []
     private var labelsVisible = true
 
     init() {
@@ -334,29 +335,36 @@ final class TerrainHostView: UIView {
             if ai != bi { return ai < bi }
             return (a.elevation ?? 0) > (b.elevation ?? 0)
         }
-        for place in ordered.prefix(24) {
+        labelPlaces = ordered
+        // Reuse eight native labels; all source peaks remain eligible as the
+        // camera moves, rather than freezing a shortlist at scene creation.
+        for place in ordered.prefix(8) {
             let label = TerrainPlaceLabel(place: place)
             label.isHidden = true
             addSubview(label)
-            placeLabels.append((place, label))
+            placeLabels.append(label)
         }
     }
 
     private func updateLabels() {
+        for label in placeLabels { label.isHidden = true }
+        guard labelsVisible else { return }
         var occupied: [CGRect] = []
         let safe = bounds.insetBy(dx: 12, dy: 24)
-        for item in placeLabels {
-            guard labelsVisible, occupied.count < 8,
-                  let point = renderer?.projectedPoint(item.place.coordinate) else { item.view.isHidden = true; continue }
-            let size = item.view.labelSize
+        for place in labelPlaces {
+            guard occupied.count < placeLabels.count else { break }
+            guard let point = renderer?.projectedPoint(place.coordinate) else { continue }
+            let label = placeLabels[occupied.count]
+            label.configure(place: place)
+            let size = label.labelSize
             var frame = CGRect(x: point.x - 3, y: point.y - size.height + 3, width: size.width, height: size.height)
             // Labels may switch sides near the right edge without moving their anchor.
             let left = frame.maxX > safe.maxX
             if left { frame.origin.x = point.x - size.width + 3 }
-            guard safe.contains(frame), !occupied.contains(where: { $0.intersects(frame.insetBy(dx: -8, dy: -6)) }) else { item.view.isHidden = true; continue }
-            item.view.setLeadingAnchor(!left)
-            item.view.frame = frame.integral
-            item.view.isHidden = false
+            guard safe.contains(frame), !occupied.contains(where: { $0.intersects(frame.insetBy(dx: -8, dy: -6)) }) else { continue }
+            label.setLeadingAnchor(!left)
+            label.frame = frame.integral
+            label.isHidden = false
             occupied.append(frame)
         }
     }
@@ -368,8 +376,8 @@ final class TerrainHostView: UIView {
         pendingAction = nil
         warningTask?.cancel(); warningTask = nil
         cartographyWarning?.removeFromSuperview(); cartographyWarning = nil
-        for label in placeLabels { label.view.removeFromSuperview() }
-        placeLabels.removeAll()
+        for label in placeLabels { label.removeFromSuperview() }
+        placeLabels.removeAll(); labelPlaces.removeAll()
         renderer?.stop()
         metalView?.delegate = nil
         metalView?.releaseDrawables()
@@ -433,26 +441,35 @@ private final class TerrainPlaceLabel: UIView {
     private let dot = UIView()
     private(set) var labelSize = CGSize.zero
     private var leftAnchored = true
+    private var displayedPlace: MapPlace?
 
     init(place: MapPlace) {
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         isAccessibilityElement = false
+        nameLabel.lineBreakMode = .byTruncatingTail
+        addSubview(nameLabel); addSubview(elevationLabel); addSubview(dot)
+        dot.backgroundColor = UIColor(red: 0.15, green: 0.24, blue: 0.20, alpha: 1)
+        dot.layer.cornerRadius = 2.5
+        dot.layer.borderWidth = 1
+        dot.layer.borderColor = UIColor(red: 0.995, green: 0.985, blue: 0.945, alpha: 1).cgColor
+        configure(place: place)
+    }
+
+    func configure(place: MapPlace) {
+        guard displayedPlace != place else { return }
+        displayedPlace = place
         let ink = UIColor(red: 0.15, green: 0.24, blue: 0.20, alpha: 1)
         let paper = UIColor(red: 0.995, green: 0.985, blue: 0.945, alpha: 1)
         let nameFont = UIFont.systemFont(ofSize: 12, weight: .semibold)
         nameLabel.attributedText = NSAttributedString(string: place.name, attributes: [.font: nameFont, .foregroundColor: ink, .strokeColor: paper, .strokeWidth: -3.5])
-        nameLabel.lineBreakMode = .byTruncatingTail
+        elevationLabel.attributedText = nil
         if let elevation = place.elevation, elevation.isFinite {
             elevationLabel.attributedText = NSAttributedString(string: "\(Int(elevation.rounded())) m", attributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium), .foregroundColor: ink.withAlphaComponent(0.85), .strokeColor: paper, .strokeWidth: -3])
         }
-        addSubview(nameLabel); addSubview(elevationLabel); addSubview(dot)
-        dot.backgroundColor = ink
-        dot.layer.cornerRadius = 2.5
-        dot.layer.borderWidth = 1
-        dot.layer.borderColor = paper.cgColor
         let textWidth = min(153, max(45, nameLabel.sizeThatFits(CGSize(width: 1_000, height: 20)).width))
         labelSize = CGSize(width: textWidth + 12, height: elevationLabel.attributedText == nil ? 19 : 32)
+        setNeedsLayout()
     }
     required init?(coder: NSCoder) { nil }
 

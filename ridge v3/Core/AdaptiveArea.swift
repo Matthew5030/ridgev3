@@ -23,13 +23,22 @@ enum AdaptiveArea {
         result.graphFile = nil; result.graphSHA256 = nil
         adaptive.graphs = adaptive.graphs.filter { $0.bounds.intersects(result.bounds) }
         result.adaptive = adaptive
-        result.places = manifest.places.filter { result.bounds.contains($0.coordinate) }
         result.graphByteCount = adaptive.graphs.reduce(0) { $0 + $1.byteCount }
         if let context = adaptive.context { result.horizon = contextWindow(context, atlas: manifest.cartography, around: result.bounds) }
         result.cartography = manifest.cartography?.cropped(to: result.horizon?.layers.last?.bounds ?? result.bounds)
+        result.places = scenePlaces(in: result)
         result.cartographySourceID = nil
         result.summary = "Adaptive terrain with independent offline maps."
         return result
+    }
+
+    /// Place names belong to the visible landscape, independent of LiDAR detail.
+    static func scenePlaces(in manifest: RegionManifest, supplement: [MapPlace] = []) -> [MapPlace] {
+        let bounds = manifest.horizon?.layers.last?.bounds ?? manifest.bounds
+        var seen: Set<String> = []
+        return (manifest.places + supplement).filter {
+            $0.coordinate.isValid && bounds.contains($0.coordinate) && seen.insert($0.searchIdentity).inserted
+        }
     }
 
     static func contextWindow(_ context: TerrainHorizon, atlas: CartographyAtlas?, around bounds: GeoBounds) -> TerrainHorizon? {

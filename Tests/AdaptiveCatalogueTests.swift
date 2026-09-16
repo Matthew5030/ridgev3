@@ -28,6 +28,25 @@ import Foundation
         pending.refreshBudget(spacing: 4)
         guard pending.reason == "Index unavailable", pending.preview == nil else { fatalError("Memory refresh hid a source error") }
         print("PASS: live budget checks preserve selection and source errors without I/O")
+        let landscape = proposal.preview!
+        let surroundingPeak = landscape.places.first { $0.name == "Yr Wyddfa" }!
+        guard !landscape.bounds.contains(surroundingPeak.coordinate),
+              landscape.horizon!.layers.last!.bounds.contains(surroundingPeak.coordinate) else { fatalError("Surrounding peak fixture must be outside detailed terrain") }
+        try PackStore.validate(landscape)
+        var oldSave = landscape
+        oldSave.places = landscape.places.filter { landscape.bounds.contains($0.coordinate) }
+        let repaired = try await packs.restoringAdaptivePlaces(in: oldSave)
+        guard repaired.places.contains(where: { $0.id == surroundingPeak.id }),
+              repaired.adaptive == oldSave.adaptive, repaired.horizon == oldSave.horizon else { fatalError("Existing save lost its surrounding names or changed terrain") }
+        let repeated = try await packs.restoringAdaptivePlaces(in: repaired)
+        guard repeated.places == repaired.places else { fatalError("Reopening duplicated place labels") }
+        let unrelated = PackStore(root: root.appendingPathComponent("standalone"), bundledDirectory: nil, sourceDirectory: root.appendingPathComponent("no-source"))
+        let standalone = try await unrelated.restoringAdaptivePlaces(in: landscape)
+        guard standalone.places == landscape.places else { fatalError("New save requires its source to retain names") }
+        var invalidPlaces = landscape
+        invalidPlaces.places[0].coordinate = GeoPoint(latitude: 0, longitude: 0)
+        do { try PackStore.validate(invalidPlaces); fatalError("Accepted label outside the visible landscape") } catch { }
+        print("PASS: surrounding peak labels, existing-save recovery, repeat recovery, standalone metadata and bounds validation")
         let assets=AdaptiveArea.assets(proposal.preview!)
         guard assets.contains(where:{$0.byteOffset != nil && $0.remoteFile?.hasPrefix("context-source-")==true}),
               !assets.contains(where:{$0.file.hasPrefix("context-source-")}) else {fatalError("Full background download regression")}

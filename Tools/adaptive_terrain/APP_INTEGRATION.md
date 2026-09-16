@@ -84,3 +84,26 @@ estimates alongside real downloads and offline reuse (416 assertions).
 `test_adaptive_download_estimate.sh` compares the displayed estimate against live
 transfer totals using a caller-supplied disposable cache seeded by a nearby
 adaptive integration download; it refuses a cold gigabyte-scale test.
+
+## Peak names across the landscape
+
+Adaptive selections now retain source place names over the saved horizon bounds,
+not only the fine-mesh rectangle. Older saved areas recover these names on load
+from their matching cached `source.json` header, with no network request or terrain
+reprocessing. This uses the lightweight registered catalogue rather than parsing
+the full mesh index. New saves carry the surrounding names themselves.
+
+The native label overlay considers peaks throughout the loaded landscape as the
+camera moves. It reuses at most eight text views and retains terrain occlusion,
+screen-edge and overlap checks. The former fixed 24-peak shortlist is removed.
+The labels toggle and source-provided elevations remain unchanged.
+
+The catalogue regression checks a real Yr Wyddfa label outside a small Crib Goch
+selection, recovery of an older cropped save, repeated recovery without duplicate
+names, standalone metadata preservation and rejection of out-of-bounds labels.
+The pack integration test checks surrounding names survive save and offline load.
+
+In the simulator, the old nine-cell save containing only Crib Goch recovered 539
+landscape places. Yr Wyddfa and Moel Eilio both appeared when viewing their
+surrounding terrain; Moel Eilio lay beyond the previous 24-candidate cutoff.
+The overlay retained eight reusable label views and passed hide/show checks.
