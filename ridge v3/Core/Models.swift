@@ -283,6 +283,13 @@ struct RouteProfileSample: Equatable, Sendable {
     var gradientPercent: Double? = nil
 }
 
+/// Transfer bytes for immutable assets, distinct from saved size and render memory.
+struct AreaDownloadEstimate: Equatable, Sendable {
+    var totalBytes: Int64
+    var downloadBytes: Int64
+    var cachedBytes: Int64 { max(0, totalBytes - downloadBytes) }
+}
+
 struct SourceAsset: Codable, Hashable, Sendable {
     var file: String
     var byteCount: Int64

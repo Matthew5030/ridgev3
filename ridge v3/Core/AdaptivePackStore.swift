@@ -27,6 +27,10 @@ extension PackStore {
         return changed
     }
 
+    func estimateAdaptiveDownload(_ manifest: RegionManifest, from source: PackEntry) throws -> AreaDownloadEstimate {
+        try SourceDownloads.estimate(AdaptiveArea.assets(manifest), at: source.directory)
+    }
+
     func prepareAdaptive(_ entry: PackEntry, selection: AreaSelection, displayName: String?,
                          transfer: (@Sendable (Int64, Int64) async -> Void)? = nil,
                          progress: @Sendable (Double) async -> Void) async throws -> LoadedTerrain {

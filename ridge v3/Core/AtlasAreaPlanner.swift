@@ -8,6 +8,7 @@ struct AtlasAreaProposal: Sendable {
     var preview: RegionManifest?
     var saved: PackEntry?
     var allowance: TerrainAllowance?
+    var download: AreaDownloadEstimate?
     var reason: String?
     var canOpen: Bool { reason == nil && allowance?.allowed == true && preview != nil }
 

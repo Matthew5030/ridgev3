@@ -55,3 +55,32 @@ source. The fixed view completed with one request across repeated timer ticks.
 The adaptive catalogue suite additionally checks budget refusal/recovery while
 preserving selection metadata, saved references and source errors. The shared
 source-download regression suite still passes all 410 assertions.
+
+## Download size accounting
+
+The selection panel now estimates additional network bytes using the same verified
+source-cache receipts and file-length checks as the downloader. It separately
+shows reused bytes and the surrounding map footprint. Memory rechecks retain this
+estimate and do not scan the cache again. Unreceipted assets conservatively count
+as missing until the downloader verifies them; selection never hashes gigabytes
+of existing imagery. Already saved selections are labelled offline.
+
+Measured around Crib Goch (decimal MB, including full-resolution surroundings):
+
+| Selected cells | Map images | Fine adaptive mesh | All required source files |
+|---|---:|---:|---:|
+| 1 × 1 | 1,316.60 | 0.10 | 1,355.26 |
+| 4 × 4 | 1,308.97 | 1.68 | 1,351.94 |
+| 16 × 16 | 1,308.97 | 20.21 | 1,381.39 |
+
+Every selection includes 3,600 native map cells for roughly 30 km of surroundings.
+This explains the nearly constant cold-download size. The horizon extent and map
+quality have not changed. With the existing nearby integration-test cache, those
+three selections needed 0 MB, 15.92 MB and 38.81 MB respectively; cache inspection
+took 0.54–0.72 s on the test Mac. This is disk/network accounting, not RAM usage.
+
+`test_tiled_sources.sh` checks fresh, reused, partial, truncated and changed-hash
+estimates alongside real downloads and offline reuse (416 assertions).
+`test_adaptive_download_estimate.sh` compares the displayed estimate against live
+transfer totals using a caller-supplied disposable cache seeded by a nearby
+adaptive integration download; it refuses a cold gigabyte-scale test.

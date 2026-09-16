@@ -164,7 +164,10 @@ struct ExploreView: View {
                     HStack {
                         Label(String(format: "%.1f × %.1f km", shown.widthMeters / 1000, shown.depthMeters / 1000), systemImage: "rectangle.dashed")
                         Spacer()
-                        if let allowance = proposal?.allowance { Text("Est. " + RidgeTheme.bytes(allowance.bytesOnDisk)) }
+                        if proposal?.saved != nil { Text("Saved offline") }
+                        else if let download = proposal?.download {
+                            Text(download.downloadBytes == 0 ? "No download needed" : "Download " + RidgeTheme.bytes(download.downloadBytes))
+                        } else if let allowance = proposal?.allowance { Text("Area files " + RidgeTheme.bytes(allowance.bytesOnDisk)) }
                     }.font(.system(size: 13, weight: .semibold))
                     if let grid = proposal?.preview?.grid {
                         Text("\(grid.columns) × \(grid.rows) tiles · \(grid.columns * grid.rows) selected")
@@ -200,14 +203,20 @@ struct ExploreView: View {
                                 Button("Use \(coarser) m terrain for this area") { selectedSpacing = coarser }.font(.subheadline.weight(.semibold))
                             }
                         } else {
-                            Text("Prepared detail · surrounding terrain included")
-                                .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
+                            if let far = proposal?.preview?.horizon?.layers.last?.bounds {
+                                Text(String(format: "Includes maps for %.0f × %.0f km of surroundings.", far.widthMeters / 1000, far.depthMeters / 1000))
+                                    .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
+                            }
+                            if proposal?.saved == nil, let download = proposal?.download, download.cachedBytes > 0 {
+                                Text(RidgeTheme.bytes(download.cachedBytes) + " already on this device and reused.")
+                                    .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
+                            }
                             Text(proposal?.saved != nil ? "Already saved on this device." : proposal?.source?.remoteSource != nil ? "Missing files download from your local server. Saved files are reused." : "Source data is on this device. No download needed.")
                                 .font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
                         }
                     }.frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                     Button { openSelection() } label: {
-                        HStack { Image(systemName: proposal?.saved != nil ? "mountain.2" : "square.and.arrow.down"); Text(expanding != nil ? "Save & return to 3D" : proposal?.saved != nil ? "Open in 3D" : proposal?.source?.remoteSource != nil ? "Download & open in 3D" : "Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 16)
+                        HStack { Image(systemName: proposal?.saved != nil ? "mountain.2" : "square.and.arrow.down"); Text(expanding != nil ? "Save & return to 3D" : proposal?.saved != nil ? "Open in 3D" : proposal?.source?.remoteSource != nil && proposal?.download?.downloadBytes != 0 ? "Download & open in 3D" : "Save & open in 3D"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.horizontal, 16)
                     }.buttonStyle(RidgeButtonStyle()).disabled(refreshing || proposal?.canOpen != true || busy)
                 } else {
                     Text("Tap a highlighted tile, or drag across several tiles. Two fingers move the map; pinch to zoom. Selection stops at available coverage.")
@@ -378,6 +387,10 @@ struct ExploreView: View {
            AtlasAreaPlanner.reusable(saved, for: preview, spacing: spacing) {
             result.saved = PackEntry(manifest: saved, directory: result.source!.directory, installed: true)
         }
+        if result.saved == nil, let preview = result.preview, preview.adaptive != nil,
+           let source = result.source, source.remoteSource != nil {
+            result.download = try? await store.packs.estimateAdaptiveDownload(preview, from: source)
+        }
         guard !Task.isCancelled else { return }
         proposal = result; refreshing = false
         if result.canOpen {
@@ -393,6 +406,7 @@ struct ExploreView: View {
         var checked = AtlasAreaPlanner.propose(bounds: bounds, entries: store.selectableEntries, spacing: spacing, required: expanding?.bounds, route: expanding == nil ? nil : store.activeRoute)
         if proposal?.preview?.id == checked.preview?.id, proposal?.preview?.bounds == checked.preview?.bounds {
             checked.saved = proposal?.saved
+            checked.download = proposal?.download
         }
         proposal = checked
         guard checked.canOpen else { return }

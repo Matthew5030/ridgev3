@@ -122,12 +122,26 @@ private struct Failure: Error { var message: String }
         try originalNative.write(to: nativeURL)
         let meterDirectory = root.appendingPathComponent("meter-test")
         try fm.createDirectory(at: meterDirectory, withIntermediateDirectories: true)
+        let measuredAssets = [SourceAsset(file: native.file, byteCount: native.byteCount, sha256: native.sha256)]
+        let firstEstimate = try SourceDownloads.estimate(measuredAssets, at: meterDirectory)
+        try check(firstEstimate.downloadBytes == native.byteCount && firstEstimate.cachedBytes == 0, "First download estimate includes all missing bytes")
         let transferLog = TransferLog()
         try await SourceDownloads.ensure([SourceAsset(file: native.file, byteCount: native.byteCount, sha256: native.sha256)],
                                          at: meterDirectory, remote: url.appendingPathComponent("fixture"),
                                          transfer: { bytes, total in await transferLog.record(bytes, total) }) { _ in }
         let sawPartialFile = await transferLog.partial
         try check(sawPartialFile, "Live byte progress arrives before a single large file completes")
+        let cachedEstimate = try SourceDownloads.estimate(measuredAssets, at: meterDirectory)
+        try check(cachedEstimate.downloadBytes == 0 && cachedEstimate.cachedBytes == native.byteCount, "Completed verified download is deducted from the next estimate")
+        let withNewFile = try SourceDownloads.estimate(measuredAssets + [SourceAsset(file: "extra.bin", byteCount: 17, sha256: zeroHash)], at: meterDirectory)
+        try check(withNewFile.downloadBytes == 17 && withNewFile.totalBytes == native.byteCount + 17, "Overlapping area counts only its additional files")
+        let cachedNative = meterDirectory.appendingPathComponent(native.file)
+        try Data(originalNative.prefix(10)).write(to: cachedNative)
+        let truncatedEstimate = try SourceDownloads.estimate(measuredAssets, at: meterDirectory)
+        try check(truncatedEstimate.downloadBytes == native.byteCount, "Truncated cached file must be downloaded again")
+        try originalNative.write(to: cachedNative)
+        let revised = try SourceDownloads.estimate([SourceAsset(file: native.file, byteCount: native.byteCount, sha256: zeroHash)], at: meterDirectory)
+        try check(revised.downloadBytes == native.byteCount, "Different checksum cannot reuse an old receipt")
         let cancelDirectory = root.appendingPathComponent("cancel-transfer-test")
         try fm.createDirectory(at: cancelDirectory, withIntermediateDirectories: true)
         let cancelLog = TransferLog()
@@ -169,6 +183,8 @@ private struct Failure: Error { var message: String }
         let expanded = try AreaCropper.prepare(directory: entry.directory, manifest: manifest, selection: expandedSelection, spacing: 4, cartographySourceID: manifest.id, downloadedPreview: expandedPreview)
         defer { try? fm.removeItem(at: expanded.directory) }
         try check(expanded.manifest.bounds != crop.manifest.bounds && expanded.manifest.levels[0].width == 385, "Expansion opens the newly selected tiles rather than repeating the original area")
+        let reusedEstimate = try SourceDownloads.estimate(plan, at: entry.directory)
+        try check(reusedEstimate.downloadBytes == 0, "Repeated selection estimate agrees with offline cache reuse")
         server.terminate(); server.waitUntilExit()
         _ = try await store.downloadSelection(from: entry, selection: selection, spacing: 4) { _ in }
         let reopened = try await store.load(id: crop.manifest.id)

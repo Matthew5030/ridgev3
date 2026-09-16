@@ -886,6 +886,24 @@ enum SourceDownloads {
         return catalogue.sources.count
     }
 
+    /// A receipt and matching file length use the same fast path as ensure().
+    /// Unreceipted files count as downloads until verified at preparation time;
+    /// checking a selection must not hash gigabytes of map images.
+    static func estimate(_ assets: [SourceAsset], at directory: URL) throws -> AreaDownloadEstimate {
+        let receipt = directory.appendingPathComponent("downloaded.json")
+        let verified = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: receipt))) ?? [:]
+        let total = assets.reduce(Int64(0)) { $0 + $1.byteCount }
+        var cached: Int64 = 0
+        for asset in assets {
+            try Task.checkCancellation()
+            guard verified[asset.file] == asset.sha256 else { continue }
+            let url = try PackStore.assetPathForDownload(asset.file, in: directory)
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
+            if size == asset.byteCount { cached += asset.byteCount }
+        }
+        return AreaDownloadEstimate(totalBytes: total, downloadBytes: total - cached)
+    }
+
     static func ensure(_ assets: [SourceAsset], at directory: URL, remote: URL,
                        requestTimeout: TimeInterval = 30, resourceTimeout: TimeInterval = 300,
                        transfer: (@Sendable (Int64, Int64) async -> Void)? = nil,
