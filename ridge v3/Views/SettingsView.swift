@@ -90,7 +90,7 @@ struct SettingsView: View {
     private var offlineSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Offline maps").font(RidgeTheme.sectionTitle)
-            Text("Downloaded areas include terrain, maps and paths. You can view them and plan routes offline.")
+            Text("Download a region from Packs, then choose smaller areas to open in 3D. Packs include terrain, maps and paths for offline use.")
                 .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
             if store.activeTerrain == nil {
             VStack(spacing: 0) {
@@ -127,7 +127,7 @@ struct SettingsView: View {
                         }
                         let count = try await store.packs.connectSourceServer(url)
                         await store.refresh()
-                        serverMessage = "Connected · \(count) terrain \(count == 1 ? "source" : "sources") available. Return to the map to choose your area."
+                        serverMessage = "Connected · \(count) \(count == 1 ? "pack" : "packs") available. Open Packs to download a region, or Explore to choose a smaller area."
                     } catch { serverMessage = error.localizedDescription }
                 }
             } label: {

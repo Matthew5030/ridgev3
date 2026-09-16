@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas", routes = "Routes" }
+enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", routes = "Routes" }
 
 @MainActor @Observable final class AppStore {
     var tab: MainTab = .explore
@@ -38,6 +38,8 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     var showPackImporter = false
     var showDownloadSheet = false
     var showSettings = false
+    var explorePackBounds: GeoBounds?
+    var offlinePackRevision = 0
     var preparingFromAtlas = false
     var undoStack: [RidgeRoute] = []
     var redoStack: [RidgeRoute] = []
@@ -483,7 +485,8 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                                   cleanup: @escaping @MainActor () -> Void = {},
                                   work: @escaping @MainActor (UUID) async throws -> Void,
                                   onFailure: (@MainActor (Error) async -> Void)? = nil) {
-        operation?.cancel()
+        let previousOperation = operation
+        previousOperation?.cancel()
         let token = UUID(); operationID = token
         preparationKind = kind; preparationLabel = label; progress = 0
         transferredBytes = 0; transferTotal = nil; acceptingTransfer = false; retryPreparation = nil
@@ -497,6 +500,9 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                 }
             }
             do {
+                // A cancelled download must finish writing its verified-file receipt
+                // before a new download or selection uses the same source cache.
+                await previousOperation?.value
                 if retireTerrain { await waitForTerrainRelease() }
                 try Task.checkCancellation()
                 try await work(token)
@@ -572,6 +578,30 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         if extensionInProgress { return }
         retryPreparation = nil; acceptingTransfer = false
         operationID = UUID(); preparationKind = nil; preparingFromAtlas = false; pendingRoute = nil
+    }
+
+    func downloadOfflinePack(_ entry: PackEntry) {
+        guard !isPreparing else { return }
+        preparingFromAtlas = false
+        startPreparation(.saving, label: "Checking pack download", cleanup: { [weak self] in
+            self?.offlinePackRevision += 1
+        }) { token in
+            self.acceptingTransfer = true
+            try await self.packs.downloadOfflinePack(entry, transfer: { [weak self] bytes, total in
+                await self?.updateTransfer(bytes, total: total, token: token)
+            }, progress: { [weak self] value in
+                await self?.updateProgress(value, operationID: token)
+            })
+            try Task.checkCancellation()
+            await self.refresh()
+            self.toast("\(entry.manifest.name) is available offline. Choose where to explore in 3D.")
+        }
+        retryPreparation = { [weak self] in self?.downloadOfflinePack(entry) }
+    }
+
+    func explorePack(_ entry: PackEntry) {
+        explorePackBounds = entry.manifest.bounds
+        tab = .explore
     }
 
     func open(_ entry: PackEntry, route: RidgeRoute? = nil, resuming: PlanningSession? = nil) {

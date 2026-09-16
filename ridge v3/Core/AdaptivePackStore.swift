@@ -49,7 +49,15 @@ extension PackStore {
         for asset in assets {
             try Task.checkCancellation()
             let from = try Self.assetPathForDownload(asset.file, in: entry.directory)
-            try Self.verify(from, size: asset.byteCount, hash: asset.sha256)
+            // ensure() has already checked downloaded files against verified receipts.
+            // Rehashing the entire map pack here made every new local selection slow.
+            if entry.remoteSource == nil {
+                try Self.verify(from, size: asset.byteCount, hash: asset.sha256)
+            } else {
+                guard let size = (try from.resourceValues(forKeys: [.fileSizeKey])).fileSize, Int64(size) == asset.byteCount else {
+                    throw RidgeError.message("A downloaded pack file is incomplete. Resume its download.")
+                }
+            }
             let to = try Self.assetPathForDownload(asset.file, in: stage)
             // Immutable assets can share disk blocks with the source cache.
             do { try files.linkItem(at: from, to: to) } catch { try files.copyItem(at: from, to: to) }

@@ -102,3 +102,13 @@ Only completed section indices appear in it. The older unfiltered
 availability flags included unsupported terrain. The corrected source audit,
 formats and verification commands are documented in
 [the whole-UK tooling](../adaptive_terrain/README.md#whole-uk-terrain-downloads).
+
+## Pack downloads
+
+The app's **Packs** page now downloads a complete schema-2 source into its shared
+cache without opening the whole source in 3D. Once saved, **Choose area to explore**
+returns to the atlas; smaller scenes and expansions reuse downloaded files.
+Downloads can be cancelled and continued. Keep Ridge open during the transfer.
+Eryri is currently the available complete pack. The 20 UK regional groups shown
+in the app are a publication plan: their nationwide maps and paths still need
+preparation. See [regional packs](../adaptive_terrain/REGIONAL_PACKS.md).

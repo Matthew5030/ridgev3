@@ -73,6 +73,10 @@ struct ExploreView: View {
                 if expanding == nil, let saved = try? JSONDecoder().decode(GeoBounds.self, from: atlasViewportData), saved.isValid {
                     focus = AtlasFocus(point: saved.center, scale: 7400, bounds: saved)
                 }
+                if expanding == nil, let packBounds = store.explorePackBounds {
+                    focus = AtlasFocus(point: packBounds.center, scale: 7400, bounds: Self.padded(packBounds, factor: 1.15))
+                    store.explorePackBounds = nil
+                }
                 if let expanding {
                     selectedSpacing = expanding.defaultSpacing
                     var initial = expanding.bounds
@@ -237,7 +241,7 @@ struct ExploreView: View {
                         }.padding(14).background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     }.buttonStyle(.plain).disabled(busy)
                 }
-                Text(atlasEntries.isEmpty ? "Connect to your download server in Settings to see adaptive terrain coverage." : "Select an area to download and open in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
+                Text(atlasEntries.isEmpty ? "Connect to your download server in Settings to see available packs." : "Choose the area to open in 3D. Download whole regions from Packs.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
                 if atlasEntries.isEmpty {
                     Button("Connect download server") { store.showSettings = true }.buttonStyle(RidgeButtonStyle())
                 } else {

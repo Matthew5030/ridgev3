@@ -11,7 +11,7 @@ struct ContentView: View {
                 Group {
                     switch store.tab {
                     case .explore: ExploreView(store: store)
-                    case .areas: AreaLibraryView(store: store)
+                    case .areas: OfflinePacksView(store: store)
                     case .routes: RouteLibraryView(store: store)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
