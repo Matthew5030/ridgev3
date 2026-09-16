@@ -23,16 +23,48 @@ struct TerrainGrid: Codable, Hashable, Sendable {
     var originRow: Int
     var columns: Int
     var rows: Int
+    /// Optional exact native edges for a source spanning several latitude bands.
+    var longitudeEdges: [Double]? = nil
+    var latitudeEdges: [Double]? = nil
     static let worldSide = 48
     static let nativeIntervals = 512
 
     var isValid: Bool {
-        let side = gridID == "ridge-eryri-uniform-v1" ? 256 : Self.worldSide
+        let side = ["ridge-eryri-uniform-v1", "ridge-native-adaptive-v1"].contains(gridID) ? 256 : Self.worldSide
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
         let validID: (String) -> Bool = { !$0.isEmpty && $0.count <= 100 && $0 != "." && $0 != ".." && $0.unicodeScalars.allSatisfy { allowed.contains($0) } }
+        if let longitudeEdges, let latitudeEdges {
+            guard longitudeEdges.count == columns + 1, latitudeEdges.count == rows + 1,
+                  longitudeEdges.allSatisfy({ $0.isFinite && (-180...180).contains($0) }),
+                  latitudeEdges.allSatisfy({ $0.isFinite && (-90...90).contains($0) }),
+                  zip(longitudeEdges, longitudeEdges.dropFirst()).allSatisfy({ $0 < $1 }),
+                  zip(latitudeEdges, latitudeEdges.dropFirst()).allSatisfy({ $0 > $1 }) else { return false }
+        } else if longitudeEdges != nil || latitudeEdges != nil { return false }
         return validID(gridID) && validID(worldTileID) && originColumn >= 0 && originRow >= 0
             && columns >= 1 && rows >= 1 && columns <= side && rows <= side
             && originColumn <= side - columns && originRow <= side - rows
+    }
+
+    func point(u: Double, v: Double, in bounds: GeoBounds) -> GeoPoint {
+        guard let longitudeEdges, let latitudeEdges else { return bounds.point(u: u, v: v) }
+        func sample(_ edges: [Double], _ fraction: Double) -> Double {
+            let x = fraction * Double(edges.count - 1), i = max(0, min(edges.count - 2, Int(floor(x))))
+            return edges[i] + (edges[i + 1] - edges[i]) * (x - Double(i))
+        }
+        return GeoPoint(latitude: sample(latitudeEdges, v), longitude: sample(longitudeEdges, u))
+    }
+
+    func uv(_ point: GeoPoint, in bounds: GeoBounds) -> (u: Double, v: Double) {
+        guard let longitudeEdges, let latitudeEdges else { return bounds.uv(point) }
+        func fraction(_ edges: [Double], _ value: Double, increasing: Bool) -> Double {
+            var lo = 0, hi = edges.count - 1
+            while hi - lo > 1 {
+                let mid = (lo + hi) / 2
+                if increasing ? value >= edges[mid] : value <= edges[mid] { lo = mid } else { hi = mid }
+            }
+            return (Double(lo) + (value - edges[lo]) / (edges[lo + 1] - edges[lo])) / Double(edges.count - 1)
+        }
+        return (fraction(longitudeEdges, point.longitude, increasing: true), fraction(latitudeEdges, point.latitude, increasing: false))
     }
 
     func selection(column: Int, row: Int) -> AreaSelection? {
@@ -63,7 +95,9 @@ struct TerrainGrid: Codable, Hashable, Sendable {
         let left = Int((aligned.minU * Double(columns)).rounded()), top = Int((aligned.minV * Double(rows)).rounded())
         let right = Int((aligned.maxU * Double(columns)).rounded()), bottom = Int((aligned.maxV * Double(rows)).rounded())
         return TerrainGrid(gridID: gridID, worldTileID: worldTileID, originColumn: originColumn + left,
-                           originRow: originRow + top, columns: right - left, rows: bottom - top)
+                           originRow: originRow + top, columns: right - left, rows: bottom - top,
+                           longitudeEdges: longitudeEdges.map { Array($0[left...right]) },
+                           latitudeEdges: latitudeEdges.map { Array($0[top...bottom]) })
     }
 
     func cellID(column: Int, row: Int) -> String? {

@@ -104,15 +104,17 @@ struct TileSelectionView: View {
     }
 
     private func screen(u: Double, v: Double, size: CGSize) -> CGPoint {
-        CGPoint(x: (u - 0.5) * size.width * zoom + size.width / 2 + offset.width,
-                y: (v - 0.5) * size.height * zoom + size.height / 2 + offset.height)
+        let actual = manifest.bounds.uv(manifest.tilePoint(u: u, v: v))
+        return CGPoint(x: (actual.u - 0.5) * size.width * zoom + size.width / 2 + offset.width,
+                       y: (actual.v - 0.5) * size.height * zoom + size.height / 2 + offset.height)
     }
 
     private func cell(at point: CGPoint, size: CGSize) -> TerrainCell? {
         let u = (point.x - size.width / 2 - offset.width) / (size.width * zoom) + 0.5
         let v = (point.y - size.height / 2 - offset.height) / (size.height * zoom) + 0.5
         guard u >= 0, v >= 0, u <= 1, v <= 1 else { return nil }
-        return TerrainCell(column: min(grid.columns - 1, Int(u * Double(grid.columns))), row: min(grid.rows - 1, Int(v * Double(grid.rows))))
+        let cell = manifest.tileUV(manifest.bounds.point(u: u, v: v))
+        return TerrainCell(column: min(grid.columns - 1, Int(cell.u * Double(grid.columns))), row: min(grid.rows - 1, Int(cell.v * Double(grid.rows))))
     }
 
     private func clamped(_ value: CGSize, size: CGSize) -> CGSize {
@@ -167,7 +169,7 @@ struct TileSelectionView: View {
         }
         var occupied: [CGRect] = []
         for place in places {
-            let uv = manifest.bounds.uv(place.coordinate), p = screen(u: uv.u, v: uv.v, size: size)
+            let uv = manifest.tileUV(place.coordinate), p = screen(u: uv.u, v: uv.v, size: size)
             guard CGRect(origin: .zero, size: size).insetBy(dx: 35, dy: 20).contains(p) else { continue }
             let text = context.resolve(Text(place.name).font(.system(size: 10, weight: .semibold)).foregroundStyle(RidgeTheme.ink))
             let measured = text.measure(in: CGSize(width: 120, height: 20))

@@ -206,8 +206,12 @@ struct ExploreView: View {
                         }.padding(14).background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     }.buttonStyle(.plain).disabled(busy)
                 }
-                Text("Select an area to download and open in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
-                Button { selecting = true; query = "" } label: { Label("Select area", systemImage: "rectangle.dashed").frame(maxWidth: .infinity) }.buttonStyle(RidgeButtonStyle())
+                Text(atlasEntries.isEmpty ? "Connect to your download server in Settings to see adaptive terrain coverage." : "Select an area to download and open in 3D.").font(.system(size: 13)).foregroundStyle(RidgeTheme.muted)
+                if atlasEntries.isEmpty {
+                    Button("Connect download server") { store.showSettings = true }.buttonStyle(RidgeButtonStyle())
+                } else {
+                    Button { selecting = true; query = "" } label: { Label("Select area", systemImage: "rectangle.dashed").frame(maxWidth: .infinity) }.buttonStyle(RidgeButtonStyle())
+                }
                 Text("Marked areas have prepared terrain. Shaded areas are saved offline.").font(.system(size: 11)).foregroundStyle(RidgeTheme.muted)
             }
         }.padding(20).background(RidgeTheme.panel)
@@ -668,8 +672,8 @@ struct OfflineAtlasView: View {
                         guard available[row * grid.columns + column] else { column += 1; continue }
                         let left = column
                         while column < grid.columns, available[row * grid.columns + column] { column += 1 }
-                        let a = entry.manifest.bounds.point(u: Double(left) / Double(grid.columns), v: Double(row) / Double(grid.rows))
-                        let b = entry.manifest.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
+                        let a = grid.point(u: Double(left) / Double(grid.columns), v: Double(row) / Double(grid.rows), in: entry.manifest.bounds)
+                        let b = grid.point(u: Double(column) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows), in: entry.manifest.bounds)
                         let cellRect = rectangle(GeoBounds(minLatitude: b.latitude, minLongitude: a.longitude, maxLatitude: a.latitude, maxLongitude: b.longitude), size: size)
                         if cellRect.intersects(viewport) { coverage.addRect(cellRect) }
                     }
@@ -686,7 +690,7 @@ struct OfflineAtlasView: View {
                     lines.move(to: CGPoint(x: x, y: rect.minY)); lines.addLine(to: CGPoint(x: x, y: rect.maxY))
                 }
                 for row in 0...grid.rows {
-                    let point = entry.manifest.bounds.point(u: 0, v: Double(row) / Double(grid.rows))
+                    let point = grid.point(u: 0, v: Double(row) / Double(grid.rows), in: entry.manifest.bounds)
                     let y = screen(point, size: size).y
                     lines.move(to: CGPoint(x: rect.minX, y: y)); lines.addLine(to: CGPoint(x: rect.maxX, y: y))
                 }

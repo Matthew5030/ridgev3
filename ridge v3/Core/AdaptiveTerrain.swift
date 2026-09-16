@@ -66,10 +66,14 @@ struct AdaptiveMesh: Sendable {
         let p = 28 + chunk.vertices * 6 + index * chunk.indexWidth
         return chunk.indexWidth == 2 ? Int(data.le16(p)) : Int(data.le32(p))
     }
-    func elevation(at point: GeoPoint) -> Double? {
-        guard chunk.bounds.contains(point) else { return nil }
+    func contains(_ point: GeoPoint) -> Bool {
         let uv = chunk.bounds.uv(point)
-        return height(x: Float(uv.u * 512), y: Float(uv.v * 512)).map(Double.init)
+        return point.isValid && uv.u >= -1e-7 && uv.u <= 1 + 1e-7 && uv.v >= -1e-7 && uv.v <= 1 + 1e-7
+    }
+    func elevation(at point: GeoPoint) -> Double? {
+        guard contains(point) else { return nil }
+        let uv = chunk.bounds.uv(point)
+        return height(x: Float(min(1,max(0,uv.u)) * 512), y: Float(min(1,max(0,uv.v)) * 512)).map(Double.init)
     }
     func height(x: Float, y: Float) -> Float? {
         guard x >= 0, x <= 512, y >= 0, y <= 512 else { return nil }
@@ -196,26 +200,32 @@ struct AdaptiveTerrainSource: Codable, Hashable, Sendable {
     var index: SourceAsset? = nil
     var overview: MapTexture? = nil
     var graphs: [TerrainSourceGraph] = []
+    var context: TerrainHorizon? = nil
+    var contextBlocks: [SourceAsset]? = nil
     var downloadBytes: Int64 { chunks.reduce(0) { $0 + Int64($1.byteCount) } }
 
     func validate(bounds: GeoBounds, grid: TerrainGrid?) throws {
         guard toleranceMetres == 0.5, let grid, grid.isValid, coverage.count == grid.columns * grid.rows,
-              chunks.count <= 2304, Set(chunks.map(\.id)).count == chunks.count,
+              chunks.count <= 65_536, Set(chunks.map(\.id)).count == chunks.count,
               graphs.count <= 16 else { throw AdaptiveTerrainError(message: "Invalid adaptive terrain index.") }
+        let nw = grid.point(u: 0, v: 0, in: bounds), se = grid.point(u: 1, v: 1, in: bounds)
+        guard abs(nw.latitude - bounds.maxLatitude) < 1e-9, abs(nw.longitude - bounds.minLongitude) < 1e-9,
+              abs(se.latitude - bounds.minLatitude) < 1e-9, abs(se.longitude - bounds.maxLongitude) < 1e-9 else { throw AdaptiveTerrainError(message: "Native grid edges do not match the source bounds.") }
         if let index {
             guard isSource, index.byteCount > 0, index.byteCount < 32_000_000,
                   index.sha256.count == 64, index.file == "index.json", chunks.isEmpty else { throw AdaptiveTerrainError(message: "Invalid adaptive source reference.") }
         } else {
             guard chunks.count == coverage.filter({ $0 }).count else { throw AdaptiveTerrainError(message: "Adaptive coverage does not match its mesh index.") }
+            var cells = Set<Int>()
             for chunk in chunks {
                 try chunk.validate()
-                let uv = bounds.uv(chunk.bounds.center)
+                let uv = grid.uv(chunk.bounds.center, in: bounds)
                 let x = Int(floor(uv.u * Double(grid.columns))), y = Int(floor(uv.v * Double(grid.rows)))
-                guard x >= 0, x < grid.columns, y >= 0, y < grid.rows, coverage[y * grid.columns + x],
-                      abs(chunk.bounds.minLongitude - bounds.point(u: Double(x) / Double(grid.columns), v: 0).longitude) < 1e-9,
-                      abs(chunk.bounds.maxLongitude - bounds.point(u: Double(x + 1) / Double(grid.columns), v: 0).longitude) < 1e-9,
-                      abs(chunk.bounds.maxLatitude - bounds.point(u: 0, v: Double(y) / Double(grid.rows)).latitude) < 1e-9,
-                      abs(chunk.bounds.minLatitude - bounds.point(u: 0, v: Double(y + 1) / Double(grid.rows)).latitude) < 1e-9 else { throw AdaptiveTerrainError(message: "Adaptive cells do not match their geographic grid.") }
+                guard x >= 0, x < grid.columns, y >= 0, y < grid.rows, coverage[y * grid.columns + x], cells.insert(y * grid.columns + x).inserted,
+                      abs(chunk.bounds.minLongitude - grid.point(u: Double(x) / Double(grid.columns), v: 0, in: bounds).longitude) < 1e-9,
+                      abs(chunk.bounds.maxLongitude - grid.point(u: Double(x + 1) / Double(grid.columns), v: 0, in: bounds).longitude) < 1e-9,
+                      abs(chunk.bounds.maxLatitude - grid.point(u: 0, v: Double(y) / Double(grid.rows), in: bounds).latitude) < 1e-9,
+                      abs(chunk.bounds.minLatitude - grid.point(u: 0, v: Double(y + 1) / Double(grid.rows), in: bounds).latitude) < 1e-9 else { throw AdaptiveTerrainError(message: "Adaptive cells do not match their geographic grid.") }
             }
             if !isSource && !coverage.allSatisfy({ $0 }) { throw AdaptiveTerrainError(message: "The selected area includes missing terrain.") }
         }

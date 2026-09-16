@@ -13,7 +13,7 @@ a = p.parse_args()
 # with a scan of legacy source folders retained for rollback.
 current = a.directory / 'catalog.json'
 if current.exists() and json.loads(current.read_bytes()).get('schemaVersion') == 2:
-    raise SystemExit('Adaptive catalogue is active; use adaptive_terrain/publish_app_sources.py.')
+    raise SystemExit('Adaptive catalogue is active; use adaptive_terrain/publish_eryri_app.py.')
 entries = []
 for path in sorted(a.directory.glob('*/pack.json')):
     raw = path.read_bytes(); m = json.loads(raw)

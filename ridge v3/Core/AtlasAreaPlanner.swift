@@ -27,8 +27,8 @@ enum AtlasAreaPlanner {
             return $0.id < $1.id
         }
         guard let source = candidates.first?.manifest, let grid = source.grid else { return nil }
-        let a = source.bounds.uv(GeoPoint(latitude: requested.maxLatitude, longitude: requested.minLongitude))
-        let b = source.bounds.uv(GeoPoint(latitude: requested.minLatitude, longitude: requested.maxLongitude))
+        let a = grid.uv(GeoPoint(latitude: requested.maxLatitude, longitude: requested.minLongitude), in: source.bounds)
+        let b = grid.uv(GeoPoint(latitude: requested.minLatitude, longitude: requested.maxLongitude), in: source.bounds)
         let left: Int, top: Int, right: Int, bottom: Int
         if preservingSize {
             let columns = min(grid.columns, max(1, Int(((b.u - a.u) * Double(grid.columns)).rounded())))
@@ -42,21 +42,21 @@ enum AtlasAreaPlanner {
             right = min(grid.columns, max(left + 1, Int(ceil(b.u * Double(grid.columns) - 1e-8))))
             bottom = min(grid.rows, max(top + 1, Int(ceil(b.v * Double(grid.rows) - 1e-8))))
         }
-        let nw = source.bounds.point(u: Double(left) / Double(grid.columns), v: Double(top) / Double(grid.rows))
-        let se = source.bounds.point(u: Double(right) / Double(grid.columns), v: Double(bottom) / Double(grid.rows))
+        let nw = grid.point(u: Double(left) / Double(grid.columns), v: Double(top) / Double(grid.rows), in: source.bounds)
+        let se = grid.point(u: Double(right) / Double(grid.columns), v: Double(bottom) / Double(grid.rows), in: source.bounds)
         return GeoBounds(minLatitude: se.latitude, minLongitude: nw.longitude, maxLatitude: nw.latitude, maxLongitude: se.longitude)
     }
 
     static func tile(at point: GeoPoint, entries: [PackEntry]) -> GeoBounds? {
         guard point.isValid, let source = entries.filter({ $0.manifest.grid?.isValid == true && $0.manifest.bounds.contains(point) })
             .sorted(by: { $0.manifest.levels.count > $1.manifest.levels.count }).first?.manifest, let grid = source.grid else { return nil }
-        let uv = source.bounds.uv(point)
+        let uv = grid.uv(point, in: source.bounds)
         let column = min(grid.columns - 1, max(0, Int(floor(uv.u * Double(grid.columns) + 1e-9))))
         let row = min(grid.rows - 1, max(0, Int(floor(uv.v * Double(grid.rows) + 1e-9))))
         if let tiled = source.tiledTerrain, !tiled.cells[row * grid.columns + column].complete { return nil }
         if let adaptive = source.adaptive, !adaptive.coverage[row * grid.columns + column] { return nil }
-        let nw = source.bounds.point(u: Double(column) / Double(grid.columns), v: Double(row) / Double(grid.rows))
-        let se = source.bounds.point(u: Double(column + 1) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows))
+        let nw = grid.point(u: Double(column) / Double(grid.columns), v: Double(row) / Double(grid.rows), in: source.bounds)
+        let se = grid.point(u: Double(column + 1) / Double(grid.columns), v: Double(row + 1) / Double(grid.rows), in: source.bounds)
         return GeoBounds(minLatitude: se.latitude, minLongitude: nw.longitude, maxLatitude: nw.latitude, maxLongitude: se.longitude)
     }
 
@@ -108,8 +108,8 @@ enum AtlasAreaPlanner {
         if source.manifest.adaptive?.index != nil {
             result.reason = "Reading the terrain index for this area…"; return result
         }
-        let a = source.manifest.bounds.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
-        let b = source.manifest.bounds.uv(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
+        let a = source.manifest.grid?.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude), in: source.manifest.bounds) ?? source.manifest.bounds.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
+        let b = source.manifest.grid?.uv(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude), in: source.manifest.bounds) ?? source.manifest.bounds.uv(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
         var selection = AreaSelection(minU: max(0, a.u), minV: max(0, a.v), maxU: min(1, b.u), maxV: min(1, b.v))
         if let grid = source.manifest.grid {
             guard let aligned = grid.cellsSelection(selection) else { result.reason = "This area could not be selected."; return result }

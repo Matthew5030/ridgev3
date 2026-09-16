@@ -58,6 +58,7 @@ struct AreaExtensionCard: View {
                                     .font(.caption).foregroundStyle(RidgeTheme.muted)
                             }
 
+                            if preview.adaptive == nil {
                             VStack(alignment: .leading, spacing: 9) {
                                 HStack {
                                     Text("Terrain detail").font(.subheadline.weight(.semibold))
@@ -73,6 +74,7 @@ struct AreaExtensionCard: View {
                                     .font(.caption).foregroundStyle(RidgeTheme.muted)
                             }
 
+                            } else { Text("Adaptive terrain · map detail unchanged").font(.caption).foregroundStyle(RidgeTheme.muted) }
                             if let reason = store.extensionAllowance.reason {
                                 Label(reason, systemImage: "info.circle")
                                     .font(.footnote).foregroundStyle(RidgeTheme.orange)
@@ -94,7 +96,7 @@ struct AreaExtensionCard: View {
                     // The resolution decision remains visible even when the
                     // choices scroll in a short landscape or accessibility view.
                     Label {
-                        Text(store.extensionSpacing == currentSpacing
+                        Text(currentSpacing == 0 ? "Adaptive terrain across the selected area" : store.extensionSpacing == currentSpacing
                              ? "Whole area: \(store.extensionSpacing) m terrain"
                              : "Whole area changes: \(currentSpacing) m → \(store.extensionSpacing) m")
                             .fixedSize(horizontal: false, vertical: true)
@@ -109,14 +111,14 @@ struct AreaExtensionCard: View {
                         HStack(spacing: 9) {
                             if store.extensionInProgress { ProgressView().tint(RidgeTheme.panel) }
                             else { Image(systemName: "square.and.arrow.down") }
-                            Text(store.extensionInProgress ? "Preparing your area…" : "Save detail · \(store.extensionSpacing) m")
+                            Text(store.extensionInProgress ? "Preparing your area…" : currentSpacing == 0 ? "Save & expand area" : "Save detail · \(store.extensionSpacing) m")
                         }.padding(.horizontal, 12)
                     }
                     .buttonStyle(RidgeButtonStyle())
                     .disabled(!canExtend || store.extensionInProgress || store.isRouting)
                     .opacity(canExtend || store.extensionInProgress ? 1 : 0.45)
-                    .accessibilityLabel(store.extensionInProgress ? "Preparing your area" : "Save and extend the whole area at \(store.extensionSpacing) metre terrain spacing")
-                    .accessibilityHint("Saves the outlined area at \(store.extensionSpacing) metre terrain spacing.")
+                    .accessibilityLabel(store.extensionInProgress ? "Preparing your area" : currentSpacing == 0 ? "Save and expand adaptive terrain" : "Save and extend the whole area at \(store.extensionSpacing) metre terrain spacing")
+                    .accessibilityHint("Saves the outlined area for offline planning.")
                 }
                 Button("Back to map") { store.dismissExtension() }
                     .font(.subheadline.weight(.semibold))

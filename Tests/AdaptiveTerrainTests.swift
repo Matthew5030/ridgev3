@@ -52,6 +52,17 @@ import zlib
             for i in stride(from:0,to:descriptor.vertices,by:101) { let p=real.vertex(i);expect(abs((real.height(x:p.x,y:p.z) ?? -9999)-p.y)<0.02,"Real native vertex") }
             print("Real chunk: \(descriptor.vertices) vertices, \(descriptor.triangles) triangles, \(Date().timeIntervalSince(start)) seconds")
         }
+        let nativeBounds = GeoBounds(minLatitude: 53, minLongitude: -4, maxLatitude: 55, maxLongitude: -2)
+        let grid = TerrainGrid(gridID: "ridge-native-adaptive-v1", worldTileID: "test-native", originColumn: 0, originRow: 0, columns: 2, rows: 2, longitudeEdges: [-4,-3,-2], latitudeEdges: [55,54.2,53])
+        expect(grid.isValid, "Native grid accepts exact nonuniform latitude edges")
+        expect(grid.point(u: 0.5, v: 0.5, in: nativeBounds).latitude == 54.2, "No latitude resampling")
+        for row in 0..<2 { for column in 0..<2 {
+            let p = grid.point(u: (Double(column)+0.5)/2, v: (Double(row)+0.5)/2, in: nativeBounds)
+            let uv = grid.uv(p, in: nativeBounds)
+            expect(abs(uv.u - (Double(column)+0.5)/2) < 1e-10 && abs(uv.v - (Double(row)+0.5)/2) < 1e-10, "Native grid round trip")
+        } }
+        let crop = grid.cropped(to: AreaSelection(minU: 0, minV: 0.5, maxU: 0.5, maxV: 1))!
+        expect(crop.latitudeEdges == [54.2,53] && crop.longitudeEdges == [-4,-3], "Crop retains exact axes")
         print("Adaptive terrain: \(checks) checks passed")
     }
 }

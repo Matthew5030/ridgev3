@@ -1498,7 +1498,12 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                     let t = Int(triangle) * 3
                     if let hit = triangleIntersection(origin: origin, direction: direction,
                         a: vertices[mesh.index(t)].position, b: vertices[mesh.index(t + 1)].position, c: vertices[mesh.index(t + 2)].position) {
-                        closest = min(closest ?? .infinity, hit)
+                        let p = origin + direction * hit
+                        let pu = p.x / width + 0.5, pv = p.z / depthExtent + 0.5
+                        if pu >= u[column] - 1e-7, pu <= u[column + 1] + 1e-7,
+                           pv >= v[row] - 1e-7, pv <= v[row + 1] + 1e-7 {
+                            closest = min(closest ?? .infinity, hit)
+                        }
                     }
                 }
                 return closest
@@ -1548,11 +1553,11 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         let stepX = direction.x >= 0 ? 1 : -1, stepZ = direction.z >= 0 ? 1 : -1
         for _ in 0..<(u.count + v.count + 8) {
             guard column >= 0, column < u.count - 1, row >= 0, row < v.count - 1, t <= interval.1 + 0.00001 else { return nil }
-            if let hit = hitInCell(row, column), hit >= t - 0.00001, hit <= interval.1 + 0.00001 { return hit }
             let boundaryX = (u[stepX > 0 ? column + 1 : column] - 0.5) * width
             let boundaryZ = (v[stepZ > 0 ? row + 1 : row] - 0.5) * depthExtent
             let tx = abs(direction.x) < 0.0000001 ? Float.infinity : (boundaryX - origin.x) / direction.x
             let tz = abs(direction.z) < 0.0000001 ? Float.infinity : (boundaryZ - origin.z) / direction.z
+            if let hit = hitInCell(row, column), hit >= t - 0.00001, hit <= min(interval.1, tx, tz) + 0.00001 { return hit }
             if !tx.isFinite && !tz.isFinite { return nil }
             if abs(tx - tz) < 0.0000001 { column += stepX; row += stepZ; t = tx }
             else if tx < tz { column += stepX; t = tx }

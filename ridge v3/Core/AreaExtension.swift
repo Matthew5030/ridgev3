@@ -69,7 +69,7 @@ enum AreaExtensionPlanner {
                 let du = marginMeters / source.manifest.bounds.widthMeters
                 let dv = marginMeters / source.manifest.bounds.depthMeters
                 for point in anchors {
-                    let uv = source.manifest.bounds.uv(point)
+                    let uv = source.manifest.tileUV(point)
                     selection.minU = max(0, min(selection.minU, uv.u - du))
                     selection.maxU = min(1, max(selection.maxU, uv.u + du))
                     selection.minV = max(0, min(selection.minV, uv.v - dv))
@@ -96,8 +96,8 @@ enum AreaExtensionPlanner {
     private static func gridSelection(source: RegionManifest, grid: TerrainGrid, required: [GeoPoint], destination: GeoPoint, addHalo: Bool = true) -> AreaSelection? {
         guard grid.isValid, let west = required.map(\.longitude).min(), let east = required.map(\.longitude).max(),
               let south = required.map(\.latitude).min(), let north = required.map(\.latitude).max() else { return nil }
-        let longitudes = (0...grid.columns).map { source.bounds.point(u: Double($0) / Double(grid.columns), v: 0).longitude }
-        let latitudes = (0...grid.rows).map { source.bounds.point(u: 0, v: Double($0) / Double(grid.rows)).latitude }
+        let longitudes = (0...grid.columns).map { source.tilePoint(u: Double($0) / Double(grid.columns), v: 0).longitude }
+        let latitudes = (0...grid.rows).map { source.tilePoint(u: 0, v: Double($0) / Double(grid.rows)).latitude }
         // Compare the same actual geographic edge values that AreaCropper uses,
         // rather than rounding normalized values and accidentally losing an edge.
         var left = (0..<grid.columns).last { longitudes[$0] <= west } ?? 0
@@ -139,8 +139,8 @@ enum AreaExtensionPlanner {
                                minLongitude: max(source.bounds.minLongitude, min(west, destination.longitude - longitudePadding)),
                                maxLatitude: min(source.bounds.maxLatitude, max(north, destination.latitude + latitudePadding)),
                                maxLongitude: min(source.bounds.maxLongitude, max(east, destination.longitude + longitudePadding)))
-        let a = source.bounds.uv(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
-        let b = source.bounds.uv(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
+        let a = source.tileUV(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
+        let b = source.tileUV(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
         guard [a.u, a.v, b.u, b.v].allSatisfy(\.isFinite), a.u < b.u, a.v < b.v else { return nil }
         return AreaSelection(minU: max(0, a.u), minV: max(0, a.v), maxU: min(1, b.u), maxV: min(1, b.v))
     }

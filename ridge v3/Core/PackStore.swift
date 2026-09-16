@@ -503,6 +503,10 @@ actor PackStore {
                   m.levels.isEmpty, m.defaultSpacing == 0, m.tiledTerrain == nil,
                   m.heightScale.isFinite, m.heightScale > 0, m.heightScale <= 100 else { throw RidgeError.message("Invalid adaptive area metadata.") }
             try adaptive.validate(bounds: m.bounds, grid: m.grid)
+            if let overview = adaptive.overview {
+                guard safeName(overview.file), validHash(overview.sha256), overview.byteCount > 0, overview.byteCount <= 16_777_216,
+                      (1...8192).contains(overview.width), (1...8192).contains(overview.height), contains(overview.bounds, m.bounds) else { throw RidgeError.message("Invalid adaptive overview map.") }
+            }
             if adaptive.index != nil { return }
             guard let atlas = m.cartography else { throw RidgeError.message("An adaptive area needs its independent map atlas.") }
             try atlas.validate(covering: m.horizon?.layers.last?.bounds ?? m.bounds)
@@ -511,6 +515,25 @@ actor PackStore {
                 guard safeName(graph.file), validHash(graph.sha256), graph.byteCount > 0, graph.byteCount <= 40_000_000, graph.bounds.isValid else { throw RidgeError.message("Invalid adaptive walking network.") }
             }
             if let graph = m.graphFile { guard safeName(graph), validHash(m.graphSHA256 ?? ""), (1...40_000_000).contains(m.graphByteCount ?? 0) else { throw RidgeError.message("Invalid saved walking network.") } }
+            for layer in m.adaptive?.context?.layers ?? [] {
+                guard layer.bounds.isValid, contains(layer.bounds, m.bounds), layer.levels.count == 1,
+                      let level = layer.levels.first, [8, 32].contains(level.spacing),
+                      (2...16_385).contains(level.width), (2...16_385).contains(level.height),
+                      level.byteCount == Int64(level.sampleCount) * 2, safeName(level.file), validHash(level.sha256) else { throw RidgeError.message("Invalid coarse source terrain.") }
+            }
+            if let blocks = adaptive.contextBlocks {
+                let levels = adaptive.context?.layers.flatMap(\.levels) ?? []
+                guard !levels.isEmpty, blocks.count <= 8192, Set(blocks.map(\.file)).count == blocks.count,
+                      blocks.allSatisfy({ block in safeName(block.file) && validHash(block.sha256) && block.byteCount > 0 && block.byteCount <= 1_000_000 && (block.byteOffset ?? -1) >= 0 && levels.contains(where: { $0.file == block.remoteFile }) }) else { throw RidgeError.message("Invalid surrounding terrain strips.") }
+                for level in levels {
+                    var next: Int64 = 0
+                    for block in blocks.filter({ $0.remoteFile == level.file }).sorted(by: { $0.byteOffset! < $1.byteOffset! }) {
+                        guard block.byteOffset == next, block.byteCount % Int64(level.width * 2) == 0 else { throw RidgeError.message("The surrounding terrain strip index is incomplete.") }
+                        next += block.byteCount
+                    }
+                    guard next == level.byteCount else { throw RidgeError.message("The surrounding terrain strip index has the wrong size.") }
+                }
+            }
             var inner = m.bounds
             for layer in m.horizon?.layers ?? [] {
                 guard contains(layer.bounds, inner), layer.bounds.widthMeters < 100_000, layer.bounds.depthMeters < 100_000,
@@ -776,6 +799,31 @@ enum SourceDownloads {
             guard offset >= 0, maximumBytes > 0, offset <= Int64.max - maximumBytes else { throw RidgeError.message("Invalid terrain range.") }
             request.setValue("bytes=\(offset)-\(offset + maximumBytes - 1)", forHTTPHeaderField: "Range")
             request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        }
+        if let offset = byteOffset {
+            // Check range support before consuming a response body. A server
+            // ignoring Range must never download the entire national container.
+            guard maximumBytes <= 1_000_000 else { throw RidgeError.message("The terrain chunk exceeds its download limit.") }
+            let (stream, response) = try await session.bytes(for: request)
+            let expected = "bytes \(offset)-\(offset + maximumBytes - 1)/"
+            guard let http = response as? HTTPURLResponse, http.statusCode == 206,
+                  http.url?.host?.lowercased() == url.host?.lowercased(), http.url?.port == url.port,
+                  http.url?.scheme?.lowercased() == url.scheme?.lowercased(),
+                  let range = http.value(forHTTPHeaderField: "Content-Range"), range.hasPrefix(expected),
+                  let containerSize = Int64(range.dropFirst(expected.count)), containerSize >= offset + maximumBytes else {
+                throw RidgeError.message("The download server must support exact byte ranges for adaptive terrain.")
+            }
+            var data = Data(); data.reserveCapacity(Int(maximumBytes))
+            for try await byte in stream {
+                guard data.count < maximumBytes else { throw RidgeError.message("The server returned too much terrain data.") }
+                data.append(byte)
+                if data.count % 16384 == 0 { try Task.checkCancellation() }
+            }
+            guard data.count == maximumBytes else { throw RidgeError.message("The terrain download was interrupted.") }
+            try Task.checkCancellation()
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("ridge-range-" + UUID().uuidString)
+            try data.write(to: file, options: .atomic)
+            return file
         }
         let result: (URL, URLResponse)
         if let meter = session.delegate as? DownloadMeter { result = try await meter.download(request, session: session) }

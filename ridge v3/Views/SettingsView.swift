@@ -185,7 +185,7 @@ struct SettingsView: View {
     private var estimatesSection: some View {
         VStack(alignment: .leading, spacing: 11) {
             Text("Route estimates").font(RidgeTheme.sectionTitle)
-            Text("Terrain resolution is the distance between height samples. Choosing finer terrain does not change map-texture detail.")
+            Text("Adaptive terrain keeps more triangles where the ground changes sharply. Its 0.5 m tolerance describes the fit to the source data, not survey accuracy. Map detail is independent.")
             Text("Walking time is a planning estimate: 4 km/h, plus one hour for every 600 m of ascent. Ascent and descent ignore elevation changes below 3 m to reduce small terrain ripples. GPX segment breaks are kept separate.")
         }.font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
     }

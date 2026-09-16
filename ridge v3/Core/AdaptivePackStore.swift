@@ -47,6 +47,42 @@ extension PackStore {
             // Immutable assets can share disk blocks with the source cache.
             do { try files.linkItem(at: from, to: to) } catch { try files.copyItem(at: from, to: to) }
         }
+        if let context = manifest.adaptive?.context {
+            func prepare(_ source: TerrainBackdrop?, _ cropped: TerrainBackdrop?) throws -> TerrainBackdrop? {
+                guard let source, var cropped, let original = source.levels.first, var level = cropped.levels.first else { return nil }
+                let uv = source.bounds.uv(GeoPoint(latitude: cropped.bounds.maxLatitude, longitude: cropped.bounds.minLongitude))
+                let x = Int((uv.u * Double(original.width - 1)).rounded()), y = Int((uv.v * Double(original.height - 1)).rounded())
+                guard x >= 0, y >= 0, x + level.width <= original.width, y + level.height <= original.height else { throw RidgeError.message("Invalid surrounding terrain crop.") }
+                let blocks = manifest.adaptive?.contextBlocks?.filter { $0.remoteFile == original.file }
+                let handle = try blocks == nil ? FileHandle(forReadingFrom: stage.appendingPathComponent(original.file)) : nil
+                defer { try? handle?.close() }
+                var data = Data(); data.reserveCapacity(Int(level.byteCount))
+                var current: SourceAsset?, blockData = Data()
+                for row in 0..<level.height {
+                    try Task.checkCancellation()
+                    let offset = Int64(((y + row) * original.width + x) * 2), count = level.width * 2
+                    if let blocks {
+                        if current == nil || offset < current!.byteOffset! || offset + Int64(count) > current!.byteOffset! + current!.byteCount {
+                            guard let block = blocks.first(where: { offset >= $0.byteOffset! && offset + Int64(count) <= $0.byteOffset! + $0.byteCount }) else { throw RidgeError.message("A surrounding terrain strip is missing.") }
+                            current = block; blockData = try Data(contentsOf: stage.appendingPathComponent(block.file))
+                        }
+                        let start = Int(offset - current!.byteOffset!)
+                        data.append(blockData[start..<(start + count)])
+                    } else {
+                        try handle!.seek(toOffset: UInt64(offset))
+                        guard let bytes = try handle!.read(upToCount: count), bytes.count == count else { throw RidgeError.message("The surrounding terrain is incomplete.") }
+                        data.append(bytes)
+                    }
+                }
+                level.sha256 = AdaptiveTerrainCodec.hash(data)
+                try data.write(to: stage.appendingPathComponent(level.file), options: .atomic)
+                cropped.levels = [level]; return cropped
+            }
+            manifest.horizon = TerrainHorizon(near: try prepare(context.near, manifest.horizon?.near), far: try prepare(context.far, manifest.horizon?.far))
+            let scratch = manifest.adaptive?.contextBlocks?.map(\.file) ?? context.layers.flatMap(\.levels).map(\.file)
+            for file in scratch where files.fileExists(atPath: stage.appendingPathComponent(file).path) { try files.removeItem(at: stage.appendingPathComponent(file)) }
+            manifest.adaptive?.context = nil; manifest.adaptive?.contextBlocks = nil
+        }
         var nodes: [WalkingNode] = [], edges: [WalkingEdge] = []
         for graphAsset in manifest.adaptive?.graphs ?? [] {
             try Task.checkCancellation()
@@ -75,8 +111,11 @@ extension PackStore {
             _ = try files.replaceItemAt(destination, withItemAt: stage)
         } else { try files.moveItem(at: stage, to: destination) }
         loaded.directory = destination
-        loaded.cartography?.imageURLs = loaded.cartography?.imageURLs.map { destination.appendingPathComponent($0.lastPathComponent) } ?? []
-        loaded.cartography?.previewURLs = loaded.cartography?.previewURLs.map { destination.appendingPathComponent($0.lastPathComponent) } ?? []
+        if var maps = loaded.cartography {
+            maps.imageURLs = maps.imageURLs.map { destination.appendingPathComponent($0.lastPathComponent) }
+            maps.previewURLs = maps.previewURLs.map { destination.appendingPathComponent($0.lastPathComponent) }
+            loaded.cartography = maps
+        }
         await progress(1)
         return loaded
     }
@@ -116,7 +155,7 @@ extension PackStore {
         let level = TerrainLOD(spacing: 0, width: 2, height: 2, file: "", byteCount: 0, sha256: "")
         let corners = [(0.0,0.0),(1.0,0.0),(0.0,1.0),(1.0,1.0)].map { u,v -> Float in
             let p = manifest.bounds.point(u: u,v: v)
-            return Float(meshes.first(where: { $0.chunk.bounds.contains(p) })?.elevation(at: p) ?? 0)
+            return Float(meshes.first(where: { $0.contains(p) })?.elevation(at: p) ?? 0)
         }
         return LoadedTerrain(manifest: manifest, level: level, heights: corners, textureURLs: [], graph: graph,
                              directory: directory, budgetContext: context, horizon: horizon, cartography: cartography, adaptiveMeshes: meshes)
@@ -142,11 +181,16 @@ extension SourceDownloads {
             if FileManager.default.fileExists(atPath: source.path) {
                 let existing = try JSONDecoder().decode(RegionManifest.self, from: Data(contentsOf: source))
                 guard existing == manifest else { throw RidgeError.message("Publish changed adaptive data under a new source ID.") }
-            } else {
-                try encoded.write(to: source, options: .atomic)
-                try encoded.write(to: target.appendingPathComponent("pack.json"), options: .atomic)
             }
-            try JSONEncoder().encode(base.appendingPathComponent(manifest.id, isDirectory: true)).write(to: target.appendingPathComponent("origin.json"), options: .atomic)
+            let remote = base.appendingPathComponent(manifest.id, isDirectory: true)
+            if let overview = manifest.adaptive?.overview {
+                try await ensure([SourceAsset(file: overview.file, byteCount: overview.byteCount, sha256: overview.sha256)], at: target, remote: remote) { _ in }
+            }
+            try Task.checkCancellation()
+            try JSONEncoder().encode(remote).write(to: target.appendingPathComponent("origin.json"), options: .atomic)
+            if !FileManager.default.fileExists(atPath: source.path) { try encoded.write(to: source, options: .atomic) }
+            let pack = target.appendingPathComponent("pack.json")
+            if !FileManager.default.fileExists(atPath: pack.path) { try encoded.write(to: pack, options: .atomic) }
         }
         return catalogue.sources.count
     }

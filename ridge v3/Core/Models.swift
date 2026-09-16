@@ -204,7 +204,7 @@ struct LoadedTerrain: Sendable {
     var cartography: LoadedCartography? = nil
     var adaptiveMeshes: [AdaptiveMesh] = []
     func elevation(at point: GeoPoint) -> Double? {
-        if !adaptiveMeshes.isEmpty { return adaptiveMeshes.first(where: { $0.chunk.bounds.contains(point) })?.elevation(at: point) }
+        if !adaptiveMeshes.isEmpty { return adaptiveMeshes.first(where: { $0.contains(point) })?.elevation(at: point) }
         guard manifest.bounds.contains(point), level.width >= 2, level.height >= 2 else { return nil }
         let uv = manifest.bounds.uv(point)
         let x = min(Double(level.width - 1), max(0, uv.u * Double(level.width - 1)))
@@ -289,4 +289,9 @@ struct SourceAsset: Codable, Hashable, Sendable {
     var sha256: String
     var remoteFile: String? = nil
     var byteOffset: Int64? = nil
+}
+
+extension RegionManifest {
+    func tilePoint(u: Double, v: Double) -> GeoPoint { grid?.point(u: u, v: v, in: bounds) ?? bounds.point(u: u, v: v) }
+    func tileUV(_ point: GeoPoint) -> (u: Double, v: Double) { grid?.uv(point, in: bounds) ?? bounds.uv(point) }
 }

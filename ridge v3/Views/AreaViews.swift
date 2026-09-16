@@ -310,7 +310,7 @@ struct AreaLibraryView: View {
                         }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius)).clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
                     }.buttonStyle(.plain).contextMenu {
                         Button("Open terrain", systemImage: "mountain.2") { store.open(entry) }
-                        Button("Change resolution", systemImage: "square.grid.3x3") { store.choose(entry) }
+                        Button(entry.manifest.adaptive != nil ? "Change area" : "Change resolution", systemImage: "square.grid.3x3") { store.choose(entry) }
                         Button("Remove saved area", systemImage: "trash", role: .destructive) { removal = entry }
                     }
                 }

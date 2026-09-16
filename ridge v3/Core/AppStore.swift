@@ -336,7 +336,8 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     /// tile selections belong in My areas rather than competing on the atlas.
     var selectableEntries: [PackEntry] {
         entries.filter { candidate in
-            (candidate.manifest.adaptive != nil || !entries.contains { $0.manifest.adaptive != nil }) && !entries.contains { source in
+            candidate.manifest.adaptive != nil && !entries.contains { source in
+                source.manifest.adaptive != nil &&
                 source.id != candidate.id && source.manifest.grid != nil &&
                 source.manifest.bounds.areaSquareKilometers > candidate.manifest.bounds.areaSquareKilometers * 1.00001 &&
                 source.manifest.bounds.contains(GeoPoint(latitude: candidate.manifest.bounds.minLatitude, longitude: candidate.manifest.bounds.minLongitude)) &&
@@ -347,6 +348,15 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
 
     func choose(_ entry: PackEntry, route: RidgeRoute? = nil) {
         guard !extensionInProgress else { return }
+        if entry.manifest.adaptive?.index != nil {
+            startPreparation(.opening, label: "Reading terrain index") { _ in
+                _ = try await self.packs.hydrateAdaptiveSources(covering: entry.manifest.bounds)
+                await self.refresh()
+                guard let ready = self.entries.first(where: { $0.id == entry.id }), ready.manifest.adaptive?.index == nil else { throw RidgeError.message("The terrain index is unavailable. Reconnect your download server.") }
+                self.choose(ready, route: route)
+            }
+            return
+        }
         scopedPackURL?.stopAccessingSecurityScopedResource(); scopedPackURL = nil
         var source = entry
         pendingSelection = nil
@@ -357,8 +367,8 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
                candidate.manifest.bounds.contains(GeoPoint(latitude: entry.manifest.bounds.maxLatitude, longitude: entry.manifest.bounds.maxLongitude))
            }) {
             source = collection
-            let a = source.manifest.bounds.uv(GeoPoint(latitude: entry.manifest.bounds.maxLatitude, longitude: entry.manifest.bounds.minLongitude))
-            let b = source.manifest.bounds.uv(GeoPoint(latitude: entry.manifest.bounds.minLatitude, longitude: entry.manifest.bounds.maxLongitude))
+            let a = source.manifest.tileUV(GeoPoint(latitude: entry.manifest.bounds.maxLatitude, longitude: entry.manifest.bounds.minLongitude))
+            let b = source.manifest.tileUV(GeoPoint(latitude: entry.manifest.bounds.minLatitude, longitude: entry.manifest.bounds.maxLongitude))
             pendingSelection = source.manifest.grid?.cellsSelection(AreaSelection(minU: a.u, minV: a.v, maxU: b.u, maxV: b.v))
         }
         if let route { pendingSelection = Self.routeSelection(for: route, in: source.manifest, preserving: pendingSelection) }
@@ -370,7 +380,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         let points = route.points.map(\.coordinate)
         guard let first = points.first, points.allSatisfy(manifest.bounds.contains) else { return AreaSelection() }
         if let preferred, let aligned = grid.cellsSelection(preferred) {
-            let a = manifest.bounds.point(u: aligned.minU, v: aligned.minV), b = manifest.bounds.point(u: aligned.maxU, v: aligned.maxV)
+            let a = manifest.tilePoint(u: aligned.minU, v: aligned.minV), b = manifest.tilePoint(u: aligned.maxU, v: aligned.maxV)
             let bounds = GeoBounds(minLatitude: b.latitude, minLongitude: a.longitude, maxLatitude: a.latitude, maxLongitude: b.longitude)
             if points.allSatisfy(bounds.contains) { return aligned }
         }
@@ -382,10 +392,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         // Compare the actual geographic edges used by AreaCropper. This keeps
         // an endpoint exactly on an edge in the smallest containing rectangle,
         // and also handles one-point or perfectly north/south routes.
-        let left = (0..<grid.columns).last { manifest.bounds.point(u: Double($0) / Double(grid.columns), v: 0).longitude <= west } ?? 0
-        let right = ((left + 1)...grid.columns).first { manifest.bounds.point(u: Double($0) / Double(grid.columns), v: 0).longitude >= east } ?? grid.columns
-        let top = (0..<grid.rows).last { manifest.bounds.point(u: 0, v: Double($0) / Double(grid.rows)).latitude >= north } ?? 0
-        let bottom = ((top + 1)...grid.rows).first { manifest.bounds.point(u: 0, v: Double($0) / Double(grid.rows)).latitude <= south } ?? grid.rows
+        let left = (0..<grid.columns).last { manifest.tilePoint(u: Double($0) / Double(grid.columns), v: 0).longitude <= west } ?? 0
+        let right = ((left + 1)...grid.columns).first { manifest.tilePoint(u: Double($0) / Double(grid.columns), v: 0).longitude >= east } ?? grid.columns
+        let top = (0..<grid.rows).last { manifest.tilePoint(u: 0, v: Double($0) / Double(grid.rows)).latitude >= north } ?? 0
+        let bottom = ((top + 1)...grid.rows).first { manifest.tilePoint(u: 0, v: Double($0) / Double(grid.rows)).latitude <= south } ?? grid.rows
         return grid.rectangle(from: TerrainCell(column: left, row: top), to: TerrainCell(column: right - 1, row: bottom - 1)) ?? AreaSelection()
     }
 
@@ -883,7 +893,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             return saved
         }
         let installedIDs = Set(entries.filter(\.installed).map(\.id))
-        guard let manifest = RouteEngine.containingRegion(for: route, in: entries.map(\.manifest), installedIDs: installedIDs) else { return nil }
+        guard let manifest = RouteEngine.containingRegion(for: route, in: entries.filter { $0.installed || $0.manifest.adaptive != nil }.map(\.manifest), installedIDs: installedIDs) else { return nil }
         return entries.first { $0.id == manifest.id }
     }
 
