@@ -306,8 +306,8 @@ struct ExploreView: View {
             let nextColumns = factor < 1 ? max(1, columns - 2) : columns + 2
             let nextRows = factor < 1 ? max(1, rows - 2) : rows + 2
             let nextLeft = left + (columns - nextColumns) / 2, nextTop = top + (rows - nextRows) / 2
-            let a = source.manifest.bounds.point(u: Double(nextLeft) / Double(grid.columns), v: Double(nextTop) / Double(grid.rows))
-            let b = source.manifest.bounds.point(u: Double(nextLeft + nextColumns) / Double(grid.columns), v: Double(nextTop + nextRows) / Double(grid.rows))
+            let a = source.manifest.tilePoint(u: Double(nextLeft) / Double(grid.columns), v: Double(nextTop) / Double(grid.rows))
+            let b = source.manifest.tilePoint(u: Double(nextLeft + nextColumns) / Double(grid.columns), v: Double(nextTop + nextRows) / Double(grid.rows))
             resized = GeoBounds(minLatitude: b.latitude, minLongitude: a.longitude, maxLatitude: a.latitude, maxLongitude: b.longitude)
         }
         if let required = expanding?.bounds {
