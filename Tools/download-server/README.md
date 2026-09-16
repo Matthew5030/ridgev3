@@ -27,33 +27,33 @@ The server listens on port 8787. Set `RIDGE_DOWNLOAD_PORT` before starting to
 use another port. It serves only app asset filenames, hides directories and
 build reports, and accepts GET/HEAD. This is a local-network development server.
 
-## Prepare and publish Eryri
+## Publish adaptive Eryri
 
-Use the existing preparation Python environment with NumPy, Pillow and Shapely:
+The normal `/catalog.json` uses schema 2 and advertises `ridge-adaptive-v2-eryri`.
+It joins the audited UK-v3 RAT1 chunks to existing Eryri maps, walking graphs and
+8/32 m surroundings without recomputing the fine terrain. Native cell edges are
+retained across storage partitions. Sources have immutable IDs.
 
 ```sh
-python Tools/prepare_park_source.py \
-  --boundary '/Volumes/MLB_EXT_4TB/Ridge Experiments/Eryri-adaptive-0p5/boundary.geojson' \
-  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/eryri-park' \
-  --workers 6
-python Tools/download-server/publish_catalog.py '/Volumes/MLB_EXT_4TB/Ridge Sources'
+python Tools/adaptive_terrain/publish_eryri_app.py --help
 ```
 
-The first command reads prepared 1 m heightfields and OSM archives. It creates
-a uniform selection grid, independently stored height tiles, cartography,
-walking graphs and one overview image. It does not alter original data or
-compile an experimental adaptive renderer. Missing LiDAR stays unavailable.
-The 4 m default and existing finer/coarser choices remain in the normal app.
+Use the existing map source (now in `Ridge Rollback/2026-09-16/eryri-park`) as
+`--maps`, the served `Ridge Sources` directory as `--root`, and `--activate`
+only when ready to replace the catalogue. Without activation, publication is
+staged in `catalog-adaptive-next.json`. The publisher hardlinks verified assets,
+so publication must be on the same filesystem as its inputs.
 
-The build resumes completed tiles while an unpublished build is in progress. Published source folders are immutable; a new output folder name becomes the next source identifier. `pack.json` is published only after all
-assets and terrain seams are checked. The second command publishes the small
-server catalogue. Until then the app reports that the server has no published
-terrain, rather than advertising a partly generated park.
+The old regular-grid publisher refuses to overwrite an active adaptive catalogue.
+App registration fetches the small catalogue and overview, then lazily verifies
+the full selection index. Mesh and context requests must return exact HTTP 206
+ranges; the client checks lengths and hashes before use. Saved scenes contain
+only their selected adaptive chunks, cropped surroundings, maps and paths.
 
-Published sources are immutable: use a new source identifier for a new data
-revision. The app rejects replacing an existing source index, preserving maps
-referenced by saved areas. Source caches live in `Documents/RidgeSources`;
-saved crops reference those cached maps and own their selected heightfields.
+Currently Eryri is the complete map-and-routing source. The nationwide catalogue
+contains terrain geometry only; other regions need map/path publication before
+being advertised in the normal app. Reconnect the server after installing the
+updated app. Existing offline saves remain readable.
 
 ## Checks and shutdown
 
@@ -73,8 +73,9 @@ and a local-network usage description for explicit LAN downloads.
 ## Precomputed adaptive terrain
 
 `/adaptive-catalog.json` lists independently compressed adaptive terrain chunks.
-This is separate from `/catalog.json`, because the current normal app does not
-yet support the adaptive mesh readers. It must not offer these as regular map packs.
+This geometry-only catalogue is separate from the complete map sources in
+`/catalog.json`. The app now has a verified RAT1 reader, but geometry alone
+is insufficient for a textured, routable download.
 Each source exposes `adaptive.json`, `mesh-*.rat.zlib` (or legacy `mesh-*.rmesh.zlib`), `boundary.geojson` and
 `coverage-gaps.geojson`. Downloads are static files; there is no live meshing.
 The publisher and format are documented in
@@ -92,7 +93,8 @@ The server also exposes `/uk-adaptive-0p5-v3/catalog.json` and
 validated adaptive grid sections, with chunk byte ranges inside each
 `terrain.ratpack`; the latter supplies separately labelled coarse background
 heightfields. These remain distinct from the normal app's `/catalog.json`.
-The current app does not yet read `rat1-zlib-range-v1`.
+The app reads selected RAT1 ranges through complete schema-2 app sources; it
+does not register this geometry-only catalogue directly.
 
 A detailed catalogue may be published incrementally: inspect `buildComplete`.
 Only completed section indices appear in it. The older unfiltered

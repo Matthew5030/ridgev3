@@ -194,11 +194,11 @@ for a revised dataset. Completed chunks resume after interrupted builds.
 `adaptive.json` and `/adaptive-catalog.json` are published only after completion.
 Normal `/catalog.json` remains for sources the current app can read.
 
-**These are terrain assets, not complete normal-app map packs.** The app does
-not yet consume `rme1-zlib-v1`. No adaptive experiment entry point is restored.
-The next integration must connect these bounded chunk downloads to the normal
-textured scene, route-height sampling, memory admission and expansion logic.
-Map textures and walking graphs are separate and must retain their own quality.
+**These are terrain assets, not complete normal-app map packs.** The normal app
+now reads RAT1 chunks through schema-2 app sources. `publish_eryri_app.py` joins
+UK-v3 geometry with existing Eryri maps, graphs and coarse context. The renderer,
+picking, route heights, memory admission and expansion use the adaptive mesh.
+Other UK regions still need their independent map/path assets published.
 
 Run the compiler/publisher regression checks in the same experiment venv:
 
@@ -410,8 +410,8 @@ There are two different terrain assets:
   the detailed layer's 0.5 m guarantee.
 
 The detailed catalogue includes the background descriptor's path and checksum.
-These capabilities are separate from the normal app catalogue. The iOS app
-still needs a RAT1 range reader before it can use these new terrain assets.
+These terrain catalogues are separate from the normal app catalogue. The iOS
+RAT1 range reader is connected through complete app sources; Eryri is published.
 Textures and routing data are not included or downsampled by this process.
 
 ### Source coverage is a required input

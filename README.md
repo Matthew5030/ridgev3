@@ -16,7 +16,7 @@ git lfs pull
 
 If you already cloned the repository, run `git lfs install` and `git lfs pull` inside it before building. GitHub's source ZIP does not reliably include the full LFS assets; use a Git clone.
 
-Open `ridge v3.xcodeproj` in Xcode, select the **ridge v3** scheme and an iPhone or iPad simulator, then Run. The deployment target is **iOS 18**. No package-manager setup or server is required. The existing Bilella Works bundle identifier and signing team have been retained; running on an actual phone requires access to that team's signing credentials, or selecting your own team in Xcode.
+Open `ridge v3.xcodeproj` in Xcode, select the **ridge v3** scheme and an iPhone or iPad simulator, then Run. The deployment target is **iOS 18**. No package-manager setup is required. New adaptive downloads require the local download server; saved areas work offline. The existing Bilella Works bundle identifier and signing team have been retained; running on an actual phone requires access to that team's signing credentials, or selecting your own team in Xcode.
 
 From Terminal, with Xcode installed at its usual location:
 
@@ -29,11 +29,13 @@ xcodebuild -project 'ridge v3.xcodeproj' -scheme 'ridge v3' \
 
 Start with **Eryri** or search for a place. The atlas shows the prepared tile grid when zoomed in. Tap **Select area**, then tap one tile or drag across a block. Handles resize in whole tiles; moving the block preserves its row and column count and stops at prepared edges. The panel shows the selected tile count. **Draw new** clears the block, **Select centre tile** starts with one tile, and **Smaller/Larger** change its size. Search moves the selection to the chosen place. One finger pans in browse mode; two fingers pan and pinch zoom works in either mode. During selection, **Move map** also enables one-finger pan without editing the block. **Save & open in 3D** opens the selected scene automatically; an exact saved selection offers **Open in 3D**.
 
-The main atlas journey holds terrain at 4 m and rejects oversized selections instead of silently lowering detail. Surroundings are included when available and admitted. Sources can be bundled, imported, or connected through **Settings → Download server**. A local Docker container serves prepared park tiles; connecting downloads its index and overview, then confirming a selection downloads only missing terrain, maps and route files. Cached areas work offline. Outside complete prepared LiDAR coverage, tiles remain unavailable. See [local download setup](Tools/download-server/README.md). Saved areas are shaded on the atlas. Areas cut from a bundled source reference its signed, immutable cartography directly; imported sources retain verified copies that are shared between overlapping areas. Terrain crops and graphs remain separate. Removing one area does not remove maps used by another.
+The normal atlas now downloads precomputed adaptive terrain, fitted to within 0.5 m of the prepared source surface. This is a mesh approximation tolerance, not survey accuracy. There is no 1/2/4/8 m choice for new areas. Selection follows the native adaptive cells; the app admits a fixed scene using actual vertex/triangle counts, map working memory, routing and surroundings. Moving the camera never downloads or rebuilds terrain.
 
-The app uses one normal atlas → tile selection → textured 3D route-planning flow. The former adaptive experiment has no entry point in Explore, Settings or app launch. Its prepared files remain on disk. The normal flow instead uses its own tiled source catalogue and existing renderer; the park source is generated with `Tools/prepare_park_source.py` and published through the local download server.
+Connect through **Settings → Download server** and refresh coverage. The lightweight catalogue loads first; the verified chunk index is fetched when selecting a source. Saving downloads only missing, checksummed mesh ranges, maps, paths and coarse context strips. The normal renderer draws those exact triangles and uses them for route heights and picking. Legacy saved areas and imports remain readable, but old regular-grid sources are excluded from new atlas selections.
 
-In 3D, drag one finger to move across the map, two fingers to rotate and tilt, and pinch to zoom. Settings can swap the touch counts. **Expand area** opens the same full-screen atlas with the current area and route visible; saving returns to 3D with the route and geographic camera preserved. It retains the current terrain spacing. Routes support saved local copies, undo/redo, waypoint editing, reversal, elevation profiles and GPX import/export. Imported GPX tracks remain tracks rather than being silently rerouted onto OSM paths.
+The currently published complete source is **Eryri**: 16,413 native chunks across a continuous 111 × 171 selection grid, with missing coverage left unavailable. The rest of the UK has prepared adaptive geometry, but still needs matching cartography and walking graphs published before it becomes a complete app download. See [local download setup](Tools/download-server/README.md).
+
+In 3D, drag one finger to move across the map, two fingers to rotate and tilt, and pinch to zoom. Settings can swap the touch counts. **Expand area** opens the same full-screen atlas with the current area and route visible; saving returns to 3D with the route and geographic camera preserved. Adaptive expansion keeps the same mesh tolerance. Routes support saved local copies, undo/redo, waypoint editing, reversal, elevation profiles and GPX import/export. Imported GPX tracks remain tracks rather than being silently rerouted onto OSM paths.
 
 **Expand area** is always visible on the 3D map. Looking or tapping beyond detailed coverage reveals an explanation and opens expansion around that location; the saved landscape's outer edge has its own coverage-limit message. A subtle dashed boundary appears near the edge of detail and while planning. Map textures keep the same styling and detail across that boundary. Soft blue daylight and warmer slope lighting carry the landscape into a gentler distant haze.
 
@@ -45,27 +47,11 @@ The extension flow uses local source data or explicitly downloads missing files 
 
 ## Included data
 
-The app bundles approximately **1.29 GB** of prepared source data. Its main source is a **16 × 16 grid of 256 original precision cells** covering approximately 7.8 × 7.8 km across Eryri, including Yr Wyddfa, the Glyderau and Ogwen. The complete source occupies **1.25 GB** and includes genuine 1, 2, 4, 8, 16 and 32 m terrain levels, one walking graph, broad prepared surrounding terrain and an independent map covering approximately 27.4 × 27.4 km. The new map images occupy **704.1 MB** on disk. The older primary, overview and band-map assets remain in the source for compatibility; new saves copy only the admitted terrain, required independent map cells and clipped paths. Disk size is shown before saving and is separate from the bounded renderer allocation.
+New adaptive Eryri scenes reuse the existing independent map images and walking graphs. Map fidelity does not depend on triangle density. Each scene includes cropped 8 m nearby terrain (about 3 km beyond the selected area) and 32 m distant terrain, bounded by a map window of up to 60 × 60 cells, roughly 30 km across, and available source coverage. The server sends verified row strips of these coarse surfaces rather than their complete park-wide files.
 
-New Eryri saves include approximately **2 km of nearby terrain at 8 m** and a **32 m outer band targeting 15 km beyond each side of the selection, clipped to prepared coverage**. Both are cropped from real prepared terrain covering roughly 27.4 × 27.4 km and joined to the selected surface. With both bands present, the primary and nearby terrain remain haze-free; gentle haze builds over 12 km beyond the nearby band, with a separate 2 km fade at the finite outer edge. The edge fade is capped to the available margin on each side so it does not fade the primary area. Existing saves use the new atmosphere when reopened; re-select an older rectangle to prepare the broader surroundings if available. The entire view uses one independent cartographic atlas with approximately **0.48 m native map pixels**. There is no primary/near/far image-density change and no overview substitution when an area grows. Terrain admission can coarsen or omit surrounding geometry without changing the map source.
+The renderer keeps a fixed local texture cache: a continuous preview mosaic covers the scene, with up to 192 medium and 16 native pages selected by projected screen size. All scales derive from the same cartographic source with shared neighbour gutters and mip filtering. This only reads saved images and makes no network requests.
 
-Initial map previews upload in batches of 32 through one reusable 1.125 MiB staging buffer, within the existing map working reserve. Each PNG is still checked and decoded individually.
-
-The saved map has a fixed local texture cache: a continuous preview mosaic covers the whole scene, while up to 192 medium and 16 native image pages serve the visible map according to projected screen size. One worker reads and checks local PNGs; it makes no network request or LiDAR allocation. All image scales derive from the same pixels, with shared neighbour gutters and mip filtering. Existing saved Eryri areas use compatible current bundled cartography on reopen without rewriting their terrain or route files.
-
-The original three prototype source regions remain bundled for saved-route compatibility and regression checks:
-
-| Area | Coverage | Terrain resolutions |
-|---|---|---|
-| Yr Wyddfa | Approximately 5.9 × 5.9 km, including the Snowdon horseshoe | 4, 8, 16, 32 m |
-| Ogwen Valley | Approximately 3.9 × 3.9 km, including Tryfan and the Glyderau | 4, 8, 16, 32 m |
-| Summit study | Approximately 490 × 490 m at Yr Wyddfa | 1, 2, 4, 8, 16, 32 m |
-
-These are genuine prepared Welsh Government LiDAR heightfields and source-backed OpenStreetMap features and walking graphs. Map textures use original contour cartography, not satellite imagery. Selecting coarser terrain does not reduce texture resolution. The main atlas selector uses **4 m** for lighter geometry and faster preparation; it never silently switches detail. The older import/detail sheet retains its resolution controls: its initial choice prefers 4 m, falling back to an available coarser level when necessary. Manual 1 m and 2 m remain available; the explicit Auto button recommends the finest available terrain level that fits the current device allowance. Existing saved areas reopen at their saved spacing; save the selection at 4 m to replace its terrain. The app checks available process memory, Metal graphics limits and thermal state before loading; a level can exist in a source pack while its complete footprint is too large for a device. The full Eryri source at 1 m contains 8193 × 8193 samples and must be opened as smaller selections. One fixed precision cell is only 513 × 513 samples at 1 m. Cropping never creates finer terrain absent from its source. Selecting a resolution manually keeps that choice; Auto updates when the selected area changes. Live memory pressure can reduce its recommendation, and each save/load performs a fresh check. The active terrain remains a fixed mesh with no progressive streaming.
-
-The independent map retains **1024 × 1024 inner map pixels per geographic cell** throughout the prepared landscape. Native PNGs include four pixels of neighbouring content on each side; previews use the same source. A save copies the complete map cells covering its selected terrain and admitted horizon, with no resampling tied to terrain spacing. Old overview and band-map assets remain in the source for compatibility and 2D previews; new atlas installations omit them. Labels and route overlays remain independent of map textures.
-
-The small vector atlas covers the world with more detailed UK/Ireland outlines. Its England/Wales availability overlay describes the external source pack's recorded coverage. **The whole UK's detailed terrain is not bundled**, and available source cells are not automatically downloadable regions. The ready-to-use fixed-cell source covers Eryri; other locations require prepared data to be imported or explicitly downloaded.
+Older bundled Eryri heightfields and the three prototype sources remain compatibility fixtures for existing saved areas and regression checks. They are no longer choices for new atlas downloads. Source LiDAR and map masters are preserved. Retired server packs are outside the served directory in `Ridge Rollback/2026-09-16` on the source drive.
 
 ## Import or prepare another area
 
@@ -86,7 +72,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r Tools/requirements.txt
 ```
 
-Rebuild the main fixed-grid source, including all 256 verified 1 m precision cells:
+For legacy compatibility fixtures only, rebuild the fixed-grid source with all 256 precision cells (new adaptive publication uses `Tools/adaptive_terrain/publish_eryri_app.py`):
 
 ```sh
 .venv/bin/python Tools/prepare_grid.py

@@ -1,6 +1,6 @@
 # Ridge offline area format
 
-Ridge opens one finite planning area at one fixed terrain spacing, with optional coarser surrounding terrain saved alongside it. No camera movement downloads data, creates a higher-resolution mesh, or expands the active scene's bounds.
+Ridge opens one finite planning area using a precomputed adaptive mesh, with coarser surrounding terrain saved alongside it. Legacy regular heightfield areas remain readable. No camera movement downloads data, creates a higher-resolution mesh, or expands the active scene's bounds.
 
 The Xcode target bundles `ridge v3/Resources/RidgeData.bundle`. It contains:
 
@@ -13,9 +13,37 @@ regions/<area-id>/map-0-0.png
 regions/<area-id>/graph.json
 ```
 
-A standalone area is the same region directory, conventionally named `<area-id>.ridgepack`. It is a **directory package, not a ZIP archive**. The app's Files importer stages and validates it before activating it. Ready-to-import copies of all three included regions are under `Tools/PreparedPacks/`.
+A standalone area is the same region directory, conventionally named `<area-id>.ridgepack`. It is a **directory package, not a ZIP archive**. The app's Files importer stages and validates it before activating it. The old prototype packages have been retired to the external rollback archive.
 
 An explicitly entered HTTPS URL can point to the same `pack.json`, with all declared assets alongside it. That action downloads static files and installs one requested terrain level. No public pack host is configured. The app has no live map, routing or terrain-generation service; camera movement and route planning remain entirely local.
+
+## Adaptive app sources
+
+The normal server catalogue is `{ "schemaVersion": 2, "sources": [RegionManifest] }`.
+Each source has `adaptive.isSource: true`, a sparse `coverage` mask, an overview,
+and a hashed `index.json` reference. Its full index adds native RAT1 chunks,
+independent cartography, walking graphs, and optional coarse context. The
+selection grid may carry nonuniform `longitudeEdges` and `latitudeEdges`; these
+must be used rather than dividing the bounding box uniformly.
+
+Each chunk declares bounds, vertex/triangle counts, index width, topology size,
+compressed/decoded/topology SHA-256 checksums, and a byte range in an immutable
+`.ratpack`. RAT1 reconstructs the exact precomputed RME1 mesh. Inflation is bounded;
+the app validates sizes, checksums, topology and indices before Metal allocation.
+The 0.5 m tolerance measures approximation of the prepared source surface, not
+absolute survey accuracy. See `Core/AdaptiveTerrain.swift` and the independent
+codec tests for the wire representation and canonical traversal.
+
+A saved adaptive area contains only its selected chunks, required map cells,
+clipped walking graph and cropped surroundings. `levels` is empty: there is no
+user-selected regular spacing. Scene admission budgets decoded CPU/GPU geometry,
+triangle-query buckets, cartography, routes, coarse context and preparation memory.
+Context strips have independent hashes and source byte offsets; the client checks
+HTTP 206 and Content-Range before consuming their bodies. The source index is
+loaded on explicit selection, never from camera motion.
+
+The sections below describe the retained legacy heightfield format and shared
+map/route conventions. Legacy source publication is no longer the normal workflow.
 
 ## Coordinate and height conventions
 
