@@ -10,6 +10,14 @@ struct AtlasAreaProposal: Sendable {
     var allowance: TerrainAllowance?
     var reason: String?
     var canOpen: Bool { reason == nil && allowance?.allowed == true && preview != nil }
+
+    /// Refresh admission without repeating source discovery, selection or network I/O.
+    mutating func refreshBudget(spacing: Int, context: TerrainBudget.Context = TerrainBudget.currentContext()) {
+        guard let preview, allowance != nil else { return }
+        let updated = TerrainBudget.allowance(for: preview, spacing: spacing, context: context)
+        allowance = updated
+        reason = updated.allowed ? nil : "Make the area smaller to open it at this detail. " + (updated.reason ?? "This selection exceeds the device’s current memory budget.")
+    }
 }
 
 enum AtlasAreaPlanner {

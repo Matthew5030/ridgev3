@@ -2,13 +2,16 @@ import Foundation
 
 extension PackStore {
     /// Metadata only. Called after an explicit selection, never by the renderer.
-    func hydrateAdaptiveSources(covering bounds: GeoBounds) async throws -> Bool {
+    func hydrateAdaptiveSources(covering bounds: GeoBounds, candidates: [PackEntry]? = nil,
+                                transfer: (@Sendable (Int64, Int64) async -> Void)? = nil) async throws -> Bool {
         var changed = false
-        for entry in try catalogue() where entry.manifest.adaptive?.index != nil && entry.manifest.bounds.intersects(bounds) {
+        let entries = try candidates ?? catalogue()
+        for entry in entries where entry.manifest.adaptive?.index != nil && entry.manifest.bounds.intersects(bounds) {
             guard let asset = entry.manifest.adaptive?.index else { continue }
             let path = entry.directory.appendingPathComponent(asset.file)
             if let remote = entry.remoteSource {
-                try await SourceDownloads.ensure([asset], at: entry.directory, remote: remote) { _ in }
+                try await SourceDownloads.ensure([asset], at: entry.directory, remote: remote,
+                                                 requestTimeout: 15, resourceTimeout: 90, transfer: transfer) { _ in }
             }
             try Self.verify(path, size: asset.byteCount, hash: asset.sha256)
             let data = try Data(contentsOf: path)

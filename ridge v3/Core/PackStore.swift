@@ -786,9 +786,10 @@ enum SourceDownloads {
         return c.url!
     }
 
-    static func session(delegate: URLSessionDelegate? = nil) -> URLSession {
+    static func session(delegate: URLSessionDelegate? = nil, requestTimeout: TimeInterval = 30,
+                        resourceTimeout: TimeInterval = 300) -> URLSession {
         let c = URLSessionConfiguration.ephemeral
-        c.timeoutIntervalForRequest = 30; c.timeoutIntervalForResource = 300
+        c.timeoutIntervalForRequest = requestTimeout; c.timeoutIntervalForResource = resourceTimeout
         c.httpMaximumConnectionsPerHost = 4; c.urlCache = nil
         return URLSession(configuration: c, delegate: delegate, delegateQueue: nil)
     }
@@ -886,6 +887,7 @@ enum SourceDownloads {
     }
 
     static func ensure(_ assets: [SourceAsset], at directory: URL, remote: URL,
+                       requestTimeout: TimeInterval = 30, resourceTimeout: TimeInterval = 300,
                        transfer: (@Sendable (Int64, Int64) async -> Void)? = nil,
                        progress: @Sendable (Double) async -> Void) async throws {
         _ = try validBase(remote)
@@ -912,7 +914,8 @@ enum SourceDownloads {
         guard capacity > total + 64 * 1_048_576 else { throw RidgeError.message("There is not enough free storage for this download. Select a smaller area.") }
         await transfer?(0, total)
         let meter = transfer.map { DownloadMeter(total: total, report: $0) }
-        let session = session(delegate: meter); defer { session.invalidateAndCancel() }
+        let session = session(delegate: meter, requestTimeout: requestTimeout, resourceTimeout: resourceTimeout)
+        defer { session.invalidateAndCancel() }
         var completed: Int64 = 0
         try await withThrowingTaskGroup(of: SourceAsset.self) { group in
             var next = 0

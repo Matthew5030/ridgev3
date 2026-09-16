@@ -38,3 +38,20 @@ atlas selections.
 
 Install the updated app and reconnect/refresh Settings → Download server to see
 the adaptive source. This migration has not been tested on the physical M1 iPad.
+
+## Selection-index stall regression
+
+The original atlas included its five-second memory revision in the SwiftUI
+selection task identity. Foreground budget checks cancelled and restarted a slow
+index download indefinitely. Memory admission now updates the existing proposal
+independently; it does not restart source hydration. Cached selections skip index
+I/O entirely. Index downloads show transferred bytes, use a 15 s inactivity / 90 s
+resource limit, and expose an explicit retry after failure.
+
+A simulator harness ran the real ExploreView with an eight-second HTTP response
+delay and the foreground budget timer enabled (the test host was screen-locked).
+The old view issued nine requests in about 40 seconds and never hydrated the
+source. The fixed view completed with one request across repeated timer ticks.
+The adaptive catalogue suite additionally checks budget refusal/recovery while
+preserving selection metadata, saved references and source errors. The shared
+source-download regression suite still passes all 410 assertions.

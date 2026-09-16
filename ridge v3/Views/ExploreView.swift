@@ -29,10 +29,15 @@ struct ExploreView: View {
     @State private var refreshing = false
     @State private var draggingSelection = false
     @State private var budgetRevision = 0
+    @State private var retryRevision = 0
+    @State private var selectionCheckID = UUID()
+    @State private var readingIndex = false
+    @State private var selectionFailed = false
+    @State private var indexTransfer: (received: Int64, total: Int64)?
     private var spacing: Int { selectedSpacing }
     private var atlasEntries: [PackEntry] { store.selectableEntries.sorted { $0.manifest.name < $1.manifest.name } }
     private var busy: Bool { store.isPreparing || store.extensionInProgress }
-    private var proposalID: String { "\(spacing)-\(String(describing: bounds))-\(draggingSelection)-\(budgetRevision)-\(store.entries.map { $0.id + String($0.installed) }.joined(separator: ","))" }
+    private var proposalID: String { "\(spacing)-\(String(describing: bounds))-\(draggingSelection)-\(retryRevision)-\(store.entries.map { $0.id + String($0.installed) }.joined(separator: ","))" }
 
     var body: some View {
         GeometryReader { geometry in
@@ -59,6 +64,11 @@ struct ExploreView: View {
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
             .task(id: proposalID) { await updateProposal() }
+            .onChange(of: budgetRevision) { _, _ in
+                // Memory checks must not cancel an in-flight metadata download.
+                guard !refreshing else { return }
+                proposal?.refreshBudget(spacing: spacing)
+            }
             .onAppear {
                 if expanding == nil, let saved = try? JSONDecoder().decode(GeoBounds.self, from: atlasViewportData), saved.isValid {
                     focus = AtlasFocus(point: saved.center, scale: 7400, bounds: saved)
@@ -149,7 +159,7 @@ struct ExploreView: View {
             } else if selecting {
                 if let bounds {
                     let shown = refreshing ? bounds : proposal?.preview?.bounds ?? bounds
-                    Text(proposal?.preview?.name ?? "Checking selected location…")
+                    Text(proposal?.preview?.name ?? "Selected area")
                         .font(.system(size: 13, weight: .medium)).lineLimit(1)
                     HStack {
                         Label(String(format: "%.1f × %.1f km", shown.widthMeters / 1000, shown.depthMeters / 1000), systemImage: "rectangle.dashed")
@@ -159,7 +169,7 @@ struct ExploreView: View {
                     if let grid = proposal?.preview?.grid {
                         Text("\(grid.columns) × \(grid.rows) tiles · \(grid.columns * grid.rows) selected")
                             .font(.system(size: 11, weight: .medium)).foregroundStyle(RidgeTheme.muted)
-                    } else {
+                    } else if refreshing && !readingIndex {
                         Text("Checking selected tiles…").font(.system(size: 11, weight: .medium)).foregroundStyle(RidgeTheme.muted)
                     }
                     HStack(spacing: 18) {
@@ -171,9 +181,21 @@ struct ExploreView: View {
                     Text("Adaptive terrain").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                     VStack(alignment: .leading, spacing: 6) {
                         if refreshing {
-                            Label("Checking area…", systemImage: "hourglass").font(.caption).foregroundStyle(RidgeTheme.muted)
+                            if readingIndex {
+                                Text("Downloading area index…").font(.caption)
+                                if let transfer = indexTransfer, transfer.total > 0 {
+                                    ProgressView(value: Double(transfer.received), total: Double(transfer.total))
+                                    Text("\(RidgeTheme.bytes(transfer.received)) of \(RidgeTheme.bytes(transfer.total))")
+                                        .font(.caption.monospacedDigit()).foregroundStyle(RidgeTheme.muted)
+                                } else { ProgressView().controlSize(.small) }
+                                Text("Needed once to check available tiles. Terrain downloads after you confirm.")
+                                    .font(.caption).foregroundStyle(RidgeTheme.muted)
+                            } else {
+                                Label("Checking area…", systemImage: "hourglass").font(.caption).foregroundStyle(RidgeTheme.muted)
+                            }
                         } else if let reason = proposal?.reason {
                             Text(reason).font(.subheadline).foregroundStyle(RidgeTheme.orange).fixedSize(horizontal: false, vertical: true)
+                            if selectionFailed { Button("Try again") { retryRevision += 1 }.font(.subheadline.weight(.semibold)) }
                             if proposal?.preview?.adaptive == nil, let coarser = fittingCoarserSpacing {
                                 Button("Use \(coarser) m terrain for this area") { selectedSpacing = coarser }.font(.subheadline.weight(.semibold))
                             }
@@ -319,14 +341,35 @@ struct ExploreView: View {
         return GeoBounds(minLatitude: max(-85, p.latitude - lat), minLongitude: max(-180, p.longitude - lon), maxLatitude: min(85, p.latitude + lat), maxLongitude: min(180, p.longitude + lon))
     }
     private func updateProposal() async {
+        let checkID = UUID()
+        selectionCheckID = checkID
+        readingIndex = false; indexTransfer = nil; selectionFailed = false
         guard let bounds else { proposal = nil; refreshing = false; return }
         refreshing = true
         do { try await Task.sleep(for: .milliseconds(130)) } catch { return }
         do {
-            if try await store.packs.hydrateAdaptiveSources(covering: bounds) { await store.refresh() }
+            // Use the already-loaded catalogue. A cached selection needs no index I/O.
+            let pending = atlasEntries.filter { $0.manifest.adaptive?.index != nil && $0.manifest.bounds.intersects(bounds) }
+            if !pending.isEmpty {
+                readingIndex = true
+                let changed = try await store.packs.hydrateAdaptiveSources(covering: bounds, candidates: pending) { received, total in
+                    await MainActor.run {
+                        guard selectionCheckID == checkID else { return }
+                        indexTransfer = (received, total)
+                    }
+                }
+                try Task.checkCancellation()
+                readingIndex = false
+                if changed { await store.refresh() }
+            }
         } catch {
             guard !Task.isCancelled else { return }
-            proposal = AtlasAreaProposal(requested: bounds, reason: error.localizedDescription); refreshing = false; return
+            let message: String
+            if error is URLError {
+                message = "Couldn’t read the area index. Check that your download server is running and reachable, then try again."
+            } else { message = error.localizedDescription }
+            proposal = AtlasAreaProposal(requested: bounds, reason: message)
+            refreshing = false; readingIndex = false; selectionFailed = true; return
         }
         let entries = store.selectableEntries, spacing = spacing, required = expanding?.bounds, route = expanding == nil ? nil : store.activeRoute
         let context = TerrainBudget.currentContext()

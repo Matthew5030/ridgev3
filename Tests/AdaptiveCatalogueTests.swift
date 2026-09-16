@@ -15,6 +15,19 @@ import Foundation
         guard ready[0].manifest.adaptive?.chunks.count==16413 else {fatalError("Incomplete index")}
         let proposal=AtlasAreaPlanner.propose(bounds:bounds,entries:ready,context:TerrainBudget.Context(physicalMemory:8*1_073_741_824,gpuTier:.modern))
         guard proposal.canOpen,proposal.preview?.adaptive?.chunks.count==1 else {fatalError(proposal.reason ?? "Cannot select native cell")}
+        // Live memory checks must only update admission, never discard metadata or
+        // restart a pending source request. Preserve the selected geometry and save.
+        var checked = proposal
+        checked.saved = ready[0]
+        checked.refreshBudget(spacing: 4, context: TerrainBudget.Context(physicalMemory: 256 * 1_048_576, gpuTier: .modern))
+        guard !checked.canOpen, checked.reason != nil, checked.preview == proposal.preview,
+              checked.selection == proposal.selection, checked.saved?.id == ready[0].id else { fatalError("Budget refresh changed selection or failed to refuse low memory") }
+        checked.refreshBudget(spacing: 4, context: TerrainBudget.Context(physicalMemory: 8 * 1_073_741_824, gpuTier: .modern))
+        guard checked.canOpen, checked.reason == nil, checked.preview == proposal.preview else { fatalError("Budget did not recover") }
+        var pending = AtlasAreaProposal(requested: bounds, reason: "Index unavailable")
+        pending.refreshBudget(spacing: 4)
+        guard pending.reason == "Index unavailable", pending.preview == nil else { fatalError("Memory refresh hid a source error") }
+        print("PASS: live budget checks preserve selection and source errors without I/O")
         let assets=AdaptiveArea.assets(proposal.preview!)
         guard assets.contains(where:{$0.byteOffset != nil && $0.remoteFile?.hasPrefix("context-source-")==true}),
               !assets.contains(where:{$0.file.hasPrefix("context-source-")}) else {fatalError("Full background download regression")}
