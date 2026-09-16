@@ -1313,7 +1313,14 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             ?? mapUnitsPerTexel
         let textureDistance = texel * Float(max(1, viewportSize.height)) / (2 * tan(fieldOfView / 2) * 1.6)
         let minimum = max(clearance, textureDistance)
-        camera.distance = min(max(homeCamera().distance * 1.55, 2.5, minimum * 1.1), max(minimum, camera.distance))
+        var maximumDistance = max(homeCamera().distance * 1.55, 2.5, minimum * 1.1)
+        if let coverage = terrain.horizon?.layers.last?.metadata.bounds, !backdrops.isEmpty {
+            let frame = TerrainNavigationFrame(bounds: terrain.manifest.bounds, minimumElevationMeters: Double(minimumHeight))
+            let aspect = Float(max(1, viewportSize.width) / max(1, viewportSize.height))
+            maximumDistance = max(maximumDistance, frame.overviewDistance(coverage: coverage, target: camera.target,
+                                  top: sceneTop, verticalFieldOfView: fieldOfView, aspect: aspect))
+        }
+        camera.distance = min(maximumDistance, max(minimum, camera.distance))
         // A low oblique view may put the camera over a surrounding ridge. Lift
         // its orbit only as needed at the eye position, rather than forcing a
         // valley scene above every distant summit in the saved surroundings.
@@ -1329,7 +1336,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             if let elevation = sceneHeight(u: eye.x / width + 0.5, v: eye.z / depthExtent + 0.5), eye.y < elevation + 12 / metersPerUnit {
                 camera.distance = max(camera.distance, absoluteClearance)
             }
-            camera.distance = min(max(camera.distance, minimum), max(homeCamera().distance * 3, absoluteClearance + 1))
+            camera.distance = min(max(camera.distance, minimum), max(maximumDistance, absoluteClearance + 1))
         }
     }
 

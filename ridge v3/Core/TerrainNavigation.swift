@@ -78,6 +78,27 @@ struct TerrainNavigationFrame: Sendable {
                      target.y,
                      min(Float(b.v - 0.5) * depth - marginZ, max(Float(a.v - 0.5) * depth + marginZ, target.z)))
     }
+
+    /// Fit a sphere enclosing the loaded landscape around the current target.
+    /// This permits a full overview at any orbit angle, including portrait views
+    /// and targets near a scene edge. It does not change loaded terrain coverage.
+    func overviewDistance(coverage: GeoBounds, target: SIMD3<Float>, top: Float,
+                          verticalFieldOfView: Float, aspect: Float) -> Float {
+        let width = Float(bounds.widthMeters / metersPerUnit), depth = Float(bounds.depthMeters / metersPerUnit)
+        let a = bounds.uv(GeoPoint(latitude: coverage.maxLatitude, longitude: coverage.minLongitude))
+        let b = bounds.uv(GeoPoint(latitude: coverage.minLatitude, longitude: coverage.maxLongitude))
+        var radius: Float = 0
+        for x in [Float(a.u - 0.5) * width, Float(b.u - 0.5) * width] {
+            for z in [Float(a.v - 0.5) * depth, Float(b.v - 0.5) * depth] {
+                for y in [Float(0), top] {
+                    let d = SIMD3(x, y, z) - target
+                    radius = max(radius, sqrt(d.x * d.x + d.y * d.y + d.z * d.z))
+                }
+            }
+        }
+        let angle = atan(tan(verticalFieldOfView / 2) * min(1, max(0.1, aspect)))
+        return radius / sin(angle) * 1.1
+    }
 }
 
 /// A new identifier deliberately triggers the same camera action again.

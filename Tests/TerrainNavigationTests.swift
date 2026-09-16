@@ -50,6 +50,32 @@ struct TerrainNavigationTests {
             check(clamped == local, "Pan remains restricted to primary bounds")
         }
 
+        // The full landscape, not the selected fine rectangle, determines how
+        // far the camera can pull back. Check geometric fit independently.
+        for frame in frames {
+            for aspect: Float in [0.5, 1, 2] {
+                for point in [coverage.center, coverage.point(u: 0.98, v: 0.02)] {
+                    let pose = TerrainCameraPose(target: point, targetElevationMeters: 650, yaw: 0, pitch: 0.4, distanceMeters: 1_000)
+                    let target = frame.target(for: pose)!
+                    let top = Float((1_100 - frame.minimumElevationMeters) / frame.metersPerUnit)
+                    let fov: Float = 43 * .pi / 180
+                    let distance = frame.overviewDistance(coverage: coverage, target: target, top: top, verticalFieldOfView: fov, aspect: aspect)
+                    let halfAngle = atan(tan(fov / 2) * min(1, aspect))
+                    check(distance.isFinite && distance > 0, "Invalid overview distance")
+                    for u in [0.0, 1] { for v in [0.0, 1] { for elevation in [frame.minimumElevationMeters, 1_100] {
+                        let corner = coverage.point(u: u, v: v)
+                        let dx = (corner.longitude - point.longitude) / (frame.bounds.maxLongitude - frame.bounds.minLongitude) * frame.bounds.widthMeters
+                        let dz = (corner.latitude - point.latitude) / (frame.bounds.maxLatitude - frame.bounds.minLatitude) * frame.bounds.depthMeters
+                        let dy = elevation - pose.targetElevationMeters
+                        let radius = sqrt(dx * dx + dy * dy + dz * dz)
+                        check(radius < Double(distance * sin(halfAngle)) * frame.metersPerUnit, "Loaded landscape corner cannot fit at maximum zoom-out")
+                    } } }
+                    let detailedOnly = frame.overviewDistance(coverage: frame.bounds, target: target, top: top, verticalFieldOfView: fov, aspect: aspect)
+                    if point == coverage.center { check(distance > detailedOnly * 1.5, "Overview still limited by small detailed selection") }
+                }
+            }
+        }
+
         var invalid = TerrainCameraPose(target: primary.center, targetElevationMeters: 600,
                                         yaw: 0, pitch: 0.4, distanceMeters: 1_000)
         invalid.distanceMeters = .nan

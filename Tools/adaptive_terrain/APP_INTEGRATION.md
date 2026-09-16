@@ -125,3 +125,18 @@ isolated route library and preferences and no downloads. It checks a real curved
 17-point path, unchanged route plus expansion prompt on an outside tap, rejected
 outside path edits, explicit manual sketches, an outside starting point, and a
 missing walking network. These are Mac/simulator checks, not physical iPad tests.
+
+## Zooming out over loaded surroundings
+
+The 3D camera limit now uses the full loaded horizon rather than 1.55 times
+the detailed area's home framing. An enclosing sphere around the current
+target allows the loaded landscape to fit at any orbit angle and accounts for
+portrait/landscape aspect ratios and targets near the coverage edge. The
+collision-clearance clamp uses the same maximum so it cannot undo the wider
+limit. Home continues framing the detailed area; the close texture limit and
+finite pan coverage remain unchanged. This changes no downloads, terrain
+allocations or mesh detail. The 2D atlas zoom range is unchanged.
+
+`Tools/test_navigation.sh` includes landscape-corner fit checks across viewport
+aspects and differently sized detail selections, alongside the existing
+geographic camera persistence tests.
