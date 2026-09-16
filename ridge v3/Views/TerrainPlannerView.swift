@@ -321,6 +321,10 @@ struct TerrainPlannerView: View {
                 HStack { Text("Tap a position for your via point."); Spacer(); Button("Cancel") { store.insertingWaypoint = nil } }.font(.footnote).foregroundStyle(RidgeTheme.orange)
             } else if let moving = store.movingWaypoint {
                 HStack { Text("Tap a new position for point \(moving + 1)."); Spacer(); Button("Cancel") { store.movingWaypoint = nil } }.font(.footnote).foregroundStyle(RidgeTheme.orange)
+            } else if store.planningMode == .paths && store.viewingSurroundings {
+                Text("Expand this area to follow mapped paths here.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
+            } else if store.planningMode == .paths && terrain.graph?.edges.isEmpty != false {
+                Text("No walking paths in this selection. Expand the area or choose Direct line.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
             } else if route.waypoints.count < 2 {
                 Text(store.viewingSurroundings ? (route.waypoints.isEmpty ? "Tap the terrain to start a route sketch." : "Tap your next point to extend the sketch.") : (route.waypoints.isEmpty ? "Tap the terrain to place your start." : "Start placed. Tap your next point to trace the route.")).font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
             } else if store.planningMode == .direct || route.segments.contains(where: { $0.mode == RoutePlanningMode.direct.rawValue }) {

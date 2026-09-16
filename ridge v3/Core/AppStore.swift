@@ -593,7 +593,8 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
     private func present(_ terrain: LoadedTerrain, route: RidgeRoute? = nil) {
         activeRoute = route; editing = false; selectedPoint = nil; movingWaypoint = nil; insertingWaypoint = nil
         undoStack = []; redoStack = []
-        planningMode = terrain.graph?.edges.isEmpty == false ? .paths : .direct
+        // Direct lines are always an explicit choice, including empty networks.
+        planningMode = .paths
         camera = TerrainCameraCommand()
         pendingExtension = nil; extensionError = nil
         lastCameraPose = nil; lastViewedPoint = nil; viewingSurroundings = false; viewingSceneEdge = false; viewedTerrainSpacing = terrain.level.spacing
@@ -616,7 +617,9 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
         routeSaved = false
         activeRoute = RidgeRoute(name: "\(terrain.manifest.name) route", regionID: terrain.manifest.id)
         undoStack = []; redoStack = []; editing = true; movingWaypoint = nil; insertingWaypoint = nil
-        toast(viewingSurroundings ? "Tap the terrain to start a route sketch." : (planningMode == .paths ? "Tap a mapped path to place your start." : "Tap the terrain to place your start."))
+        if planningMode == .paths {
+            toast(viewingSurroundings ? "Expand this area to follow mapped paths here." : (terrain.graph?.edges.isEmpty == false ? "Tap a mapped path to place your start." : "This selection has no walking paths. Expand the area or choose Direct line."))
+        } else { toast(viewingSurroundings ? "Tap the terrain to start a route sketch." : "Tap the terrain to place your start.") }
     }
 
     func tapTerrain(_ coordinate: GeoPoint, afterExtending: Bool = false) {
@@ -637,6 +640,12 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "My areas
             return
         }
         guard let route = activeRoute, route.waypoints.count < 250 else { toast("A route can contain up to 250 control points."); return }
+        if planningMode == .paths,
+           let outside = ([coordinate] + [route.waypoints.last?.point.coordinate].compactMap { $0 }).first(where: { !terrain.manifest.bounds.contains($0) }) {
+            requestExtension(at: outside, forRoute: true)
+            toast("Expand this area to follow paths here. Your route has not changed.")
+            return
+        }
         isRouting = true
         let mode = planningMode
         Task {

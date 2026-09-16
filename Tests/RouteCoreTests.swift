@@ -128,8 +128,10 @@ struct RouteCoreTests {
     static func overviewCoverage() throws {
         let terrain = terrain(), b = terrain.manifest.bounds
         let a = b.point(u: 0.5, v: 0.5), outside = b.point(u: 1.5, v: 0.5)
-        let leg = try RouteEngine.planningSegment(from: a, to: outside, mode: .paths, terrain: terrain)
-        try expect(leg.mode == "overview", "Outside path-mode tap must be an overview sketch, not a fabricated path")
+        try expectError(.pathCoverage) { _ = try RouteEngine.planningSegment(from: a, to: outside, mode: .paths, terrain: terrain) }
+        try expectError(.pathCoverage) { _ = try RouteEngine.planningSegment(from: outside, to: a, mode: .paths, terrain: terrain) }
+        let leg = try RouteEngine.planningSegment(from: a, to: outside, mode: .direct, terrain: terrain)
+        try expect(leg.mode == "overview", "Outside manual sketches require explicit Direct line mode")
         try expect(leg.points.last?.elevation == nil, "Overview height must not masquerade as detailed elevation")
         let crossing = RouteEngine.coverageSections(from: b.point(u: -0.5, v: 0.5), to: outside, bounds: b)
         try expect(crossing.count == 3 && crossing.map(\.detailed) == [false, true, false], "Outside-to-outside route splits around detailed coverage")

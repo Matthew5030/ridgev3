@@ -20,6 +20,7 @@ struct RouteStatistics: Sendable {
 enum RouteError: LocalizedError, Equatable {
     case invalidCoordinate
     case outsideArea
+    case pathCoverage
     case missingElevation
     case noWalkingGraph
     case invalidGraph
@@ -33,7 +34,8 @@ enum RouteError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidCoordinate: return "This route contains an invalid map coordinate."
-        case .outsideArea: return "This point is outside the open terrain. Select a larger area to continue."
+        case .outsideArea: return "This point is outside the detailed area. Expand area to continue."
+        case .pathCoverage: return "Expand the downloaded area to follow paths here."
         case .missingElevation: return "There is a gap in the terrain along this line. Choose a different point."
         case .noWalkingGraph: return "This area has no offline walking network. Use Direct line to draw a manual route."
         case .invalidGraph: return "This area's walking network is damaged or too large to open safely."
@@ -97,13 +99,15 @@ enum RouteEngine {
         return zip(cuts, cuts.dropFirst()).map { (point($0), point($1), bounds.contains(point(($0 + $1) / 2))) }
     }
 
-    /// Overview legs are persisted manual sketches, never inferred walking paths.
+    /// Overview sketches require an explicit Direct line choice. Follow paths
+    /// must preserve its meaning when a waypoint crosses downloaded coverage.
     static func planningSegment(from: GeoPoint, to: GeoPoint, mode: RoutePlanningMode,
                                 terrain: LoadedTerrain) throws -> RouteSegment {
         guard from.isValid, to.isValid else { throw RouteError.invalidCoordinate }
         if terrain.manifest.bounds.contains(from), terrain.manifest.bounds.contains(to) {
             return try segment(from: from, to: to, mode: mode, terrain: terrain)
         }
+        guard mode == .direct else { throw RouteError.pathCoverage }
         return RouteSegment(points: [RoutePoint(coordinate: from, elevation: terrain.elevation(at: from)),
                                      RoutePoint(coordinate: to, elevation: terrain.elevation(at: to))], mode: "overview")
     }
@@ -139,7 +143,7 @@ enum RouteEngine {
         case .direct:
             return try directSegment(from: from, to: to, terrain: terrain)
         case .paths:
-            guard let graph = terrain.graph else { throw RouteError.noWalkingGraph }
+            guard let graph = terrain.graph, !graph.edges.isEmpty else { throw RouteError.noWalkingGraph }
             let raw = try walkingSegment(from: from, to: to, graph: graph, snapDistance: snapDistance)
             guard let first = raw.points.first, from.distance(to: first.coordinate) <= 1 else { throw RouteError.pathStartMismatch }
             return RouteSegment(points: try terrainPoints(along: raw.points.map(\.coordinate), terrain: terrain), mode: mode.rawValue)
@@ -150,7 +154,7 @@ enum RouteEngine {
         try validateTerrain(terrain)
         guard coordinate.isValid else { throw RouteError.invalidCoordinate }
         guard terrain.manifest.bounds.contains(coordinate) else { throw RouteError.outsideArea }
-        guard let graph = terrain.graph else { throw RouteError.noWalkingGraph }
+        guard let graph = terrain.graph, !graph.edges.isEmpty else { throw RouteError.noWalkingGraph }
         let prepared = try PreparedGraph(graph)
         let snapped = try nearestEdge(to: coordinate, graph: prepared, maxDistance: maxDistance)
         guard let elevation = terrain.elevation(at: snapped.point.coordinate) else { throw RouteError.missingElevation }

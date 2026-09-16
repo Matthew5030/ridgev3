@@ -107,3 +107,21 @@ In the simulator, the old nine-cell save containing only Crib Goch recovered 539
 landscape places. Yr Wyddfa and Moel Eilio both appeared when viewing their
 surrounding terrain; Moel Eilio lay beyond the previous 24-candidate cutoff.
 The overlay retained eight reusable label views and passed hide/show checks.
+
+## Follow paths at the detailed-area boundary
+
+Follow paths now remains path-only. Previously, a tap outside the fine rectangle
+silently saved a two-point overview sketch while the control still said Follow
+paths. It now opens the existing expansion preview without changing the route or
+starting a download. New scenes default to Follow paths even when their selected
+walking network is empty; Direct line remains an explicit choice. Moving or
+inserting a point on an existing path leg cannot silently turn it into a sketch.
+Existing saved manual sketches and GPX tracks retain their authored geometry.
+
+Validation: 137 core routing assertions passed and the iOS Simulator build passed.
+`bash Tools/test_adaptive_routing.sh <disposable-saved-areas> <source-headers>` uses
+the nine-cell Crib Goch fixture from the adaptive pack integration test, with an
+isolated route library and preferences and no downloads. It checks a real curved
+17-point path, unchanged route plus expansion prompt on an outside tap, rejected
+outside path edits, explicit manual sketches, an outside starting point, and a
+missing walking network. These are Mac/simulator checks, not physical iPad tests.
