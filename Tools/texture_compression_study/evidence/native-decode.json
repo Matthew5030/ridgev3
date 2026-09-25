@@ -1,0 +1,902 @@
+{
+  "environment" : "Version 26.6.2 (Build 25G83)",
+  "records" : [
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.027958,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.4978750000000005,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.724792000000001,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.743417000000001,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.978332999999999,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 1,
+      "measuredRounds" : 9,
+      "medianMs" : 11.631542,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 25,
+      "measuredRounds" : 9,
+      "medianMs" : 11.180209,
+      "sample" : "cartography-c000-r046",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 7.6826249999999998,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 7.4439580000000003,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 8.1035839999999997,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.8961249999999996,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.5924589999999998,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 17,
+      "measuredRounds" : 9,
+      "medianMs" : 9.6097909999999995,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 43,
+      "measuredRounds" : 9,
+      "medianMs" : 9.0722919999999991,
+      "sample" : "cartography-c000-r051",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 7.907667,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 7.9267909999999997,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 6.9275409999999997,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.3189580000000003,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.3070419999999991,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.3265410000000006,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 41,
+      "measuredRounds" : 9,
+      "medianMs" : 8.3928750000000001,
+      "sample" : "cartography-c001-r002",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.05125,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.7976659999999995,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.180833,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.105833000000001,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 16,
+      "measuredRounds" : 9,
+      "medianMs" : 10.063833000000001,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 68,
+      "measuredRounds" : 9,
+      "medianMs" : 9.4521660000000001,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 39,
+      "measuredRounds" : 9,
+      "medianMs" : 14.196292,
+      "sample" : "cartography-c010-r038",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 8.4252920000000007,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 8.2626249999999999,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 8.3934169999999995,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.8683750000000003,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.7761250000000004,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 4,
+      "measuredRounds" : 9,
+      "medianMs" : 9.7340420000000005,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 34,
+      "measuredRounds" : 9,
+      "medianMs" : 8.7117500000000003,
+      "sample" : "cartography-c018-r000",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.764208,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.4410000000000007,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 13.282541999999999,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 3,
+      "measuredRounds" : 9,
+      "medianMs" : 10.231,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 27,
+      "measuredRounds" : 9,
+      "medianMs" : 10.641624999999999,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 64,
+      "measuredRounds" : 9,
+      "medianMs" : 10.489875,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 46,
+      "measuredRounds" : 9,
+      "medianMs" : 13.909917,
+      "sample" : "cartography-c018-r018",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.6996249999999993,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.5243330000000004,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 13.199,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 2,
+      "measuredRounds" : 9,
+      "medianMs" : 10.067667,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 24,
+      "measuredRounds" : 9,
+      "medianMs" : 10.223208,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 50,
+      "measuredRounds" : 9,
+      "medianMs" : 9.8664159999999992,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 45,
+      "measuredRounds" : 9,
+      "medianMs" : 14.21475,
+      "sample" : "cartography-c019-r044",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.369583,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.118290999999999,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.561083,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.039792,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 13,
+      "measuredRounds" : 9,
+      "medianMs" : 10.825459,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 47,
+      "measuredRounds" : 9,
+      "medianMs" : 10.431709,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 35,
+      "measuredRounds" : 9,
+      "medianMs" : 14.647500000000001,
+      "sample" : "cartography-c024-r010",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.6651659999999993,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.2383749999999996,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.787291,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.063667000000001,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.053292000000001,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 51,
+      "measuredRounds" : 9,
+      "medianMs" : 11.015582999999999,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 47,
+      "measuredRounds" : 9,
+      "medianMs" : 17.176917,
+      "sample" : "cartography-c026-r029",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 13.118625,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 12.631542,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 13.473208,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.837667,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 2,
+      "measuredRounds" : 9,
+      "medianMs" : 11.609791,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 50,
+      "measuredRounds" : 9,
+      "medianMs" : 11.468666000000001,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 51,
+      "measuredRounds" : 9,
+      "medianMs" : 16.512875000000001,
+      "sample" : "cartography-c026-r030",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.588165999999999,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.522833,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.656041999999999,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.751875,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.735125,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 5,
+      "measuredRounds" : 9,
+      "medianMs" : 10.612541999999999,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 38,
+      "measuredRounds" : 9,
+      "medianMs" : 12.656166000000001,
+      "sample" : "cartography-c029-r005",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 12.111708,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.561040999999999,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 13.968959,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.692125000000001,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 2,
+      "measuredRounds" : 9,
+      "medianMs" : 11.782,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 79,
+      "measuredRounds" : 9,
+      "medianMs" : 11.202458,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 40,
+      "measuredRounds" : 9,
+      "medianMs" : 16.648042,
+      "sample" : "cartography-c031-r021",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.7448750000000004,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.699916,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.4489999999999998,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.357125,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.588709,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.487625,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 37,
+      "measuredRounds" : 9,
+      "medianMs" : 8.9916669999999996,
+      "sample" : "cartography-c051-r030",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.193333000000001,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.8360409999999998,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.5951249999999995,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.520375,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.376459000000001,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 3,
+      "measuredRounds" : 9,
+      "medianMs" : 10.6915,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 46,
+      "measuredRounds" : 9,
+      "medianMs" : 10.558,
+      "sample" : "cartography-c054-r049",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.8774169999999994,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.8214159999999993,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 9.9758750000000003,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.110208999999999,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 1,
+      "measuredRounds" : 9,
+      "medianMs" : 11.209917000000001,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 40,
+      "measuredRounds" : 9,
+      "medianMs" : 11.207875,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 39,
+      "measuredRounds" : 9,
+      "medianMs" : 10.798166,
+      "sample" : "cartography-c055-r016",
+      "supported" : true,
+      "variant" : "webp90"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 8.6029169999999997,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "original"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 8.1461670000000002,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "png9"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 10.820125000000001,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "webp-lossless"
+    },
+    {
+      "maxRGBAError" : 0,
+      "measuredRounds" : 9,
+      "medianMs" : 11.368582999999999,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "palette256"
+    },
+    {
+      "maxRGBAError" : 6,
+      "measuredRounds" : 9,
+      "medianMs" : 11.616,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "palette128"
+    },
+    {
+      "maxRGBAError" : 67,
+      "measuredRounds" : 9,
+      "medianMs" : 11.017291999999999,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "palette64"
+    },
+    {
+      "maxRGBAError" : 39,
+      "measuredRounds" : 9,
+      "medianMs" : 12.36125,
+      "sample" : "cartography-c055-r046",
+      "supported" : true,
+      "variant" : "webp90"
+    }
+  ],
+  "scope" : "Mac ImageIO decode and draw to sRGB RGBA; warm memory; excludes I\/O, network, GPU and mip generation. Not physical iPad."
+}
