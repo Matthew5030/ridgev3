@@ -8,7 +8,7 @@ light orientation from the current world renderer. Fine OSM mapping and adaptive
 terrain still appear through the regional renderer. The overview does not invent
 woodland, paths or survey coverage where those inputs have not been prepared.
 
-The published 2026-10-04 overview contains 5,460 JPEG pages (19,064,485 bytes),
+The base 2026-10-04 overview contains 5,460 JPEG pages (19,064,485 bytes),
 256 × 256 pixels, standard Web Mercator zooms 5–10. It includes a surrounding
 rectangle so parents are complete. Elevation coverage is the United Kingdom;
 Ireland and mainland Europe in that rectangle retain plain coastline context.
@@ -44,3 +44,17 @@ background and vector map pages. New detailed coverage is not automatically made
 available in the shipping app by generating this overview or that catalogue.
 Automatic neighbour loading and cross-source route continuity remain separate
 integration work.
+
+## Bundled detail snapshot
+
+The current app bundle also includes the first 35 exact regional overhead previews,
+composited onto sparse zoom 11–13 pages and their parents. Its frozen inventory is
+5,820 pages, 22,627,562 image bytes (about 23 MB). These use the actual app vector
+cartography and adaptive 2 m-error background. Only verified occupied terrain
+cells are composited; missing cells reveal the UK context underneath.
+
+`composite_previews.py` builds this second atlas into a separate directory and can
+follow the running preview catalogue. See `COMPOSITE.md` for its commands. The
+external batch output continues growing; the app bundle is a tested snapshot and
+is not silently changed by that running job. A subsequent publication can include
+the completed national imagery without rebuilding the terrain.
