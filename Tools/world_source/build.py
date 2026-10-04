@@ -18,8 +18,9 @@ m=json.loads((a.pack/'pack.json').read_bytes());lod=next(l for l in m['levels'] 
 raw=(a.pack/lod['file']).read_bytes();assert sha(raw)==lod['sha256'];h=np.frombuffer(raw,dtype='<i2').reshape(lod['height'],lod['width'])
 b=m['bounds'];width=math.radians(b['maxLongitude']-b['minLongitude'])*6371008.8*math.cos(math.radians((b['minLatitude']+b['maxLatitude'])/2));depth=math.radians(b['maxLatitude']-b['minLatitude'])*6371008.8
 cols=(h.shape[1]-1)//512;rows=(h.shape[0]-1)//512
-coarse=h[::32,::32].astype(float)*.1;coarse=np.where(coarse<-3000,0,coarse)
-coarseAsset=asset('overview.json',rawjson(dict(width=coarse.shape[1],height=coarse.shape[0],heights=coarse.ravel().tolist())))
+coarse=h[::8,::8].astype(float)*m['heightScale'];coarse=np.where(h[::8,::8]==m['noDataValue'],0,coarse)
+coarse=np.round(coarse,1)
+coarseAsset=asset('overview-8m.json',rawjson(dict(width=coarse.shape[1],height=coarse.shape[0],heights=coarse.ravel().tolist())))
 graph=(a.pack/m['graphFile']).read_bytes();assert sha(graph)==m['graphSHA256'];graphAsset=asset('paths.json',graph)
 features=[]
 def project(x,y,z=None):return ((np.asarray(x)-b['minLongitude'])/(b['maxLongitude']-b['minLongitude'])*width,(b['maxLatitude']-np.asarray(y))/(b['maxLatitude']-b['minLatitude'])*depth)
@@ -59,5 +60,5 @@ def tile(c,r):
  chunk=dict(id=ident,path=ident+'.rat.zlib',bounds=bounds,byteCount=len(compressed),sha256=sha(compressed),decodedByteCount=len(decoded),decodedSHA256=sha(decoded),vertices=facts['vertices'],triangles=facts['triangles'],indexWidth=facts['indexWidth'],topologyByteCount=len(top),topologySHA256=sha(top),maxErrorMetres=facts['maxErrorMetres'])
  print(ident,flush=True);return dict(id=ident,column=c,row=r,mesh=chunk,map=vasset)
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:tiles=list(pool.map(lambda cr:tile(*cr),[(c,r) for r in range(rows) for c in range(cols)]))
-manifest=dict(schemaVersion=1,id='world-snowdon',name='Snowdon & the Glyderau',revision='2026-10-04-v1',bounds=b,columns=cols,rows=rows,overview=coarseAsset,graph=graphAsset,tiles=[t for t in tiles if t],places=m['places'],sources=m['sources'],sourceTerrainSHA256=sha(raw))
+manifest=dict(schemaVersion=1,id='world-snowdon',name='Snowdon & the Glyderau',revision='2026-10-04-v2',bounds=b,columns=cols,rows=rows,overview=coarseAsset,graph=graphAsset,tiles=[t for t in tiles if t],places=m['places'],sources=m['sources'],sourceTerrainSHA256=sha(raw))
 asset('world.json',rawjson(manifest));print(json.dumps(dict(tiles=len(manifest['tiles']),bytes=sum(p.stat().st_size for p in a.output.iterdir()))))

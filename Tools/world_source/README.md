@@ -10,7 +10,7 @@ Saved routes, path following, GPX, and the previous saved-area renderer remain.
 
 `ridge v3/Resources/WorldData.bundle` contains a roughly 8 × 8 km Snowdon/Glyderau
 test region: 256 adaptive terrain chunks, 256 compressed semantic vector files,
-a 32 m overview, places, and the existing walking graph. Total: 28,247,507 bytes.
+an 8 m overview, places, and the existing walking graph. Total: 33,803,148 bytes.
 It works without the external drive or a server. This is not all of Eryri or the UK.
 
 Terrain is recomputed from the retained original 1 m height field using the
@@ -26,12 +26,23 @@ multiple published image levels. Style changes live in `WorldCartography.swift`.
 ## Runtime limits
 
 - One tile is fetched/decoded/drawn at a time; superseded results are discarded.
-- Fine mesh policy: at most 16 tiles and 96 MiB estimated mesh residency.
-- At most four 1024 px pages; other pages use 512, 256 or 128 px plus gutters.
+- Fine meshes use up to 192 MiB estimated residency on devices with at least
+  6 GiB physical RAM; other devices retain the 96 MiB limit. Distance and budget
+  determine admission, with a retention margin to avoid boundary churn.
+- The entire region has an 8 m background mesh (16 m on smaller-memory devices),
+  built off the main thread. On the development Mac, its geometry source/index
+  buffers total 59,777,024 bytes and construction took 0.067 seconds.
+- At most eight 1024 px pages and 24 additional 512 px pages; all other cells
+  retain a 256 px page, plus gutters. Memory pressure can reduce these further.
 - The 256-tile fixture's tested worst-case texture allocation with mipmaps is
-  69,162,248 bytes; mesh estimate is 100,609,996 bytes. These are policy estimates,
+  163,315,704 bytes; fine mesh estimate is 201,324,442 bytes. These are policy estimates,
   not measured total app memory; CPU data, SceneKit and transient copies add cost.
-- Camera movement retires obsolete high-detail resources before replacements.
+- Camera movement releases obsolete fine geometry, but keeps each map image
+  visible until its replacement is ready. Map resolution changes reuse geometry;
+  geometry changes reuse the image. Hidden fallback meshes release their images.
+- The load queue fills background pages first, then reduces obsolete allocations
+  before admitting higher-detail pages. Zooming out no longer removes all fine
+  terrain at a single threshold.
 - Memory warnings reduce detail; leaving Explore releases its prepared tiles.
 - Remote files have byte-count/SHA-256 checks. Unpinned disk cache is evicted
   toward 256 MiB; explicitly saved files can exceed this limit.
@@ -76,7 +87,7 @@ and thermal behaviour are not yet verified.
 - Retain dash phase through vector clipping; it currently restarts at cell edges.
 - Add offline-area management, storage estimates, removal, and explicit coverage.
 - Use fine elevations consistently for route statistics. The shared route terrain
-  currently uses the 32 m overview; displayed routes sample resident fine meshes.
+  currently uses the 8 m overview; displayed routes sample resident fine meshes.
 - Complete cross-source graph continuity from the retained routing bug report
   before promising routes across national source boundaries.
 - Finish representative GPX, offline cold-launch, poor-network and interrupted
@@ -115,3 +126,13 @@ camera basis through a full heading sweep at three pitch angles. All 321 checks
 pass: screen-right remains horizontal and the camera faces its orbit target.
 The world renderer constructs that basis explicitly, rather than allowing roll
 to be inferred by SceneKit look-at orientation.
+
+Residency follow-up: 7,974 world assertions pass, including 90 camera positions
+through a forward/backward journey with 736 completed tile replacements, no
+missing texture pages after initial fill, and bounded estimated allocations.
+Resource-identity checks confirm texture/geometry reuse. This verifies policy and
+resource handling, not sustained iPad frame time or total CPU/GPU memory.
+
+`upgrade_overview.py --pack /path/to/original/eryri-grid --world /path/to/local/WorldData.bundle`
+refreshes only a local fixture's overview without rebuilding adaptive chunks.
+Publish remote updates in a new versioned directory; do not overwrite a live source.

@@ -97,6 +97,8 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
                     let geometry = prepared.geometry ?? coarse[tile.id]!
                     geometry.materials = [material(prepared.image)]
                     nodes[tile.id]?.geometry = geometry; applied[tile.id] = prepared.request
+                    // Hidden fallback geometry must not retain an obsolete texture.
+                    if prepared.geometry != nil { coarse[tile.id]?.materials = [] }
                 } else if applied.removeValue(forKey: tile.id) != nil {
                     coarse[tile.id]?.materials = [material(nil)]; nodes[tile.id]?.geometry = coarse[tile.id]
                 }
@@ -137,7 +139,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         sun.eulerAngles = SCNVector3(-0.8,-0.7,0); scene.rootNode.addChildNode(sun)
         for tile in source.tiles {
             tileIDs[tile.row * source.columns + tile.column] = tile.id
-            let g = WorldGeometry.coarse(tile: tile, source: source, overview: overview)
+            let g = model?.backdrop?.geometries[tile.id] ?? WorldGeometry.coarse(tile: tile, source: source, overview: overview)
             g.materials = [material(nil)]; coarse[tile.id] = g
             let node = SCNNode(geometry: g); node.categoryBitMask = 1; node.name = tile.id
             nodes[tile.id] = node; scene.rootNode.addChildNode(node)

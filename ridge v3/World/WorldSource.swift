@@ -76,22 +76,45 @@ struct WorldPreparedTile: @unchecked Sendable {
     var geometry: SCNGeometry?
 }
 
-/// Pure camera-to-working-set policy. Disk downloads and resident rendering are independent.
+struct WorldBackdrop: @unchecked Sendable {
+    var geometries: [String: SCNGeometry]
+}
+
+/// Bounded residency with a retention margin, independent of download size.
 enum WorldWorkingSet {
     static let maximumTextures = 256
-    static let meshBudget: Int64 = 96 * 1024 * 1024
-    static func requests(source: WorldSource, center: GeoPoint, distance: Double) -> [WorldTileRequest] {
-        let sorted = source.tiles.sorted { $0.mesh.bounds.center.distance(to: center) < $1.mesh.bounds.center.distance(to: center) }
-        var memory: Int64 = 0
-        return sorted.prefix(maximumTextures).enumerated().map { index, tile in
-            let near = tile.mesh.bounds.center.distance(to: center)
-            let fine = distance < 6500 && index < 16 && near < max(1000, distance * 0.8)
-                && memory + tile.mesh.residentBytes <= meshBudget
-            if fine { memory += tile.mesh.residentBytes }
-            // A 1024 core plus gutter is reserved for the immediate foreground.
-            let pixels = distance < 2300 && index < 4 ? 1024 : distance < 7000 && index < 16 ? 512 : index < 36 ? 256 : 128
-            return WorldTileRequest(id: tile.id, pixels: pixels, fine: fine)
+    static let meshBudget: Int64 = ProcessInfo.processInfo.physicalMemory >= 6 * 1024 * 1024 * 1024 ? 192 * 1024 * 1024 : 96 * 1024 * 1024
+    static let textureBudget: Int64 = 192 * 1024 * 1024
+    static func requests(source: WorldSource, center: GeoPoint, distance: Double, previous: [WorldTileRequest] = [], meshLimit: Int64 = meshBudget) -> [WorldTileRequest] {
+        let old = Dictionary(uniqueKeysWithValues: previous.map { ($0.id,$0) })
+        let ranges = Dictionary(uniqueKeysWithValues: source.tiles.map { ($0.id,$0.mesh.bounds.center.distance(to:center)) })
+        let sorted = source.tiles.sorted {
+            let a = ranges[$0.id]! - (old[$0.id]?.fine == true ? 650 : 0)
+            let b = ranges[$1.id]! - (old[$1.id]?.fine == true ? 650 : 0)
+            return a == b ? $0.id < $1.id : a < b
         }
+        var memory:Int64=0, native=0, medium=0
+        return sorted.prefix(maximumTextures).map { tile in
+            let near=ranges[tile.id]!, retained=old[tile.id]
+            let fine=near < (retained?.fine == true ? 4500 : 3200) && memory+tile.mesh.residentBytes <= meshLimit
+            if fine { memory += tile.mesh.residentBytes }
+            var pixels=256
+            if native<8 && distance < (retained?.pixels == 1024 ? 3200 : 2300) && near < (retained?.pixels == 1024 ? 1600 : 1050) {
+                pixels=1024;native+=1
+            } else if medium<24 && distance < ((retained?.pixels ?? 0) >= 512 ? 11000 : 9000) && near < ((retained?.pixels ?? 0) >= 512 ? 3400 : 2600) {
+                pixels=512;medium+=1
+            }
+            return WorldTileRequest(id:tile.id,pixels:pixels,fine:fine)
+        }
+    }
+    /// Fill the background first. Reduce old allocations before admitting new
+    /// high-resolution pages, so retaining the old image never doubles residency.
+    static func pending(wanted: [WorldTileRequest], current: [String: WorldTileRequest]) -> [WorldTileRequest] {
+        let missing=wanted.filter { current[$0.id] == nil }.map { WorldTileRequest(id:$0.id,pixels:min(256,$0.pixels),fine:false) }
+        let changed=wanted.filter { current[$0.id] != nil && current[$0.id] != $0 }
+        let down=changed.filter { current[$0.id]!.pixels > $0.pixels || (current[$0.id]!.fine && !$0.fine) }
+        let ids=Set(down.map(\.id))
+        return missing + down + changed.filter { !ids.contains($0.id) }
     }
 }
 
@@ -138,21 +161,39 @@ actor WorldSourceStore {
         let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph))
         return (source, overview, graph)
     }
-    func prepare(_ tile: WorldTile, request: WorldTileRequest, sourceBounds: GeoBounds) async throws -> WorldPreparedTile {
-        let compressed = try await read(tile.map)
-        guard let count = tile.map.decodedByteCount else { throw RidgeError.message("Missing vector size.") }
-        let vector = try JSONDecoder().decode(WorldVectorMap.self, from: AdaptiveTerrainCodec.inflate(compressed, byteCount: count))
-        try Task.checkCancellation()
-        let image = try WorldCartography.draw(vector, pixels: request.pixels)
-        var mesh: AdaptiveMesh?
+    func backdrop(source: WorldSource, overview: WorldOverview) throws -> WorldBackdrop {
+        var geometries:[String:SCNGeometry]=[:]
+        let maximumDivisions = ProcessInfo.processInfo.physicalMemory >= 6 * 1024 * 1024 * 1024 ? 64 : 32
+        for tile in source.tiles {
+            try Task.checkCancellation()
+            geometries[tile.id]=WorldGeometry.coarse(tile:tile,source:source,overview:overview,maximumDivisions:maximumDivisions)
+        }
+        return WorldBackdrop(geometries:geometries)
+    }
+    func prepare(_ tile: WorldTile, request: WorldTileRequest, sourceBounds: GeoBounds, previous: WorldPreparedTile? = nil) async throws -> WorldPreparedTile {
+        let image:CGImage
+        if let previous,previous.request.pixels == request.pixels { image=previous.image }
+        else {
+            let compressed = try await read(tile.map)
+            guard let count = tile.map.decodedByteCount else { throw RidgeError.message("Missing vector size.") }
+            let vector = try JSONDecoder().decode(WorldVectorMap.self, from: AdaptiveTerrainCodec.inflate(compressed, byteCount: count))
+            try Task.checkCancellation()
+            image = try WorldCartography.draw(vector, pixels: request.pixels)
+        }
+        var mesh:AdaptiveMesh?, geometry:SCNGeometry?
         if request.fine {
-            let chunk = tile.mesh
-            let data = try await read(WorldMapAsset(file: chunk.path, byteCount: chunk.byteCount, sha256: chunk.sha256))
-            mesh = try AdaptiveTerrainCodec.decode(data, chunk: chunk)
+            if let previous,let existing=previous.mesh {
+                mesh=existing;geometry=previous.geometry
+            } else {
+                let chunk=tile.mesh
+                let data=try await read(WorldMapAsset(file:chunk.path,byteCount:chunk.byteCount,sha256:chunk.sha256))
+                mesh=try AdaptiveTerrainCodec.decode(data,chunk:chunk)
+                try Task.checkCancellation()
+                geometry=mesh.map { WorldGeometry.fine($0,sourceBounds:sourceBounds,pixels:request.pixels) }
+            }
         }
         try Task.checkCancellation()
-        let geometry = mesh.map { WorldGeometry.fine($0, sourceBounds: sourceBounds, pixels: request.pixels) }
-        return WorldPreparedTile(request: request, mesh: mesh, image: image, geometry: geometry)
+        return WorldPreparedTile(request:request,mesh:mesh,image:image,geometry:geometry)
     }
     func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = []) async throws {
         var keep = [source.overview, source.graph] + surroundings
