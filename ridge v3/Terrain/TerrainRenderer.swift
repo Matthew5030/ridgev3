@@ -1258,6 +1258,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         guard dx.isFinite, dy.isFinite, abs(dx) + abs(dy) > 0.01 else { return }
         cancelAnimation()
         framedAtHome = false
+        camera.yaw -= dx * 0.006
         camera.pitch += dy * 0.005
         constrainCamera()
         view?.setNeedsDisplay()
@@ -1298,7 +1299,6 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     @MainActor
     private func constrainCamera() {
-        camera.yaw = 0
         camera.pitch = min(86 * .pi / 180, max((backdrops.isEmpty ? 26 : 16) * .pi / 180, camera.pitch))
         constrainTarget()
         // Context scenes use the terrain under the eye below. A newly detailed
@@ -1375,7 +1375,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             let distance = Float(pose.distanceMeters / frame.metersPerUnit)
             guard let target = frame.target(for: pose), distance.isFinite, distance > 0 else { return }
             cancelAnimation()
-            camera = RidgeCamera(target: target, yaw: 0, pitch: pose.pitch, distance: distance)
+            camera = RidgeCamera(target: target, yaw: pose.yaw, pitch: pose.pitch, distance: distance)
             constrainCamera()
             view?.setNeedsDisplay()
             return

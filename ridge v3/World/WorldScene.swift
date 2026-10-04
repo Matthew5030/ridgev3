@@ -37,7 +37,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     private var cameraNode = SCNNode()
     private var target = SIMD3<Float>(0,0,0)
     private var distance: Float = 6000
-    private let yaw: Float = 0
+    private var yaw: Float = 0
     private var pitch: Float = 0.85
     private var moveGesture: UIPanGestureRecognizer!
     private var transformGesture: WorldTwoFingerGesture!
@@ -61,7 +61,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         tap.require(toFail: moveGesture); tap.require(toFail: transformGesture)
         for g in [moveGesture!,transformGesture!,tap] { g.delegate = self; addGestureRecognizer(g) }
         isMultipleTouchEnabled = true
-        accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom or slide two fingers up and down to tilt. North stays at the top."
+        accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom, twist two fingers to turn, or slide two fingers up and down to tilt. The horizon stays level."
     }
     required init?(coder: NSCoder) { nil }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
@@ -111,9 +111,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             case .focus(let point): target = local(point); distance = min(distance, 2000); updateCamera()
             case .zoomIn: distance /= 1.5; updateCamera(); scheduleRoute()
             case .zoomOut: distance *= 1.5; updateCamera(); scheduleRoute()
-            case .overhead: pitch = 1.49; updateCamera()
+            case .overhead: pitch = 1.49; yaw = 0; updateCamera()
             case .home where initial: break
-            case .home: target = local(next.bounds.center); distance = 6000; pitch = 0.85; updateCamera()
+            case .home: target = local(next.bounds.center); distance = 6000; pitch = 0.85; yaw = 0; updateCamera()
             default: break
             }
         }
@@ -153,7 +153,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         target = local(model?.center ?? source.bounds.center); distance = Float(model?.distance ?? 6000)
         if let pose = model?.cameraPose, source.bounds.contains(pose.target) {
             target = local(pose.target); target.y = Float(pose.targetElevationMeters)
-            distance = Float(pose.distanceMeters); pitch = pose.pitch
+            distance = Float(pose.distanceMeters); yaw = pose.yaw; pitch = pose.pitch
         }
         updateCamera()
     }
@@ -166,7 +166,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         var eye = target + distance * SIMD3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
         let point = coordinate(eye)
         if source.bounds.contains(point) { eye.y = max(eye.y,height(point)+25) }
-        cameraNode.simdPosition = eye; cameraNode.look(at: SCNVector3(target))
+        cameraNode.simdPosition = eye; WorldCameraOrientation.aim(cameraNode, at: target)
         scheduleLabels()
         guard notify else { return }
         model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
@@ -247,7 +247,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         let offset=cameraNode.simdPosition-ground, length=simd_length(offset)
         guard length>1 else { return }
         target=ground; distance=length
-        pitch=asin(max(-1,min(1,offset.y/length)))
+        pitch=asin(max(-1,min(1,offset.y/length))); yaw=atan2(offset.x,offset.z)
     }
     @objc private func panWorld(_ gesture: UIPanGestureRecognizer) {
         guard gesture.numberOfTouches == 1, gesture.state == .began || gesture.state == .changed else { return }
@@ -268,7 +268,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             pitch=min(1.49,max(0.30,pitch-Float(delta)*0.004))
         } else {
             let anchor=groundPoint(gesture.previousCentroid)
-            distance /= Float(gesture.scaleDelta)
+            distance /= Float(gesture.scaleDelta); yaw -= Float(gesture.rotationDelta)
             updateCamera(notify:false)
             if let anchor,let after=groundPoint(gesture.centroid) { target += anchor-after }
         }

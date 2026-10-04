@@ -87,10 +87,10 @@ The original packs and route files are not deleted or migrated by this prototype
 ## Gesture and overview follow-up
 
 The world camera now uses one-finger ground-plane dragging and a single
-intent-locked two-finger recognizer: spread/twist translates and zooms; the camera stays north-up;
+intent-locked two-finger recognizer: spread/twist translates, zooms and changes heading;
 a deliberate parallel vertical slide tilts. Pinching no longer changes pitch.
 The compass returns to a north-up overhead view. Camera pose survives tab changes.
-Legacy saved-area scenes also stay north-up. Rotation preferences are no longer exposed.
+Heading rotation is enabled; camera roll is locked to world-up, so the horizon stays level. Legacy scenes also permit heading rotation. Rotation preferences are no longer exposed.
 
 The atlas now opens fitted to the UK, anchors pinch zoom at the fingers, and waits
 until navigation ends before entering 3D. The included source has a tappable
@@ -109,3 +109,9 @@ Settings. The world outside the UK retains coarse coastline context.
 tilt, off-centre pinches, twists and different initial finger orientations.
 Route rebuilding is removed from the camera-movement loop; tile-driven route
 updates are coalesced. Label projection runs after the scene renders its camera.
+
+Camera regression: `test_world_gestures.sh` now also verifies the actual SceneKit
+camera basis through a full heading sweep at three pitch angles. All 321 checks
+pass: screen-right remains horizontal and the camera faces its orbit target.
+The world renderer constructs that basis explicitly, rather than allowing roll
+to be inferred by SceneKit look-at orientation.
