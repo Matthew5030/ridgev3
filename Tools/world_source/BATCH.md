@@ -66,3 +66,7 @@ sh Tools/build_world_preview_renderer.sh /tmp/ridge-world-preview-renderer
 ```
 
 Changing the renderer/style requires a new preview output directory; this prevents silently mixing palettes across a mosaic. These detailed snapshots are separate from the lower-resolution UK overview. Sources with missing terrain cells still contain uncovered cells in their snapshots; the coverage metadata must control where detailed imagery overlays the nationwide map.
+
+### Partial coverage and compositing
+
+A preview JPEG is **not a coverage mask**. The native renderer starts transparent; JPEG has no alpha and the tested ImageIO encoder flattens missing terrain cells to white. Never paste a partial-source JPEG over its entire geographic rectangle. Before compositing, verify `sourceManifestSHA256`, read the referenced `world.json`, and construct an occupancy mask from its actual `tiles[].column` / `row` values divided by `columns` / `rows`. Only occupied cells may replace the nationwide overview. Missing cells must reveal that overview. This avoids inventing detailed coverage or painting white gaps over existing land. No separate mask worker is needed: the immutable world manifest already contains the exact coverage grid.
