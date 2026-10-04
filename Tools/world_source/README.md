@@ -1,6 +1,7 @@
 # Native world prototype
 
-The default Explore screen now opens the UK atlas. Zoom into the included Snowdon
+The default Explore screen now opens a shaded UK overhead atlas (about 19 MB),
+using the world terrain palette instead of green elevation bands. Zoom into the included Snowdon
 source, or choose **Explore Snowdon & the Glyderau**, to enter 3D. Moving the camera
 changes a bounded set of fine meshes and vector-derived texture pages. Downloads
 are separate from that resident working set; **Keep offline** pins source assets.
@@ -120,7 +121,9 @@ The atlas now opens fitted to the UK, anchors pinch zoom at the fingers, and wai
 until navigation ends before entering 3D. The included source has a tappable
 marker. Land/sea colours, lakes, rivers, range names and UK elevation bands provide
 geographic context. `atlas.json` is 2,144,537 bytes, including the existing atlas.
-The UK relief is a smoothed overview, not extra hiking-scale LiDAR coverage.
+The retained vector relief is a legacy fallback. The world flow now uses the
+shaded image overview described in `../world_atlas/README.md`; neither overview
+implies extra hiking-scale LiDAR coverage.
 
 Reproduce physical context using `build_atlas_context.py`, then
 `build_atlas_relief.py`. The latter reads Mapzen Terrarium elevation tiles at zoom
@@ -253,3 +256,17 @@ Validation for this change: simulator and signed device builds pass, alongside
 visually checked on the 13-inch iPad simulator. The Mac locked before a final
 visual check of the return-to-atlas layout fix; physical-device smoothness still
 needs confirmation.
+
+## National preparation job (2026-10-04)
+
+The connected drive contains completed corrected fine RAT terrain: 589,443 chunks
+across 342 sections. Those meshes are reused. Verified source archives are staged
+from retained iCloud products; the resumable batch creates bounded adaptive/vector
+world sources and exact overhead previews. See `BATCH.md` for commands, progress
+files and restart instructions. Originals remain in place. The UK-wide overview
+is already bundled; automatic discovery/loading of new 3D regions and routing
+across source boundaries still require app integration.
+
+Simulator QA confirmed opening the shaded UK overview, entering Snowdon in 3D,
+and returning to an overhead map centred on the same place. The iPad build was
+installed; physical launch was blocked by the device lock.
