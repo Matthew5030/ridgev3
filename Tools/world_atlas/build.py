@@ -55,10 +55,10 @@ class Builder:
         decoded=zlib.decompress(raw)
         if sha(decoded)!=e['decodedSHA256']:raise ValueError('Decoded height checksum: '+e['id'])
         return np.frombuffer(decoded,dtype='<i2').reshape(513,513)
-    def sample(self,x,y):
+    def sample(self,x,y,size=SIZE,gutter=GUTTER):
         # Global pixel centres and real neighbour samples avoid a hillshade seam
         # at every JPEG edge. Latitude interpolation follows the stored grid.
-        p=(np.arange(SIZE+GUTTER*2)-GUTTER+.5)/SIZE
+        p=(np.arange(size+gutter*2)-gutter+.5)/size
         gx,gy=np.meshgrid(x+p,y+p)
         lon=gx/1024*360-180;lat=np.degrees(np.arctan(np.sinh(math.pi*(1-2*gy/1024))))
         result=np.zeros(gx.shape);valid=np.zeros(gx.shape,dtype=bool)
