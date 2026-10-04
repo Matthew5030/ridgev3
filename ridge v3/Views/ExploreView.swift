@@ -466,9 +466,13 @@ struct OfflineAtlasView: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            Canvas { context, size in
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red:0.68,green:0.81,blue:0.86)))
-                if let atlas { drawLand(atlas, context: &context, size: size); drawPhysical(atlas, context: &context, size: size) }
+            ZStack {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red:0.68,green:0.81,blue:0.86)))
+                    if let atlas { drawLand(atlas, context: &context, size: size); drawPhysical(atlas, context: &context, size: size) }
+                }
+                WorldAtlasLayer(center: center, scale: scale, size: geometry.size)
+                Canvas { context, size in
                 for entry in entries where showsBounds(entry, size: size) {
                     if let image = images[entry.id] { context.draw(Image(uiImage: image), in: rectangle(entry.manifest.bounds, size: size)) }
                 }
@@ -490,6 +494,7 @@ struct OfflineAtlasView: View {
                 drawAreas(context: &context, size: size)
                 if let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawSelection(context: &context, size: size)
+                }
             }.contentShape(Rectangle())
                 .overlay {
                     AtlasTouchSurface(selecting: selecting, onDrag: { start, point, translation, twoFingers, ended in
