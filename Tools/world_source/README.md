@@ -54,7 +54,8 @@ multiple published image levels. Style changes live in `WorldCartography.swift`.
 - The load queue fills background pages first, then reduces obsolete allocations
   before admitting higher-detail pages. Zooming out no longer removes all fine
   terrain at a single threshold.
-- Memory warnings reduce detail; leaving Explore releases its prepared tiles.
+- Memory warnings reduce detail; leaving Explore releases fine prepared tiles,
+  retaining the small overview pages for the next entry.
 - Remote files have byte-count/SHA-256 checks. Unpinned disk cache is evicted
   toward 256 MiB; explicitly saved files can exceed this limit.
 
@@ -94,7 +95,8 @@ and thermal behaviour are not yet verified.
   at most 256 tiles, fetches its whole graph, and has only that source's horizon.
 - Measure sustained panning, transient CPU/GPU memory and frame time on the M1
   iPad. Tune from measurements before expanding the resident limits.
-- Make the atlas-to-3D projection transition continuous; current views crossfade.
+- Extend the matching overhead preview to each published source; UK-wide atlas
+  context still uses the simplified elevation-band style outside source coverage.
 - Retain dash phase through vector clipping; it currently restarts at cell edges.
 - Add offline-area management, storage estimates, removal, and explicit coverage.
 - Use fine elevations consistently for route statistics. The shared route terrain
@@ -217,3 +219,37 @@ check disconnected GPX sections and corner waypoints, and render the actual Meta
 modifier. Render checks cover pixel width through zoom, normal depth occlusion,
 clearing the overlay and reusing it after terrain replacement. Fixed-camera Crib
 Goch views cover background/fine terrain, wide, close, low-angle and overhead views.
+
+## Overhead-to-terrain transition
+
+The source footprint in the atlas now contains an orthographic render of the same
+adaptive background and vector cartography as the 3D scene. It is generated once
+on the worker actor from 128 px pages, then reused while browsing. This adds no
+published image pyramid or download. The 2048 px overview is approximately 16 MiB
+uncompressed; the 256 small pages add approximately 18 MiB before GPU copies.
+Preview generation took 0.86 s on the development Mac, not a measured iPad time.
+
+Selecting a place animates atlas centre and scale, then descends from a narrow-FOV
+overhead view to the normal terrain camera. Pinching into a viewport less than
+7 km high enters the same flight. Zooming out past the 12 km camera-distance
+threshold, or using the map button, returns through an overhead view with a
+minimum 14 km footprint. These different thresholds prevent mode oscillation.
+The atlas zoom limit accommodates large iPad viewports. Atmospheric fade stays
+beyond the ground during the high-camera projection change.
+
+Panning, pinching, or a camera command interrupts the flight; Reduce Motion skips
+the camera flights. A short opacity handoff remains between the two renderers.
+This is a matched regional transition, not a single UK-wide 3D renderer.
+
+`sh Tools/test_world_transition.sh` verifies camera endpoints, monotonic framing,
+heading wrap, and geographic footprints across phone/tablet aspect ratios
+(1,080 checks). Source checks now include preview preparation (8,490 assertions).
+
+New routes always follow mapped paths. Direct-line controls and their guidance
+were removed; existing direct segments remain readable in old saved routes.
+
+Validation for this change: simulator and signed device builds pass, alongside
+321 gesture checks and 9,450 terrain-route overlay checks. The entry flight was
+visually checked on the 13-inch iPad simulator. The Mac locked before a final
+visual check of the return-to-atlas layout fix; physical-device smoothness still
+needs confirmation.

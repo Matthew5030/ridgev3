@@ -87,6 +87,11 @@ import CoreGraphics
         var rejectedIncomplete=false
         do { try incomplete.validate() } catch { rejectedIncomplete=true }
         try check(rejectedIncomplete,"Incomplete adaptive source is rejected")
+        let previewStart=Date()
+        let (preview,pages)=try await store.preview(source:opened,backdrop:backdrop)
+        try check(preview.height==2048 && pages.count==source.tiles.count,"Overhead preview and warm map pages cover the same source")
+        try check(pages.values.allSatisfy { !$0.request.fine && $0.request.pixels==128 },"Overview startup does not load fine terrain")
+        print("Overhead preview prepared in \(Date().timeIntervalSince(previewStart)) seconds")
         let ready = try await store.prepare(selected, request:WorldTileRequest(id:selected.id,pixels:256,fine:true),sourceBounds:source.bounds)
         try check(ready.mesh != nil && ready.geometry != nil && ready.image.width == 264,"Native streamed tile")
         let resized=try await store.prepare(selected,request:WorldTileRequest(id:selected.id,pixels:512,fine:true),sourceBounds:source.bounds,previous:ready)

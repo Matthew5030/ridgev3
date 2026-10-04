@@ -189,6 +189,16 @@ actor WorldSourceStore {
         }
         return WorldBackdrop(geometries:geometries,meshes:meshes)
     }
+    func preview(source: WorldSource, backdrop: WorldBackdrop) async throws -> (CGImage,[String:WorldPreparedTile]) {
+        var pages:[String:WorldPreparedTile]=[:]
+        for tile in source.tiles {
+            try Task.checkCancellation()
+            pages[tile.id]=try await prepare(tile,request:WorldTileRequest(id:tile.id,pixels:128,fine:false),sourceBounds:source.bounds)
+        }
+        let image=try WorldPreview.render(source:source,backdrop:backdrop,tiles:pages)
+        try Task.checkCancellation()
+        return (image,pages)
+    }
     func prepare(_ tile: WorldTile, request: WorldTileRequest, sourceBounds: GeoBounds, previous: WorldPreparedTile? = nil) async throws -> WorldPreparedTile {
         let image:CGImage
         if let previous,previous.request.pixels == request.pixels { image=previous.image }

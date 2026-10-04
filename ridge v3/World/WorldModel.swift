@@ -1,11 +1,15 @@
 import Foundation
 import Observation
+import CoreGraphics
 
 @MainActor @Observable final class WorldModel {
     @ObservationIgnored var cameraPose: TerrainCameraPose?
     var source: WorldSource?
     var overview: WorldOverview?
     var backdrop: WorldBackdrop?
+    var preview: CGImage?
+    @ObservationIgnored var entrySpan: Double?
+    @ObservationIgnored private var previewPages: [String:WorldPreparedTile] = [:]
     var routeTerrain: LoadedTerrain?
     var tiles: [String: WorldPreparedTile] = [:]
     var revision = 0
@@ -32,13 +36,14 @@ import Observation
         guard source == nil || openedAddress != address else { return }
         cameraPose = nil
         generation += 1; let token = generation
-        work?.cancel(); work = nil; wanted = []; tiles = [:]; failed = []; message = nil; isLoading = true; source = nil; overview = nil; backdrop = nil; routeTerrain = nil; policyCenter = nil
+        work?.cancel(); work = nil; wanted = []; tiles = [:]; failed = []; message = nil; isLoading = true; source = nil; overview = nil; backdrop = nil; preview = nil; previewPages = [:]; routeTerrain = nil; policyCenter = nil
         defer { if token == generation { isLoading = false } }
         do {
             let (source, overview, graph) = try await files.open(address: address)
             let backdrop=try await files.backdrop(source:source,overview:overview)
+            let (preview,pages)=try await files.preview(source:source,backdrop:backdrop)
             guard token == generation, !Task.isCancelled else { return }
-            self.source = source; self.overview = overview; self.backdrop=backdrop; openedAddress = address
+            self.source = source; self.overview = overview; self.backdrop=backdrop; self.preview=preview; self.tiles=pages; self.previewPages=pages; openedAddress = address
             let spacing=max(1,Int((source.bounds.widthMeters/Double(overview.width-1)).rounded()))
             let level = TerrainLOD(spacing: spacing, width: overview.width, height: overview.height, file: source.overview.file, byteCount: Int64(source.overview.byteCount), sha256: source.overview.sha256)
             let manifest = RegionManifest(schemaVersion: 1, id: source.id, name: source.name, subtitle: "", bounds: source.bounds, sourceResolution: 1, heightScale: 1, noDataValue: -32768,
@@ -96,7 +101,7 @@ import Observation
         }
     }
     func retry() { failed = []; message = nil; pump() }
-    func suspend() { generation += 1; work?.cancel(); work = nil; pending = 0; tiles = [:]; revision += 1 }
+    func suspend() { generation += 1; work?.cancel(); work = nil; pending = 0; tiles = previewPages; revision += 1 }
     func resume() { pump() }
     func memoryWarning() {
         reduceDetailUntil = Date().addingTimeInterval(30)

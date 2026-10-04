@@ -14,6 +14,9 @@ import Metal
         for tile in source.tiles {
             images[tile.id]=try await store.prepare(tile,request:WorldTileRequest(id:tile.id,pixels:512,fine:false),sourceBounds:source.bounds).image
         }
+        let (atlasPreview,_)=try await store.preview(source:source,backdrop:background)
+        let atlasBitmap=NSBitmapImageRep(cgImage:atlasPreview)
+        try atlasBitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("atlas-terrain-preview.png"))
         let routeMode=CommandLine.arguments.contains("--route")
         let start=source.places.first(where:{$0.name=="Crib Goch"})!.coordinate
         let end=source.places.first(where:{$0.name=="Yr Wyddfa"})!.coordinate

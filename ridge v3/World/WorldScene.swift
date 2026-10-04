@@ -10,16 +10,17 @@ struct WorldScene: UIViewRepresentable {
     var waypoints: [RouteWaypoint]
     var command: TerrainCameraCommand
     var onTap: (GeoPoint) -> Void
-    var onAtlas: (GeoPoint) -> Void
+    var onAtlas: (GeoBounds) -> Void
+    var atlasRequest: UUID? = nil
     func makeUIView(context: Context) -> WorldSceneView {
         let view = WorldSceneView(); view.model = model; view.onTap = onTap; view.onAtlas = onAtlas
-        view.refresh(route: route, segments: segments, waypoints: waypoints, command: command); return view
+        view.refresh(route: route, segments: segments, waypoints: waypoints, command: command, atlasRequest:atlasRequest); return view
     }
     func updateUIView(_ view: WorldSceneView, context: Context) {
         view.model = model; view.onTap = onTap; view.onAtlas = onAtlas
-        view.refresh(route: route, segments: segments, waypoints: waypoints, command: command)
+        view.refresh(route: route, segments: segments, waypoints: waypoints, command: command, atlasRequest:atlasRequest)
     }
-    static func dismantleUIView(_ view: WorldSceneView, coordinator: ()) { view.scene = nil; view.model = nil }
+    static func dismantleUIView(_ view: WorldSceneView, coordinator: ()) { view.stopFlight(); view.scene = nil; view.model = nil }
 }
 
 /// The native renderer is deliberately independent of downloads. Nodes are
@@ -27,13 +28,18 @@ struct WorldScene: UIViewRepresentable {
 final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRendererDelegate {
     weak var model: WorldModel?
     var onTap: ((GeoPoint) -> Void)?
-    var onAtlas: ((GeoPoint) -> Void)?
+    var onAtlas: ((GeoBounds) -> Void)?
     private var source: WorldSource?
     private var overview: WorldOverview?
     private var nodes: [String: SCNNode] = [:]
     private var tileIDs: [Int: String] = [:]
     private var coarse: [String: SCNGeometry] = [:]
     private var applied: [String: WorldTileRequest] = [:]
+    private var flightLink: CADisplayLink?
+    private var flightStart = 0.0
+    private var flightEntrySpan: Double?
+    private var flightExitPose: WorldCameraTransition.Pose?
+    private var lastAtlasRequest: UUID?
     private var revision = -1
     private var cameraNode = SCNNode()
     private var target = SIMD3<Float>(0,0,0)
@@ -85,7 +91,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
            let h = mesh.elevation(at: point) { return Float(h) }
         return overview.elevation(point, bounds: source.bounds)
     }
-    func refresh(route: [RoutePoint], segments: [[RoutePoint]], waypoints: [RouteWaypoint], command: TerrainCameraCommand) {
+    func refresh(route: [RoutePoint], segments: [[RoutePoint]], waypoints: [RouteWaypoint], command: TerrainCameraCommand, atlasRequest: UUID?) {
         guard let model, let next = model.source, let overview = model.overview else { return }
         let sourceChanged = source?.revision != next.revision || source?.id != next.id
         if sourceChanged {
@@ -112,17 +118,20 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         if lastCommand != command {
             let initial = lastCommand == nil
             lastCommand = command
+            if !initial {
+            interruptFlight()
             switch command.action {
             case .focus(let point): target = local(point); distance = min(distance, 2000); updateCamera()
             case .zoomIn: distance /= 1.5; updateCamera()
             case .zoomOut: distance *= 1.5; updateCamera()
             case .overhead: pitch = 1.49; yaw = 0; updateCamera()
-            case .home where initial: break
             case .home: target = local(next.bounds.center); distance = 6000; pitch = 0.85; yaw = 0; updateCamera()
             default: break
             }
+            }
         }
-        if let point = model.requestFocus { DispatchQueue.main.async { model.requestFocus = nil }; target = local(point); distance = 1500; updateCamera() }
+        if atlasRequest != lastAtlasRequest { lastAtlasRequest=atlasRequest; if atlasRequest != nil { beginExit() } }
+        if let point = model.requestFocus { interruptFlight(); DispatchQueue.main.async { model.requestFocus = nil }; target = local(point); distance = 1500; updateCamera() }
     }
     private func material(_ image: CGImage?, tileID: String) -> SCNMaterial {
         let m = SCNMaterial(); m.diffuse.contents = image ?? UIColor(red: 0.87,green: 0.89,blue: 0.79,alpha: 1) as Any
@@ -161,14 +170,22 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             target = local(pose.target); target.y = Float(pose.targetElevationMeters)
             distance = Float(pose.distanceMeters); yaw = pose.yaw; pitch = pose.pitch
         }
-        updateCamera()
+        if let span=model?.entrySpan {
+            model?.entrySpan=nil
+            beginEntry(span:span)
+        } else { updateCamera() }
     }
     override func layoutSubviews() { super.layoutSubviews(); updateLabels() }
     private func updateCamera(notify: Bool = true) {
         guard let source else { return }
         target.x = min(Float(source.bounds.widthMeters * 0.49), max(-Float(source.bounds.widthMeters * 0.49), target.x))
         target.z = min(Float(source.bounds.depthMeters * 0.49), max(-Float(source.bounds.depthMeters * 0.49), target.z))
-        distance = min(26000,max(170,distance))
+        distance = min(flightLink == nil ? 26000 : 300000,max(170,distance))
+        cameraNode.camera?.zFar=max(60000,Double(distance)*2)
+        // A narrow-FOV overhead camera is far away even when its footprint is small.
+        // Keep atmospheric fade beyond the ground during that projection change.
+        scene?.fogStartDistance = flightLink == nil ? 9000 : max(9000,Double(distance))
+        scene?.fogEndDistance = flightLink == nil ? 26000 : max(26000,Double(distance)+26000)
         var eye = target + distance * SIMD3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
         let point = coordinate(eye)
         if source.bounds.contains(point) { eye.y = max(eye.y,height(point)+25) }
@@ -180,8 +197,60 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         DispatchQueue.main.async { [weak self] in
             guard let self, self.scene != nil else { return }
             self.model?.update(center: center, distance: range)
-            if range > 22000 { self.onAtlas?(center) }
+            if range > 12000 && self.flightLink == nil { self.beginExit() }
         }
+    }
+    func stopFlight() {
+        flightLink?.invalidate();flightLink=nil;flightEntrySpan=nil;flightExitPose=nil
+    }
+    private func interruptFlight() {
+        guard flightLink != nil else { return }
+        let field=cameraNode.camera?.fieldOfView ?? 43
+        distance *= Float(tan(field * .pi/360)/tan(43 * .pi/360))
+        stopFlight();cameraNode.camera?.fieldOfView=43
+        updateCamera(notify:false)
+    }
+    private func beginEntry(span: Double) {
+        stopFlight()
+        if UIAccessibility.isReduceMotionEnabled {
+            let pose=WorldCameraTransition.entry(span:span,progress:1)
+            distance=Float(pose.distance);pitch=Float(pose.pitch);yaw=0;updateCamera();return
+        }
+        flightEntrySpan=span;startFlight()
+        model?.update(center:coordinate(target),distance:WorldCameraTransition.entry(span:span,progress:1).distance)
+    }
+    private func beginExit() {
+        guard flightExitPose == nil else { return }
+        interruptFlight()
+        let pose=WorldCameraTransition.Pose(distance:Double(distance),pitch:Double(pitch),yaw:Double(yaw),fieldOfView:Double(cameraNode.camera?.fieldOfView ?? 43))
+        if UIAccessibility.isReduceMotionEnabled {
+            onAtlas?(WorldCameraTransition.viewport(center:coordinate(target),span:max(14000,pose.span),aspect:Double(bounds.width/max(1,bounds.height))));return
+        }
+        flightExitPose=pose;startFlight()
+    }
+    private func startFlight() {
+        flightStart=CACurrentMediaTime();cameraNode.camera?.zFar=500000
+        let link=CADisplayLink(target:self,selector:#selector(advanceFlight));flightLink=link;link.add(to:.main,forMode:.common)
+        applyFlight(progress:0)
+    }
+    @objc private func advanceFlight() {
+        let progress=min(1,(CACurrentMediaTime()-flightStart)/0.95)
+        applyFlight(progress:progress)
+        if progress>=1 {
+            let leaving=flightExitPose != nil
+            let span=2*Double(distance)*tan(Double(cameraNode.camera?.fieldOfView ?? 43) * .pi/360)
+            let viewport=WorldCameraTransition.viewport(center:coordinate(target),span:span,aspect:Double(bounds.width/max(1,bounds.height)))
+            stopFlight()
+            if leaving { onAtlas?(viewport) } else { updateCamera() }
+        }
+    }
+    private func applyFlight(progress: Double) {
+        let pose:WorldCameraTransition.Pose
+        if let span=flightEntrySpan { pose=WorldCameraTransition.entry(span:span,progress:progress) }
+        else if let start=flightExitPose { pose=WorldCameraTransition.exit(from:start,progress:progress) }
+        else { return }
+        distance=Float(pose.distance);pitch=Float(pose.pitch);yaw=Float(pose.yaw);cameraNode.camera?.fieldOfView=CGFloat(pose.fieldOfView)
+        updateCamera(notify:false)
     }
     private func scheduleLabels() { setNeedsDisplay() }
     nonisolated func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
@@ -240,7 +309,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     @objc private func panWorld(_ gesture: UIPanGestureRecognizer) {
         guard gesture.numberOfTouches == 1, gesture.state == .began || gesture.state == .changed else { return }
-        if gesture.state == .began { rebaseDragPlane() }
+        if gesture.state == .began { interruptFlight(); rebaseDragPlane() }
         let d=gesture.translation(in:self), current=gesture.location(in:self)
         gesture.setTranslation(.zero,in:self)
         let previous=CGPoint(x:current.x-d.x,y:current.y-d.y)
@@ -250,7 +319,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         guard gesture.state == .began || gesture.state == .changed else {
             moveGesture.isEnabled = true; return
         }
-        if gesture.state == .began { moveGesture.isEnabled = false; rebaseDragPlane() }
+        if gesture.state == .began { interruptFlight(); moveGesture.isEnabled = false; rebaseDragPlane() }
         defer { gesture.consume() }
         if gesture.intent == .angle {
             let dx=gesture.centroid.x-gesture.previousCentroid.x

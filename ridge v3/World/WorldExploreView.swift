@@ -7,6 +7,8 @@ struct WorldExploreView: View {
     @AppStorage("ridge.worldSourceURL") private var sourceAddress = ""
     @Environment(\.scenePhase) private var phase
     @State private var query = ""
+    @State private var atlasRequest: UUID?
+    @State private var mapSize=CGSize(width:768,height:1024)
     @State private var focus = AtlasFocus(point: GeoPoint(latitude: 54.2, longitude: -3.4), scale: 7400, bounds: GeoBounds(minLatitude:49.8,minLongitude:-8.3,maxLatitude:59.4,maxLongitude:2.0))
     @State private var selection: GeoBounds?
     @State private var dragging = false
@@ -25,16 +27,16 @@ struct WorldExploreView: View {
         ZStack(alignment: .top) {
             if world.in3D {
                 WorldScene(model: world, route: store.activeRoute?.points ?? [], segments: store.activeRoute?.segments.map(\.points) ?? [], waypoints: store.activeRoute?.waypoints ?? [], command: store.camera,
-                    onTap: tapped, onAtlas: leaveWorld).ignoresSafeArea(edges: .bottom)
+                    onTap: tapped, onAtlas: leaveWorld, atlasRequest:atlasRequest).ignoresSafeArea(edges: .bottom)
             } else {
                 OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: false,
                     selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: false,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.source?.bounds, onWorldTap: visit)
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.source?.bounds, worldPreview:world.preview, onWorldTap: visit)
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
                 HStack(spacing: 10) {
-                    if world.in3D { control("map", "Show UK map") { leaveWorld(world.center) } }
+                    if world.in3D { control("map", "Show UK map") { atlasRequest=UUID() } }
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundStyle(RidgeTheme.muted)
                         TextField("Find a place", text: $query).autocorrectionDisabled()
@@ -91,7 +93,8 @@ struct WorldExploreView: View {
                     .font(.system(size:9)).foregroundStyle(RidgeTheme.muted).padding(3).background(.regularMaterial,in:Capsule())
             }.padding(16)
         }
-        .animation(.easeInOut(duration:0.3),value:world.in3D)
+        .onGeometryChange(for:CGSize.self) { $0.size } action: { mapSize=$0 }
+        .animation(.easeInOut(duration:0.25),value:world.in3D)
         .foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
         .task(id:sourceAddress) {
             await world.open(address:sourceAddress)
@@ -161,16 +164,20 @@ struct WorldExploreView: View {
         guard let source=world.source,source.bounds.contains(point) else {
             focus=AtlasFocus(point:point,scale:150_000);world.message="Detailed coverage for this place hasn’t been published yet.";return
         }
-        world.center=point;world.distance=1800;world.requestFocus=point;world.in3D=true
+        if world.in3D { world.requestFocus=point;return }
+        // Fly through the same overhead cartography before introducing perspective.
+        let bounds=WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))
+        focus=AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
         store.isWorldBrowsing=true;store.activeTerrain=world.routeTerrain
     }
     private func viewportChanged(_ bounds:GeoBounds) {
-        guard !world.in3D,let source=world.source,source.bounds.contains(bounds.center),bounds.depthMeters<12000 else{return}
-        world.center=bounds.center;world.distance=max(1800,bounds.depthMeters*1.1);world.in3D=true
+        guard !world.in3D,let source=world.source,source.bounds.contains(bounds.center),bounds.depthMeters<7000 else{return}
+        world.center=bounds.center;world.cameraPose=nil;world.entrySpan=bounds.depthMeters;world.distance=max(1800,bounds.depthMeters);atlasRequest=nil;world.in3D=true
         store.isWorldBrowsing=true;store.activeTerrain=world.routeTerrain
     }
-    private func leaveWorld(_ point:GeoPoint) {
-        world.in3D=false;world.suspend();focus=AtlasFocus(point:point,scale:80_000)
+    private func leaveWorld(_ bounds:GeoBounds) {
+        focus=AtlasFocus(point:bounds.center,scale:1,bounds:bounds,exactViewport:true)
+        world.suspend();atlasRequest=nil;world.in3D=false
     }
     private func tapped(_ point:GeoPoint) {
         if store.editing,store.movingWaypoint==nil,let waypoint=store.activeRoute?.waypoints.min(by:{$0.point.coordinate.distance(to:point)<$1.point.coordinate.distance(to:point)}),waypoint.point.coordinate.distance(to:point)<max(8,world.distance*0.007) {
