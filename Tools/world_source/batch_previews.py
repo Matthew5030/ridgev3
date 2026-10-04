@@ -8,7 +8,8 @@ def atomic(path,value):
     tmp=path.with_name(path.name+'.tmp');tmp.write_text(json.dumps(value,separators=(',',':')));os.replace(tmp,path)
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--world-root',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--renderer',type=Path,required=True);p.add_argument('--hours',type=float,default=48);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--once',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--world-root',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--renderer',type=Path,required=True);p.add_argument('--hours',type=float,default=48,help='Time limit in hours; 0 follows the world build until it stops');p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--once',action='store_true');a=p.parse_args()
+    if a.hours < 0:p.error('Hours must be zero or positive')
     a.output.mkdir(parents=True,exist_ok=True)
     lock=(a.output/'.preview.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     style_root=Path(__file__).resolve().parents[2]/'ridge v3'/'World'
@@ -18,7 +19,7 @@ def main():
     atomic(a.output/'build-config.json',config)
     path=a.output/'catalog.json'
     catalog=json.loads(path.read_bytes()) if path.exists() else dict(schemaVersion=1,kind='world-overhead-previews',pixels=2048,style=style,previews=[])
-    entries={x['id']:x for x in catalog['previews']};failures={};deadline=time.monotonic()+a.hours*3600
+    entries={x['id']:x for x in catalog['previews']};failures={};deadline=time.monotonic()+a.hours*3600 if a.hours else float('inf')
     def status(state,current=None):
         atomic(a.output/'status.json',dict(state=state,pid=os.getpid(),updatedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),current=current,completedPreviews=len(entries),downloadBytes=sum(x['byteCount'] for x in entries.values()),failures=failures))
     while time.monotonic()<deadline:

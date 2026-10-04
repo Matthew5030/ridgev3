@@ -29,18 +29,20 @@ Dependencies: Python 3, NumPy, Shapely 2, contourpy, clang++. The prepared envir
 
 Use `--section z10-x500-y333 --limit-sources 1` for a pilot. The output must stay on the external drive. A single-process file lock prevents overlapping jobs. Tiles have resumable validated checkpoints under `.work`; final source directories are renamed atomically and never overwritten. `catalog.json` lists only completely validated sources. `status.json` records current progress, deferred iCloud/missing input and failures. `toolchain.json` records current builder/compiler hashes. Same-output resume requires the same frozen inputs and source partition size.
 
-`batch_run.py` is a bounded supervisor for one batch while `stage_archives.py` stages verified source archives. It reruns conversion only when the ready-archive count increases, stops when staging completes, when the free-space guard triggers, or after its time limit. It uses its own exclusive lock. `supervisor.json` records the supervising PID/state; `batch.log` holds output when launched with the example below. Neither script evicts iCloud files or starts a recurring automation.
+`batch_run.py` is a bounded supervisor for one batch while `stage_archives.py` stages verified source archives. It reruns conversion only when the ready-archive count increases, stops when staging completes, when the free-space guard triggers, or after its time limit. Use `--hours 0` to run until conversion finishes; the default remains a 48-hour bound. It uses its own exclusive lock. `supervisor.json` records the supervising PID/state; `batch.log` holds output when launched with the example below. Neither script evicts iCloud files or starts a recurring automation.
 
 ```sh
 /usr/bin/caffeinate -i /tmp/ridge-world-build-env/bin/python Tools/world_source/batch_run.py \
   --staging-status '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1/status.json' \
-  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' --hours 48 -- \
+  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' --hours 0 -- \
   --selection '/Volumes/MLB_EXT_4TB/Ridge Experiments/UK-adaptive-0p5-v3/selection' \
   --fine '/Volumes/MLB_EXT_4TB/Ridge Sources/uk-adaptive-0p5-v3' \
   --public '/Users/matthewbilella/Desktop/ProjectFatRidge/mapping/build/public' \
   --staged-public '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1' \
   --region-workers 4 --workers 2 --reserve-gib 35
 ```
+
+Keep the Mac plugged into power, the lid open and the external drive connected. `caffeinate` prevents idle sleep; the display can turn off and the Mac can stay locked. The detached jobs continue if the terminal or Codex closes. This does not prevent sleep caused by closing the lid or survive a reboot/logout; repeat the same commands afterward to resume checkpoints.
 
 Progress files are on the output drive, so unplugging it interrupts the job. Reconnect and repeat the command to resume. A Mac restart likewise requires rerunning the command. To stop, terminate the supervisor **and the builder PID in `.batch.lock`**; completed sources remain usable. The supervisor does not automatically restart after a crash.
 
@@ -61,14 +63,14 @@ The native test uses the real `WorldSourceStore`, adaptive codec, vector drawing
 
 ## Exact overhead snapshots
 
-`render_batch_preview.swift` calls the actual app background and preview renderers, including the same light, camera and vector palette. It does not decode fine geometry. `batch_previews.py` watches only fully published world sources and produces one 2048 px-high JPEG at a time, with bounds and image/source/style hashes in a separate catalog. The source directory remains immutable. It stops when world conversion stops, after the time bound, or below the disk reserve. A failed source is recorded and retried on a later invocation.
+`render_batch_preview.swift` calls the actual app background and preview renderers, including the same light, camera and vector palette. It does not decode fine geometry. `batch_previews.py` watches only fully published world sources and produces one 2048 px-high JPEG at a time, with bounds and image/source/style hashes in a separate catalog. The source directory remains immutable. It stops when world conversion stops, after the time bound, or below the disk reserve. Use `--hours 0` to follow the build without a time cutoff. A failed source is recorded and retried on a later invocation.
 
 ```sh
 sh Tools/build_world_preview_renderer.sh /tmp/ridge-world-preview-renderer
 /tmp/ridge-world-build-env/bin/python Tools/world_source/batch_previews.py \
   --world-root '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' \
   --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-previews-v1-2026-10-04' \
-  --renderer /tmp/ridge-world-preview-renderer/render-preview --hours 48
+  --renderer /tmp/ridge-world-preview-renderer/render-preview --hours 0
 ```
 
 Changing the renderer/style requires a new preview output directory; this prevents silently mixing palettes across a mosaic. These detailed snapshots are separate from the lower-resolution UK overview. Sources with missing terrain cells still contain uncovered cells in their snapshots; the coverage metadata must control where detailed imagery overlays the nationwide map.

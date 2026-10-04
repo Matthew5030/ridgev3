@@ -10,14 +10,15 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--staging-status', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
-    p.add_argument('--hours', type=float, default=48)
+    p.add_argument('--hours', type=float, default=48, help='Time limit in hours; 0 runs until staging/conversion finishes')
     p.add_argument('builder_args', nargs=argparse.REMAINDER)
     a = p.parse_args()
+    if a.hours < 0: p.error('Hours must be zero or positive')
     a.output.mkdir(parents=True, exist_ok=True)
     lock = (a.output / '.supervisor.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    deadline = time.monotonic() + a.hours * 3600
-    deadline_unix = time.time() + a.hours * 3600
+    deadline = time.monotonic() + a.hours * 3600 if a.hours else float('inf')
+    deadline_unix = time.time() + a.hours * 3600 if a.hours else None
     builder = Path(__file__).with_name('batch_world.py')
     args = a.builder_args[1:] if a.builder_args[:1] == ['--'] else a.builder_args
     previous = None
@@ -30,7 +31,9 @@ def main():
         marker=stage.get('ready',0)
         if previous is None or marker != previous:
             status('converting',stagedArchives=marker)
-            result=subprocess.run([sys.executable,str(builder),'--output',str(a.output),*args,'--deadline-unix',str(deadline_unix)])
+            command=[sys.executable,str(builder),'--output',str(a.output),*args]
+            if deadline_unix is not None: command += ['--deadline-unix',str(deadline_unix)]
+            result=subprocess.run(command)
             if result.returncode:
                 status('failed',exitCode=result.returncode);return result.returncode
             previous=marker
