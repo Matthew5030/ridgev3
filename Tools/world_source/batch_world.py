@@ -3,17 +3,26 @@
 Only complete, validated sources enter catalog.json. Existing terrain is read-only.
 """
 import argparse, concurrent.futures, fcntl, hashlib, io, json, math, os, re
-import shutil, subprocess, sys, tempfile, time, zipfile, zlib
+import shutil, subprocess, sys, tempfile, time, zipfile, zlib, multiprocessing, signal
 from pathlib import Path
+from functools import lru_cache
 import numpy as np
 import contourpy
 from shapely.geometry import shape, box, LineString
 from shapely.ops import transform
 from shapely.strtree import STRtree
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'adaptive_terrain'))
+from compact_codec import CompactCodec
+
 VERSION = 'world-v1-2026-10-04'
 DATALESS = 0x40000000
 sha = lambda b: hashlib.sha256(b).hexdigest()
+
+@lru_cache(maxsize=4)
+def codec(binaries):
+    suffix = 'dylib' if sys.platform == 'darwin' else 'so'
+    return CompactCodec(binaries / ('libridge_compact_mesh.' + suffix))
 
 def rawjson(value):
     return json.dumps(value, separators=(',', ':'), allow_nan=False).encode()
@@ -152,10 +161,9 @@ def source(a, section, selection, fine, semantic, graph, credits, archive_sha, s
         fmesh={k:original[k] for k in ('bounds','byteCount','sha256','decodedByteCount','decodedSHA256','vertices','triangles','indexWidth','topologyByteCount','topologySHA256','maxErrorMetres')}
         fmesh.update(id=tid,path=tid+'.rat.zlib');asset(fmesh['path'],compressed)
         with tempfile.TemporaryDirectory(prefix='ridge-world-chunk-') as tmp:
-            tmp=Path(tmp);src=tmp/'height.bin';src.write_bytes(raw);mesh=tmp/'mesh';top=tmp/'top'
+            tmp=Path(tmp);src=tmp/'height.bin';src.write_bytes(raw);mesh=tmp/'mesh'
             facts=json.loads(subprocess.check_output([str(binaries/'park_mesh'),str(src),str(mesh),'2','adaptive-edges']))
-            subprocess.run([str(binaries/'compact_mesh'),'encode',str(mesh),str(top)],check=True,stdout=subprocess.DEVNULL)
-            decoded,topology=mesh.read_bytes(),top.read_bytes();packed=zlib.compress(topology,9)
+            decoded=mesh.read_bytes();topology=codec(binaries).encode(decoded);packed=zlib.compress(topology,9)
         name=tid+'.background.rat.zlib';asset(name,packed)
         background=dict(id=tid,path=name,bounds=c['bounds'],byteCount=len(packed),sha256=sha(packed),decodedByteCount=len(decoded),decodedSHA256=sha(decoded),topologyByteCount=len(topology),topologySHA256=sha(topology),**{k:facts[k] for k in ('vertices','triangles','indexWidth','maxErrorMetres')})
         paths=[];x0,y0=x*tw,y*th;clip=box(x0-4,y0-4,x0+tw+4,y0+th+4)
@@ -195,10 +203,7 @@ def validate_tile(folder,t,binaries):
         c=t[kind];data=read_verified(folder/c['path'],c['sha256'],c['byteCount']);top=zlib.decompress(data)
         if len(top)!=c['topologyByteCount'] or sha(top)!=c['topologySHA256']:raise ValueError('Topology checksum')
         if c['maxErrorMetres']>(.5 if kind=='mesh' else 2):raise ValueError('Surface tolerance')
-        with tempfile.TemporaryDirectory(prefix='ridge-world-validate-') as tmp:
-            p=Path(tmp);(p/'top').write_bytes(top)
-            subprocess.run([str(binaries/'compact_mesh'),'decode',str(p/'top'),str(p/'mesh')],check=True,stdout=subprocess.DEVNULL)
-            decoded=(p/'mesh').read_bytes()
+        decoded=codec(binaries).decode(top)
         if len(decoded)!=c['decodedByteCount'] or sha(decoded)!=c['decodedSHA256']:raise ValueError('Decoded checksum')
     m=t['map'];data=read_verified(folder/m['file'],m['sha256'],m['byteCount'])
     if len(zlib.decompress(data))!=m['decodedByteCount']:raise ValueError('Map length')
@@ -217,9 +222,50 @@ def validate(folder,binaries):
         q=m[key];read_verified(folder/q['file'],q['sha256'],q['byteCount'])
     return dict(id=m['id'],path='sources/'+m['id']+'/world.json',bounds=m['bounds'],tileCount=len(tiles),downloadBytes=sum(p.stat().st_size for p in folder.iterdir() if p.is_file() and not p.name.endswith('.checkpoint.json')),backgroundResidentBytes=memory)
 
+# Each forked region owns separate staging files. Only the coordinator publishes
+# the catalogue. The retained section JSON is shared copy-on-write across workers.
+REGION_CONTEXT = None
+
+
+def region_slots(requested, tile_workers, cpu_count, physical_bytes, parent_bytes):
+    # Conservative reservation, not a claim that RSS equals private memory. Allow
+    # a full copy of the parent's objects plus scratch space per region and leave
+    # 35% of RAM for macOS, native allocations and the preview renderer.
+    worker_estimate = max(512 * 1024**2, parent_bytes + 256 * 1024**2)
+    memory_slots = max(1, int((physical_bytes * .65 - parent_bytes) // worker_estimate))
+    return max(1, min(requested, max(1, cpu_count // tile_workers), memory_slots))
+
+
+def region_result(job):
+    a, section, selection, fine, semantic, graph, credits, archive_sha, binaries = REGION_CONTEXT
+    x, y, chunks = job
+    key = f"world-{selection['id']}-c{x:02d}-r{y:02d}"
+    if a.deadline_unix and time.time() >= a.deadline_unix:
+        return key, None, 'paused-time-limit'
+    if shutil.disk_usage(a.output).free < a.reserve_gib * 1024**3:
+        return key, None, 'paused-low-disk'
+    try:
+        final = source(a, section, selection, fine, semantic, graph, credits, archive_sha, x, y, chunks, binaries)
+        return key, validate(final, binaries), None
+    except Exception as error:
+        return key, None, repr(error)
+
+
+def region_results(jobs, slots):
+    if slots == 1:
+        yield from map(region_result, jobs)
+    else:
+        # macOS/Linux preparation tool: fork before any tile threads exist in
+        # this coordinator. Recreate the pool per section to release map memory.
+        with multiprocessing.get_context('fork').Pool(slots) as pool:
+            yield from pool.imap_unordered(region_result, jobs, chunksize=1)
+
+
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--selection',type=Path,required=True);p.add_argument('--fine',type=Path,required=True);p.add_argument('--public',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--staged-public',type=Path);p.add_argument('--workers',type=int,default=2);p.add_argument('--source-cells',type=int,choices=(8,16),default=16);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--section');p.add_argument('--limit-sources',type=int);p.add_argument('--deadline-unix',type=float);a=p.parse_args()
-    if not 1<=a.workers<=4:p.error('Use 1–4 workers')
+    p=argparse.ArgumentParser();p.add_argument('--selection',type=Path,required=True);p.add_argument('--fine',type=Path,required=True);p.add_argument('--public',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--staged-public',type=Path);p.add_argument('--workers',type=int,default=2);p.add_argument('--region-workers',type=int,default=1);p.add_argument('--source-cells',type=int,choices=(8,16),default=16);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--section');p.add_argument('--limit-sources',type=int);p.add_argument('--deadline-unix',type=float);a=p.parse_args()
+    if not 1<=a.workers<=4:p.error('Use 1–4 tile workers per region')
+    if not 1<=a.region_workers<=16:p.error('Use 1–16 region workers')
+    if a.limit_sources is not None and a.limit_sources < 1:p.error('Source limit must be positive')
     a.output.mkdir(parents=True,exist_ok=True)
     lock=(a.output/'.batch.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     lock.seek(0);lock.truncate();lock.write(str(os.getpid()));lock.flush()
@@ -230,43 +276,74 @@ def main():
     root=Path(__file__).resolve().parents[1]/'adaptive_terrain'
     for name in ('park_mesh','compact_mesh'):
         subprocess.run(['clang++','-O3','-std=c++17',str(root/(name+'.cpp')),'-o',str(binaries/name)],check=True)
-    atomic(a.output/'toolchain.json',rawjson(dict(builderSHA256=sha(Path(__file__).read_bytes()),compilerSources={name:sha((root/(name+'.cpp')).read_bytes()) for name in ('park_mesh','compact_mesh')})))
+    library_flags=['-dynamiclib'] if sys.platform=='darwin' else ['-shared','-fPIC']
+    suffix='dylib' if sys.platform=='darwin' else 'so'
+    subprocess.run(['clang++','-O3','-std=c++17',*library_flags,str(root/'compact_mesh.cpp'),'-o',str(binaries/('libridge_compact_mesh.'+suffix))],check=True)
+    atomic(a.output/'toolchain.json',rawjson(dict(builderSHA256=sha(Path(__file__).read_bytes()),codecWrapperSHA256=sha((root/'compact_codec.py').read_bytes()),compilerSources={name:sha((root/(name+'.cpp')).read_bytes()) for name in ('park_mesh','compact_mesh')})))
     catalog_path=a.output/'catalog.json'
     catalog=json.loads(catalog_path.read_bytes()) if catalog_path.exists() else dict(schemaVersion=1,revision=VERSION,sources=[])
     entries={s['id']:s for s in catalog['sources']};deferred={};failures={};completed=0;started=time.time()
+    active=[]; scheduling=dict(requestedRegions=a.region_workers,tileWorkers=a.workers)
     def status(state,current=None):
-        atomic(a.output/'status.json',rawjson(dict(state=state,pid=os.getpid(),updatedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),elapsedSeconds=round(time.time()-started),current=current,completedSources=len(entries),completedTiles=sum(s['tileCount'] for s in entries.values()),downloadBytes=sum(s['downloadBytes'] for s in entries.values()),deferred=deferred,failures=failures)))
+        atomic(a.output/'status.json',rawjson(dict(state=state,pid=os.getpid(),updatedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),elapsedSeconds=round(time.time()-started),current=current,activeSources=active,scheduling=scheduling,completedSources=len(entries),completedTiles=sum(s['tileCount'] for s in entries.values()),downloadBytes=sum(s['downloadBytes'] for s in entries.values()),deferred=deferred,failures=failures)))
+    physical = int(subprocess.check_output(['sysctl','-n','hw.memsize'])) if sys.platform=='darwin' else os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')
+    coordinator = os.getpid()
+    def stop(signum, frame):
+        if os.getpid() != coordinator:os._exit(128+signum)
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM,stop)
     selections=sorted(a.selection.glob('*.json'),key=lambda f:(f.stem!='z10-x500-y333',f.name))
-    for selection_path in selections:
-        if a.deadline_unix and time.time()>=a.deadline_unix:status('paused-time-limit');return
-        if a.section and selection_path.stem!=a.section:continue
-        s=json.loads(selection_path.read_bytes());section=a.fine/(s['id']+'-adaptive-0p5')
-        if not s['chunks'] or not (section/'adaptive.json').exists():continue
-        try:
-            map_root=a.public
-            if a.staged_public and resident(a.staged_public/'tiles'/'10'/str(s['x'])/str(s['y'])/'descriptor.json'):map_root=a.staged_public
-            semantic,graph,credits,archive_sha=load_map(map_root,s)
-        except FileNotFoundError as e:deferred[s['id']]=str(e);status('running');continue
-        except Exception as e:failures[s['id']]=str(e);status('running');continue
-        fine={c['id']:c for c in json.loads((section/'adaptive.json').read_bytes())['chunks']}
-        groups={}
-        for c in s['chunks']:
-            if c['id'] not in fine:raise ValueError('Frozen selection has no corrected fine mesh')
-            x,y=cell(c);groups.setdefault((x//a.source_cells*a.source_cells,y//a.source_cells*a.source_cells),[]).append(c)
-        for (x,y),chunks in sorted(groups.items()):
+    global REGION_CONTEXT
+    try:
+        for selection_path in selections:
             if a.deadline_unix and time.time()>=a.deadline_unix:status('paused-time-limit');return
-            key=f"world-{s['id']}-c{x:02d}-r{y:02d}"
-            if key in entries:continue
-            if shutil.disk_usage(a.output).free<a.reserve_gib*1024**3:status('paused-low-disk',key);return
-            status('running',key);print('BUILD',key,len(chunks),flush=True)
+            if a.section and selection_path.stem!=a.section:continue
+            s=json.loads(selection_path.read_bytes());section=a.fine/(s['id']+'-adaptive-0p5')
+            if not s['chunks'] or not (section/'adaptive.json').exists():continue
+            groups={}
+            for c in s['chunks']:
+                x,y=cell(c);groups.setdefault((x//a.source_cells*a.source_cells,y//a.source_cells*a.source_cells),[]).append(c)
+            jobs=[(x,y,chunks) for (x,y),chunks in sorted(groups.items()) if f"world-{s['id']}-c{x:02d}-r{y:02d}" not in entries]
+            if a.limit_sources:jobs=jobs[:a.limit_sources-completed]
+            # Completed sections never reopen large semantic/routing archives.
+            if not jobs:continue
+            if shutil.disk_usage(a.output).free<a.reserve_gib*1024**3:status('paused-low-disk');return
+            status('preparing-section',s['id'])
             try:
-                final=source(a,section,s,fine,semantic,graph,credits,archive_sha,x,y,chunks,binaries)
-                entries[key]=validate(final,binaries);catalog['sources']=list(entries.values());atomic(catalog_path,rawjson(catalog));completed+=1
-                print('READY',key,entries[key]['downloadBytes'],flush=True)
-            except Exception as e:
-                failures[key]=str(e);print('FAILED',key,repr(e),flush=True)
-            status('running',key)
+                map_root=a.public
+                if a.staged_public and resident(a.staged_public/'tiles'/'10'/str(s['x'])/str(s['y'])/'descriptor.json'):map_root=a.staged_public
+                semantic,graph,credits,archive_sha=load_map(map_root,s)
+            except FileNotFoundError as e:deferred[s['id']]=str(e);status('running');continue
+            except Exception as e:failures[s['id']]=str(e);status('running');continue
+            fine={c['id']:c for c in json.loads((section/'adaptive.json').read_bytes())['chunks']}
+            for _,_,chunks in jobs:
+                if any(c['id'] not in fine for c in chunks):raise ValueError('Frozen selection has no corrected fine mesh')
+            # Release the previous section context before measuring the next one.
+            REGION_CONTEXT=None
+            parent_bytes=int(subprocess.check_output(['ps','-o','rss=','-p',str(os.getpid())]))*1024
+            slots=min(len(jobs),region_slots(a.region_workers,a.workers,os.cpu_count() or 1,physical,parent_bytes))
+            scheduling.update(regions=slots,parentResidentBytes=parent_bytes,memoryReservationFraction=.65)
+            REGION_CONTEXT=(a,section,s,fine,semantic,graph,credits,archive_sha,binaries)
+            active=[f"world-{s['id']}-c{x:02d}-r{y:02d}" for x,y,_ in jobs]
+            status('running',s['id']);print('SECTION',s['id'],'regions',slots,'pending',len(jobs),flush=True)
+            results=region_results(jobs,slots)
+            try:
+                for key,entry,error in results:
+                    if key in active:active.remove(key)
+                    if error and error.startswith('paused-'):status(error,key);return
+                    if error:
+                        failures[key]=error;print('FAILED',key,error,flush=True)
+                    else:
+                        entries[key]=entry;catalog['sources']=list(entries.values());atomic(catalog_path,rawjson(catalog));completed+=1
+                        print('READY',key,entry['downloadBytes'],flush=True)
+                    status('running',key)
+            finally:results.close()
+            REGION_CONTEXT=None
             if a.limit_sources and completed>=a.limit_sources:status('sample-complete');return
-    status('complete-with-gaps' if deferred or failures else 'complete')
+        status('complete-with-gaps' if deferred or failures else 'complete')
+    except KeyboardInterrupt:
+        status('paused-interrupted')
+    except Exception as error:
+        failures['coordinator']=repr(error);status('failed');raise
 
 if __name__=='__main__':main()

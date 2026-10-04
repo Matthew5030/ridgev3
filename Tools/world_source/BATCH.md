@@ -24,7 +24,7 @@ Dependencies: Python 3, NumPy, Shapely 2, contourpy, clang++. The prepared envir
   --public '/Users/matthewbilella/Desktop/ProjectFatRidge/mapping/build/public' \
   --staged-public '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1' \
   --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' \
-  --workers 2 --reserve-gib 35
+  --region-workers 4 --workers 2 --reserve-gib 35
 ```
 
 Use `--section z10-x500-y333 --limit-sources 1` for a pilot. The output must stay on the external drive. A single-process file lock prevents overlapping jobs. Tiles have resumable validated checkpoints under `.work`; final source directories are renamed atomically and never overwritten. `catalog.json` lists only completely validated sources. `status.json` records current progress, deferred iCloud/missing input and failures. `toolchain.json` records current builder/compiler hashes. Same-output resume requires the same frozen inputs and source partition size.
@@ -39,10 +39,16 @@ Use `--section z10-x500-y333 --limit-sources 1` for a pilot. The output must sta
   --fine '/Volumes/MLB_EXT_4TB/Ridge Sources/uk-adaptive-0p5-v3' \
   --public '/Users/matthewbilella/Desktop/ProjectFatRidge/mapping/build/public' \
   --staged-public '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1' \
-  --workers 2 --reserve-gib 35
+  --region-workers 4 --workers 2 --reserve-gib 35
 ```
 
 Progress files are on the output drive, so unplugging it interrupts the job. Reconnect and repeat the command to resume. A Mac restart likewise requires rerunning the command. To stop, terminate the supervisor **and the builder PID in `.batch.lock`**; completed sources remain usable. The supervisor does not automatically restart after a crash.
+
+## Parallel preparation
+
+`--region-workers` controls independent regions; `--workers` controls tile threads inside each region. Defaults remain one region and two tile threads. On the 12-core, 24 GiB Mac, use four regions with two tile workers each. The coordinator reduces region concurrency when its estimated memory reservation would exceed 65% of physical RAM. This is a conservative estimate, not an OS-enforced memory limit. Pools are recreated for each source section; only the coordinator writes the catalog. Completed sections skip archive loading, and concurrency settings can change on resume without changing source identity.
+
+The lossless native codec runs inside each worker rather than launching encode/decode subprocesses for every tile. All existing checksum and surface-tolerance validation remains. The 2026-10-04 benchmark converted the same six Snowdon regions (1,520 tiles): original serial preparation took 129.22 seconds; the new four-region run took 46.49 seconds. Six regions were slower (86.83 seconds). Every one of the 4,578 published files matched the original serial output byte for byte, and native app validation passed. See `parallel-benchmark.json` for measurements and caveats: sequential runs can benefit from filesystem caches, and this sample does not guarantee a national throughput increase of the same size.
 
 ## Verification
 
