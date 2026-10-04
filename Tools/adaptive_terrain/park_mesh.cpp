@@ -33,10 +33,14 @@ double check(Tri t,double stop){
 }
 template<class T> void write(ofstream& f,T v){f.write(reinterpret_cast<char*>(&v),sizeof(v));}
 int main(int argc,char**argv){try{
- if(argc!=3)throw runtime_error("usage: park_mesh source-int16 output.rmesh");
+ if(argc<3||argc>5)throw runtime_error("usage: park_mesh source-int16 output.rmesh [tolerance-metres] [adaptive-edges]");
+ const double metres=argc>=4?stod(argv[3]):.5;
+ const bool nativeEdges=argc<5;
+ if(!nativeEdges&&string(argv[4])!="adaptive-edges")throw runtime_error("unknown edge mode");
+ if(!isfinite(metres)||metres<.1||metres>16)throw runtime_error("tolerance must be between 0.1 and 16 metres");
  ifstream input(argv[1],ios::binary|ios::ate);if(!input||input.tellg()!=N*2)throw runtime_error("source byte count");input.seekg(0);input.read(reinterpret_cast<char*>(heights.data()),N*2);
  for(auto h:heights)if(h==-32768)throw runtime_error("NoData in source");
- constexpr double tolerance=4.999; // 0.4999 metres, leaving a rounding margin.
+ const double tolerance=metres*10-.001; // Leave a rounding margin in source decimetres.
  vector<Tri> coords;coords.reserve(NT);vector<uint8_t> split(N,0);
  for(int i=0;i<NT;i++){
   int id=i+2;Point a{0,0},b{0,0},c{0,0};if(id&1){b={M,M};c={M,0};}else{a={M,M};c={0,M};}
@@ -44,7 +48,7 @@ int main(int argc,char**argv){try{
   Tri t{a,b,c};coords.push_back(t);if(check(t,tolerance)>tolerance)split[idx(mid(a,b))]=1;
  }
  // Identical native perimeter vertices on every chunk: no T-junctions.
- for(int p=0;p<S;p++)for(int j:{p,M*S+p,p*S,p*S+M})split[j]=1;
+ if(nativeEdges)for(int p=0;p<S;p++)for(int j:{p,M*S+p,p*S,p*S+M})split[j]=1;
  for(int y=0;y<M;y++)for(int x=0;x<M;x++){
   int k=y*S+x;double e=abs(heights[k]+heights[k+S+1]-heights[k+1]-heights[k+S])*.5;
   if(e>tolerance)for(int j:{k,k+1,k+S,k+S+1})split[j]=1;
@@ -66,8 +70,8 @@ int main(int argc,char**argv){try{
   int signedArea=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);if(signedArea>=0)throw runtime_error("winding");area2-=signedArea;
   for(auto p:{a,b,c}){int& k=lookup[idx(p)];if(k<0){k=vertices.size();vertices.push_back(p);}indices.push_back(k);}
  }
- if(error>5.0000001||area2!=2*M*M)throw runtime_error("surface validation failed");
- for(int p=0;p<S;p++)for(int j:{p,M*S+p,p*S,p*S+M})if(lookup[j]<0)throw runtime_error("missing seam vertex");
+ if(error>metres*10+.0000001||area2!=2*M*M)throw runtime_error("surface validation failed");
+ if(nativeEdges)for(int p=0;p<S;p++)for(int j:{p,M*S+p,p*S,p*S+M})if(lookup[j]<0)throw runtime_error("missing seam vertex");
  uint32_t width=vertices.size()<=65536?2:4;
  ofstream out(argv[2],ios::binary);out.write("RME1",4);write(out,uint32_t(vertices.size()));write(out,uint32_t(triangles.size()));write(out,width);write(out,uint32_t(S));write(out,float(.1));write(out,float(0));
  for(auto p:vertices){write(out,uint16_t(p.x));write(out,uint16_t(p.y));write(out,heights[idx(p)]);}

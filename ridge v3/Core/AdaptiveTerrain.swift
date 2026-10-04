@@ -31,7 +31,7 @@ struct AdaptiveChunk: Codable, Hashable, Sendable, Identifiable {
         // CPU compact vertices/indices, triangle lookup, GPU vertices/UInt32 indices.
         Int64(vertices) * 54 + Int64(triangles) * Int64(3 * indexWidth + 12 + 20) + 65536
     }
-    func validate() throws {
+    func validate(maximumErrorMetres: Double = 0.5) throws {
         let safe: (String) -> Bool = { !$0.isEmpty && $0.count <= 160 && $0 != "." && $0 != ".." && $0.unicodeScalars.allSatisfy { CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.").contains($0) } }
         guard safe(id), safe(path), sourceID.map(safe) ?? true, bounds.isValid,
               (4...263169).contains(vertices), (2...524288).contains(triangles),
@@ -40,7 +40,8 @@ struct AdaptiveChunk: Codable, Hashable, Sendable, Identifiable {
               (32...600000).contains(topologyByteCount), (1...1000000).contains(byteCount),
               [sha256, decodedSHA256, topologySHA256].allSatisfy({ $0.count == 64 && $0.allSatisfy { $0.isHexDigit } }),
               byteOffset.map({ $0 >= 0 && $0 <= Int64.max - Int64(byteCount) }) ?? true,
-              maxErrorMetres.isFinite, (0...0.5).contains(maxErrorMetres) else {
+              maximumErrorMetres.isFinite, (0.5...8).contains(maximumErrorMetres),
+              maxErrorMetres.isFinite, (0...maximumErrorMetres).contains(maxErrorMetres) else {
             throw AdaptiveTerrainError(message: "Invalid adaptive terrain chunk.")
         }
     }
@@ -110,8 +111,8 @@ enum AdaptiveTerrainCodec {
         guard status == Z_OK, size == byteCount else { throw AdaptiveTerrainError(message: "The terrain download is incomplete or damaged.") }
         return data
     }
-    static func decode(_ compressed: Data, chunk: AdaptiveChunk) throws -> AdaptiveMesh {
-        try chunk.validate(); try Task.checkCancellation()
+    static func decode(_ compressed: Data, chunk: AdaptiveChunk, maximumErrorMetres: Double = 0.5) throws -> AdaptiveMesh {
+        try chunk.validate(maximumErrorMetres: maximumErrorMetres); try Task.checkCancellation()
         guard compressed.count == chunk.byteCount, hash(compressed) == chunk.sha256 else { throw AdaptiveTerrainError(message: "Adaptive download checksum mismatch.") }
         let topology = try inflate(compressed, byteCount: chunk.topologyByteCount)
         guard hash(topology) == chunk.topologySHA256 else { throw AdaptiveTerrainError(message: "Adaptive topology checksum mismatch.") }

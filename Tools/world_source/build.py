@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Prepare a small, immutable streaming source from retained original 1 m data."""
-import argparse,json,gzip,zlib,hashlib,subprocess,struct,tempfile,concurrent.futures,math
+import argparse,json,gzip,zlib,hashlib,subprocess,struct,tempfile,concurrent.futures,math,shutil,sys
 from pathlib import Path
 import numpy as np
 import contourpy
@@ -60,5 +60,12 @@ def tile(c,r):
  chunk=dict(id=ident,path=ident+'.rat.zlib',bounds=bounds,byteCount=len(compressed),sha256=sha(compressed),decodedByteCount=len(decoded),decodedSHA256=sha(decoded),vertices=facts['vertices'],triangles=facts['triangles'],indexWidth=facts['indexWidth'],topologyByteCount=len(top),topologySHA256=sha(top),maxErrorMetres=facts['maxErrorMetres'])
  print(ident,flush=True);return dict(id=ident,column=c,row=r,mesh=chunk,map=vasset)
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:tiles=list(pool.map(lambda cr:tile(*cr),[(c,r) for r in range(rows) for c in range(cols)]))
-manifest=dict(schemaVersion=1,id='world-snowdon',name='Snowdon & the Glyderau',revision='2026-10-04-v2',bounds=b,columns=cols,rows=rows,overview=coarseAsset,graph=graphAsset,tiles=[t for t in tiles if t],places=m['places'],sources=m['sources'],sourceTerrainSHA256=sha(raw))
-asset('world.json',rawjson(manifest));print(json.dumps(dict(tiles=len(manifest['tiles']),bytes=sum(p.stat().st_size for p in a.output.iterdir()))))
+manifest=dict(schemaVersion=1,id='world-snowdon',name='Snowdon & the Glyderau',revision='2026-10-04-v3',bounds=b,columns=cols,rows=rows,overview=coarseAsset,graph=graphAsset,tiles=[t for t in tiles if t],places=m['places'],sources=m['sources'],sourceTerrainSHA256=sha(raw))
+asset('world.json',rawjson(manifest))
+with tempfile.TemporaryDirectory(prefix='ridge-background-publish-') as background:
+ subprocess.run([sys.executable,str(Path(__file__).with_name('build_background.py')),'--pack',str(a.pack),'--world',str(a.output),'--output',background,'--tolerance','2'],check=True)
+ background=Path(background);report=json.loads((background/'background-index.json').read_bytes());chunks={x['chunk']['id']:x['chunk'] for x in report['tiles']}
+ for tile in manifest['tiles']:
+  tile['background']=chunks[tile['id']];shutil.copy2(background/tile['background']['path'],a.output/tile['background']['path'])
+ manifest['backgroundToleranceMetres']=2;asset('world.json',rawjson(manifest))
+print(json.dumps(dict(tiles=len(manifest['tiles']),bytes=sum(p.stat().st_size for p in a.output.iterdir()))))

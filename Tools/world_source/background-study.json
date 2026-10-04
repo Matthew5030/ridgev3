@@ -1,0 +1,36 @@
+{
+  "source": "Snowdon & the Glyderau, 256 cells",
+  "baseline": {
+    "kind": "8 m regular grid",
+    "geometryBytes": 59777024,
+    "triangles": 2097152
+  },
+  "adaptive": [
+    {
+      "toleranceMetres": 2.0,
+      "sourceTerrainSHA256": "88212cfcf9c20dcb84b79b74c3d94709b97b7ad3d9f51106ac218af8167f4735",
+      "downloadBytes": 1316138,
+      "geometryBytes": 39817892,
+      "triangles": 1249125,
+      "maxErrorMetres": 1.99687,
+      "measuredCPUMeshAndBucketPayloadBytes": 23105762,
+      "developmentMacPrepareSeconds": [
+        0.5614,
+        0.6224
+      ]
+    },
+    {
+      "toleranceMetres": 4.0,
+      "sourceTerrainSHA256": "88212cfcf9c20dcb84b79b74c3d94709b97b7ad3d9f51106ac218af8167f4735",
+      "downloadBytes": 403810,
+      "geometryBytes": 12262560,
+      "triangles": 348484,
+      "maxErrorMetres": 3.99844
+    }
+  ],
+  "notes": [
+    "Geometry includes seam skirts; excludes retained CPU picking data and driver copies.",
+    "Maximum adaptive error checked across original native vertices and diagonal intersections.",
+    "Fine 0.5 m assets unchanged."
+  ]
+}

@@ -71,9 +71,22 @@ import CoreGraphics
         let start=Date()
         let backdrop=try await store.backdrop(source:opened,overview:overview)
         let backdropBytes=backdrop.geometries.values.reduce(0) { sum, geometry in sum+geometry.sources.reduce(0) { $0+$1.data.count }+geometry.elements.reduce(0) { $0+$1.data.count } }
-        try check(overview.width==1025 && backdrop.geometries.count==source.tiles.count,"8 m world backdrop is complete")
-        try check(backdropBytes<80*1024*1024,"Background geometry allocation")
-        print("8 m backdrop: \(backdropBytes) geometry bytes, \(Date().timeIntervalSince(start)) seconds off main thread")
+        try check(backdrop.meshes.count==source.tiles.count && backdrop.geometries.count==source.tiles.count,"Entire background is adaptive")
+        try check(backdropBytes<59_777_024,"Adaptive geometry is smaller than the 8 m grid")
+        let backgroundCPUBytes=backdrop.meshes.values.reduce(0) { $0+$1.data.count+$1.buckets.reduce(0) { $0+$1.count*4 } }
+        print("Adaptive backdrop: \(backdropBytes) geometry bytes, \(backgroundCPUBytes) CPU mesh/bucket payload bytes, \(Date().timeIntervalSince(start)) seconds off main thread")
+        for tile in source.tiles {
+            let background=backdrop.meshes[tile.id]!
+            try check(background.chunk.maxErrorMetres<=2,"Background meets its error contract")
+            try check(background.elevation(at:tile.mesh.bounds.center) != nil,"Background supports terrain picking")
+        }
+        var relaxed=selected.mesh;relaxed.maxErrorMetres=2
+        do { try relaxed.validate();throw RidgeError.message("Legacy fine validation accepted background error") }
+        catch is AdaptiveTerrainError { checks+=1 }
+        var incomplete=source;incomplete.tiles[0].background=nil
+        var rejectedIncomplete=false
+        do { try incomplete.validate() } catch { rejectedIncomplete=true }
+        try check(rejectedIncomplete,"Incomplete adaptive source is rejected")
         let ready = try await store.prepare(selected, request:WorldTileRequest(id:selected.id,pixels:256,fine:true),sourceBounds:source.bounds)
         try check(ready.mesh != nil && ready.geometry != nil && ready.image.width == 264,"Native streamed tile")
         let resized=try await store.prepare(selected,request:WorldTileRequest(id:selected.id,pixels:512,fine:true),sourceBounds:source.bounds,previous:ready)

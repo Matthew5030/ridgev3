@@ -9,12 +9,17 @@ Saved routes, path following, GPX, and the previous saved-area renderer remain.
 ## Included source
 
 `ridge v3/Resources/WorldData.bundle` contains a roughly 8 × 8 km Snowdon/Glyderau
-test region: 256 adaptive terrain chunks, 256 compressed semantic vector files,
-an 8 m overview, places, and the existing walking graph. Total: 33,803,148 bytes.
+test region: 256 fine adaptive terrain chunks, 256 adaptive background chunks,
+256 compressed semantic vector files, an 8 m height-query overview, places,
+and the existing walking graph. Total: 35,268,614 bytes.
 It works without the external drive or a server. This is not all of Eryri or the UK.
 
 Terrain is recomputed from the retained original 1 m height field using the
 existing 0.5 m maximum-error adaptive compiler, then losslessly encoded as RAT.
+The background uses the same compiler at 2 m maximum surface error, verified
+against the original 1 m surface. These are error tolerances, not sample spacing.
+Both visible terrain levels are adaptive. The 8 m height field remains for shared
+route statistics and compatibility; it does not render this source's background.
 Contours are generated from a 4 m sampling of that field at 10 m intervals,
 with 50 m index contours. Roads, paths, water and land features come from the
 retained OSM source. No synthetic geographic features are added.
@@ -29,9 +34,15 @@ multiple published image levels. Style changes live in `WorldCartography.swift`.
 - Fine meshes use up to 192 MiB estimated residency on devices with at least
   6 GiB physical RAM; other devices retain the 96 MiB limit. Distance and budget
   determine admission, with a retention margin to avoid boundary churn.
-- The entire region has an 8 m background mesh (16 m on smaller-memory devices),
-  built off the main thread. On the development Mac, its geometry source/index
-  buffers total 59,777,024 bytes and construction took 0.067 seconds.
+- The entire region has a 2 m-error adaptive background, built off the main thread.
+  Its geometry buffers including seam skirts total 39,817,892 bytes. Retained
+  compact mesh and height-query bucket payloads add 23,105,762 bytes, excluding
+  collection/framework overhead and driver copies. Decode/build took 0.56–0.62 s
+  on the development Mac; this is not an iPad timing measurement.
+- Background edges may simplify independently. Twenty-metre skirts cover joins
+  between background neighbours (at most 4 m surface difference) and fine tiles
+  (at most 2.5 m). The original fine compiler still retains native seam vertices.
+- Older remote sources without background chunks retain the grid fallback.
 - At most eight 1024 px pages and 24 additional 512 px pages; all other cells
   retain a 256 px page, plus gutters. Memory pressure can reduce these further.
 - The 256-tile fixture's tested worst-case texture allocation with mipmaps is
@@ -127,11 +138,48 @@ pass: screen-right remains horizontal and the camera faces its orbit target.
 The world renderer constructs that basis explicitly, rather than allowing roll
 to be inferred by SceneKit look-at orientation.
 
-Residency follow-up: 7,974 world assertions pass, including 90 camera positions
+Residency follow-up: 8,488 world assertions pass, including 90 camera positions
 through a forward/backward journey with 736 completed tile replacements, no
 missing texture pages after initial fill, and bounded estimated allocations.
 Resource-identity checks confirm texture/geometry reuse. This verifies policy and
 resource handling, not sustained iPad frame time or total CPU/GPU memory.
+
+## Adaptive background experiment
+
+Full-region comparison from the retained native source:
+
+| Background | Surface triangles | Geometry buffers, including skirts | Compressed terrain |
+| --- | ---: | ---: | ---: |
+| Previous 8 m grid | 2,097,152 | 59,777,024 B | 6,288,295 B height JSON, uncompressed |
+| Adaptive, 2 m maximum error | 1,249,125 | 39,817,892 B | 1,316,138 B |
+| Adaptive, 4 m maximum error | 348,484 | 12,262,560 B | 403,810 B |
+
+The app uses the 2 m option, plus the unchanged fine 0.5 m meshes. Only those two
+adaptive versions ship. The 4 m result stays in the local study. Geometry savings
+are not total app memory savings: the adaptive background also retains exact mesh
+data for displayed-route draping and label/camera heights. Shared route statistics
+still use the retained overview. `background-study.json` records the source hash
+and results; the original fine compiler's output hash is unchanged in regression.
+
+The compiler validates the complete adaptive surface before compression, including
+native vertices and diagonal intersections, and the RAT codec verifies exact
+reconstruction. Legacy fine descriptors still reject errors above 0.5 m. Background
+descriptors explicitly allow the declared tolerance and require complete coverage.
+
+To reproduce a background without rebuilding fine terrain or map vectors:
+
+```sh
+python3 Tools/world_source/build_background.py --pack /path/to/original/eryri-grid \
+  --world /path/to/WorldData.bundle --output /path/to/new-background --tolerance 2
+sh Tools/render_world_background_study.sh /path/to/screenshots
+```
+
+The full `build.py` also generates and includes the adaptive background. The still
+comparison uses the app's SceneKit geometry and vector drawing at fixed cameras,
+with identical textures/lighting; it isolates background geometry without nearby
+fine overlays. Review both wide and ridge views. Signed Release builds and installs
+successfully; physical-device panning/thermal checks remain outstanding while the
+iPad is locked. All 349 legacy adaptive codec checks pass.
 
 `upgrade_overview.py --pack /path/to/original/eryri-grid --world /path/to/local/WorldData.bundle`
 refreshes only a local fixture's overview without rebuilding adaptive chunks.

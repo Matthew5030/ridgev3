@@ -14,6 +14,7 @@ struct WorldTile: Codable, Sendable, Identifiable {
     var row: Int
     var mesh: AdaptiveChunk
     var map: WorldMapAsset
+    var background: AdaptiveChunk?
 }
 struct WorldSource: Codable, Sendable {
     var schemaVersion: Int
@@ -28,12 +29,18 @@ struct WorldSource: Codable, Sendable {
     var tiles: [WorldTile]
     var places: [MapPlace]
     var sources: [SourceCredit]
+    var backgroundToleranceMetres: Double?
     func validate() throws {
         guard schemaVersion == 1, id.hasPrefix("world-"), bounds.isValid,
               (1...64).contains(columns), (1...64).contains(rows), tiles.count <= min(256, columns * rows),
               Set(tiles.map(\.id)).count == tiles.count, Set(tiles.map { $0.row * columns + $0.column }).count == tiles.count else { throw RidgeError.message("Unsupported world source.") }
         for tile in tiles {
             try tile.mesh.validate()
+            if let tolerance = backgroundToleranceMetres {
+                guard let background = tile.background, background.id == tile.id,
+                      background.bounds == tile.mesh.bounds else { throw RidgeError.message("Incomplete adaptive background.") }
+                try background.validate(maximumErrorMetres:tolerance)
+            } else if tile.background != nil { throw RidgeError.message("Missing background tolerance.") }
             let nw = bounds.point(u: Double(tile.column)/Double(columns), v: Double(tile.row)/Double(rows))
             let se = bounds.point(u: Double(tile.column+1)/Double(columns), v: Double(tile.row+1)/Double(rows))
             guard abs(tile.mesh.bounds.minLongitude-nw.longitude)<1e-8, abs(tile.mesh.bounds.maxLongitude-se.longitude)<1e-8,
@@ -41,6 +48,9 @@ struct WorldSource: Codable, Sendable {
                   bounds.contains(tile.mesh.bounds.center), (1...8_000_000).contains(tile.map.decodedByteCount ?? 0) else {
                 throw RidgeError.message("Invalid world tile.")
             }
+        }
+        guard tiles.compactMap(\.background).reduce(Int64(0), { $0+$1.residentBytes }) <= 256*1024*1024 else {
+            throw RidgeError.message("Adaptive background exceeds this source's memory allowance.")
         }
     }
 }
@@ -78,6 +88,7 @@ struct WorldPreparedTile: @unchecked Sendable {
 
 struct WorldBackdrop: @unchecked Sendable {
     var geometries: [String: SCNGeometry]
+    var meshes: [String: AdaptiveMesh]
 }
 
 /// Bounded residency with a retention margin, independent of download size.
@@ -161,14 +172,22 @@ actor WorldSourceStore {
         let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph))
         return (source, overview, graph)
     }
-    func backdrop(source: WorldSource, overview: WorldOverview) throws -> WorldBackdrop {
+    func backdrop(source: WorldSource, overview: WorldOverview) async throws -> WorldBackdrop {
         var geometries:[String:SCNGeometry]=[:]
+        var meshes:[String:AdaptiveMesh]=[:]
         let maximumDivisions = ProcessInfo.processInfo.physicalMemory >= 6 * 1024 * 1024 * 1024 ? 64 : 32
         for tile in source.tiles {
             try Task.checkCancellation()
-            geometries[tile.id]=WorldGeometry.coarse(tile:tile,source:source,overview:overview,maximumDivisions:maximumDivisions)
+            if let chunk=tile.background, let tolerance=source.backgroundToleranceMetres {
+                let compressed=try await read(WorldMapAsset(file:chunk.path,byteCount:chunk.byteCount,sha256:chunk.sha256))
+                let mesh=try AdaptiveTerrainCodec.decode(compressed,chunk:chunk,maximumErrorMetres:tolerance)
+                meshes[tile.id]=mesh
+                geometries[tile.id]=WorldGeometry.fine(mesh,sourceBounds:source.bounds,pixels:256)
+            } else {
+                geometries[tile.id]=WorldGeometry.coarse(tile:tile,source:source,overview:overview,maximumDivisions:maximumDivisions)
+            }
         }
-        return WorldBackdrop(geometries:geometries)
+        return WorldBackdrop(geometries:geometries,meshes:meshes)
     }
     func prepare(_ tile: WorldTile, request: WorldTileRequest, sourceBounds: GeoBounds, previous: WorldPreparedTile? = nil) async throws -> WorldPreparedTile {
         let image:CGImage
@@ -197,6 +216,7 @@ actor WorldSourceStore {
     }
     func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = []) async throws {
         var keep = [source.overview, source.graph] + surroundings
+        keep += source.tiles.compactMap(\.background).map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) }
         for tile in tiles { keep += [tile.map, WorldMapAsset(file: tile.mesh.path, byteCount: tile.mesh.byteCount, sha256: tile.mesh.sha256)] }
         // Reserve completed files as they arrive; eviction must not remove the
         // beginning of a large offline operation before the final asset arrives.
