@@ -296,7 +296,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
     private func restoreExtensionState(_ session: ExtensionSession, terrain: LoadedTerrain, route: RidgeRoute?, completed: Bool) {
         activeRoute = route
         editing = session.editing
-        planningMode = session.mode
+        planningMode = .paths
         movingWaypoint = session.movingWaypoint
         func reassociate(_ value: RidgeRoute) -> RidgeRoute {
             var value = value; value.regionID = terrain.manifest.id; return value
@@ -627,7 +627,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
         isWorldBrowsing = false
         activeRoute = route; editing = false; selectedPoint = nil; movingWaypoint = nil; insertingWaypoint = nil
         undoStack = []; redoStack = []
-        // Direct lines are always an explicit choice, including empty networks.
+        // New planning always follows mapped paths; legacy segments remain readable.
         planningMode = .paths
         camera = TerrainCameraCommand()
         pendingExtension = nil; extensionError = nil
@@ -648,11 +648,12 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
 
     func startRoute() {
         guard !isRouting, let terrain = activeTerrain else { return }
+        planningMode = .paths
         routeSaved = false
         activeRoute = RidgeRoute(name: "\(terrain.manifest.name) route", regionID: terrain.manifest.id)
         undoStack = []; redoStack = []; editing = true; movingWaypoint = nil; insertingWaypoint = nil
         if planningMode == .paths {
-            toast(viewingSurroundings ? "Expand this area to follow mapped paths here." : (terrain.graph?.edges.isEmpty == false ? "Tap a mapped path to place your start." : "This selection has no walking paths. Expand the area or choose Direct line."))
+            toast(viewingSurroundings ? "Expand this area to follow mapped paths here." : (terrain.graph?.edges.isEmpty == false ? "Tap a mapped path to place your start." : "This selection has no walking paths. Expand the area to find walking paths."))
         } else { toast(viewingSurroundings ? "Tap the terrain to start a route sketch." : "Tap the terrain to place your start.") }
     }
 

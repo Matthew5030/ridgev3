@@ -138,7 +138,8 @@ struct WorldExploreView: View {
             }
             HStack(spacing:14) {
                 if store.editing {
-                    Picker("Route mode",selection:$store.planningMode) { Text("Follow paths").tag(RoutePlanningMode.paths);Text("Direct line").tag(RoutePlanningMode.direct) }.pickerStyle(.segmented)
+                    Text("Tap a path to add a waypoint").font(.subheadline).foregroundStyle(RidgeTheme.muted)
+                    Spacer()
                     Button {store.undo()} label:{Image(systemName:"arrow.uturn.backward")}.disabled(store.undoStack.isEmpty)
                     Button {store.redo()} label:{Image(systemName:"arrow.uturn.forward")}.disabled(store.redoStack.isEmpty)
                     Button("Done") {store.finishRoute()}.fontWeight(.semibold)

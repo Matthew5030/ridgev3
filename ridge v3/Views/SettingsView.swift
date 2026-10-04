@@ -136,7 +136,7 @@ struct SettingsView: View {
             Text("Map legend").font(RidgeTheme.sectionTitle)
             MapLegendView()
                 .padding(20).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
-            Text("Follow paths uses mapped paths. Direct line joins waypoints without following paths. Planned routes are shown in orange.")
+            Text("Routes follow mapped walking paths and are shown in orange.")
                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
         }
     }
