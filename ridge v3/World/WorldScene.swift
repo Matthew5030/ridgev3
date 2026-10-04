@@ -1,6 +1,7 @@
 import SwiftUI
 import SceneKit
 import simd
+import Metal
 
 struct WorldScene: UIViewRepresentable {
     var model: WorldModel
@@ -41,8 +42,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     private var pitch: Float = 0.85
     private var moveGesture: UIPanGestureRecognizer!
     private var transformGesture: WorldTwoFingerGesture!
-    private var routeUpdate: DispatchWorkItem?
-    private var routeNode = SCNNode()
+    private var routeOverlays: [String: WorldRouteOverlay.Binding] = [:]
     private var routePoints: [RoutePoint] = []
     private var routeSegments: [[RoutePoint]] = []
     private var routeWaypoints: [RouteWaypoint] = []
@@ -87,7 +87,8 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     func refresh(route: [RoutePoint], segments: [[RoutePoint]], waypoints: [RouteWaypoint], command: TerrainCameraCommand) {
         guard let model, let next = model.source, let overview = model.overview else { return }
-        if source?.revision != next.revision || source?.id != next.id {
+        let sourceChanged = source?.revision != next.revision || source?.id != next.id
+        if sourceChanged {
             source = next; self.overview = overview; buildScene(next, overview: overview)
         }
         if revision != model.revision {
@@ -97,24 +98,24 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
                 if let prepared = model.tiles[tile.id] {
                     guard applied[tile.id] != prepared.request else { continue }
                     let geometry = prepared.geometry ?? coarse[tile.id]!
-                    geometry.materials = [material(prepared.image)]
+                    geometry.materials = [material(prepared.image, tileID:tile.id)]
                     nodes[tile.id]?.geometry = geometry; applied[tile.id] = prepared.request
                     // Hidden fallback geometry must not retain an obsolete texture.
                     if prepared.geometry != nil { coarse[tile.id]?.materials = [] }
                 } else if applied.removeValue(forKey: tile.id) != nil {
-                    coarse[tile.id]?.materials = [material(nil)]; nodes[tile.id]?.geometry = coarse[tile.id]
+                    coarse[tile.id]?.materials = [material(nil, tileID:tile.id)]; nodes[tile.id]?.geometry = coarse[tile.id]
                 }
             }
-            SCNTransaction.commit(); scheduleRoute(); scheduleLabels()
+            SCNTransaction.commit(); scheduleLabels()
         }
-        if route != routePoints || segments != routeSegments || waypoints != routeWaypoints { routeSegments = segments; routePoints = route; routeWaypoints = waypoints; drawRoute() }
+        if sourceChanged || route != routePoints || segments != routeSegments || waypoints != routeWaypoints { routeSegments = segments; routePoints = route; routeWaypoints = waypoints; updateRouteOverlay() }
         if lastCommand != command {
             let initial = lastCommand == nil
             lastCommand = command
             switch command.action {
             case .focus(let point): target = local(point); distance = min(distance, 2000); updateCamera()
-            case .zoomIn: distance /= 1.5; updateCamera(); scheduleRoute()
-            case .zoomOut: distance *= 1.5; updateCamera(); scheduleRoute()
+            case .zoomIn: distance /= 1.5; updateCamera()
+            case .zoomOut: distance *= 1.5; updateCamera()
             case .overhead: pitch = 1.49; yaw = 0; updateCamera()
             case .home where initial: break
             case .home: target = local(next.bounds.center); distance = 6000; pitch = 0.85; yaw = 0; updateCamera()
@@ -123,16 +124,18 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         }
         if let point = model.requestFocus { DispatchQueue.main.async { model.requestFocus = nil }; target = local(point); distance = 1500; updateCamera() }
     }
-    private func material(_ image: CGImage?) -> SCNMaterial {
+    private func material(_ image: CGImage?, tileID: String) -> SCNMaterial {
         let m = SCNMaterial(); m.diffuse.contents = image ?? UIColor(red: 0.87,green: 0.89,blue: 0.79,alpha: 1) as Any
         m.diffuse.minificationFilter = .linear; m.diffuse.magnificationFilter = .linear; m.diffuse.mipFilter = .linear; m.diffuse.maxAnisotropy = 16
         if let image { let size = Float(image.width); var t = SCNMatrix4Identity; t.m11=(size-8)/size;t.m22=(size-8)/size;t.m41=4/size;t.m42=4/size;m.diffuse.contentsTransform=t }
-        m.lightingModel = .lambert; m.isDoubleSided = true; return m
+        m.lightingModel = .lambert; m.isDoubleSided = true
+        routeOverlays[tileID]?.apply(to:m,pixelScale:Float(contentScaleFactor))
+        return m
     }
     private func buildScene(_ source: WorldSource, overview: WorldOverview) {
         let scene = SCNScene(); scene.background.contents = backgroundColor
         scene.fogColor = backgroundColor; scene.fogStartDistance = 9000; scene.fogEndDistance = 26000
-        self.scene = scene; nodes = [:]; coarse = [:]; applied = [:]; tileIDs = [:]
+        self.scene = scene; nodes = [:]; coarse = [:]; applied = [:]; tileIDs = [:]; routeOverlays = [:]
         cameraNode = SCNNode(); cameraNode.camera = SCNCamera(); cameraNode.camera?.fieldOfView = 43
         cameraNode.camera?.zNear = 2; cameraNode.camera?.zFar = 60000; cameraNode.camera?.wantsHDR = false
         scene.rootNode.addChildNode(cameraNode); pointOfView = cameraNode
@@ -142,11 +145,10 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         for tile in source.tiles {
             tileIDs[tile.row * source.columns + tile.column] = tile.id
             let g = model?.backdrop?.geometries[tile.id] ?? WorldGeometry.coarse(tile: tile, source: source, overview: overview)
-            g.materials = [material(nil)]; coarse[tile.id] = g
+            g.materials = [material(nil, tileID:tile.id)]; coarse[tile.id] = g
             let node = SCNNode(geometry: g); node.categoryBitMask = 1; node.name = tile.id
             nodes[tile.id] = node; scene.rootNode.addChildNode(node)
         }
-        routeNode = SCNNode(); routeNode.categoryBitMask = 2; scene.rootNode.addChildNode(routeNode)
         for (_, label) in labels { label.removeFromSuperview() }; labels = []
         for place in source.places.filter({ $0.kind == "peak" }).prefix(80) {
             let label = UILabel(); label.text = place.name; label.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -196,39 +198,22 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             label.isHidden = !visible; label.frame = frame; if visible { occupied.append(frame) }
         }
     }
-    private func drawRoute() {
-        guard let source, !routePoints.isEmpty else { routeNode.geometry = nil; routeNode.childNodes.forEach { $0.removeFromParentNode() }; return }
-        let halfWidth = max(1.2,distance*0.0012)
-        var vertices: [SCNVector3] = []; var indices: [Int32] = []
-        for path in (routeSegments.isEmpty ? [routePoints] : routeSegments) {
-        for (a,b) in zip(path,path.dropFirst()) {
-            let length = a.coordinate.distance(to:b.coordinate); let count = min(2000,max(1,Int(ceil(length/5))))
-            for i in 0..<count {
-                func point(_ t: Double) -> GeoPoint { GeoPoint(latitude:a.coordinate.latitude+(b.coordinate.latitude-a.coordinate.latitude)*t,longitude:a.coordinate.longitude+(b.coordinate.longitude-a.coordinate.longitude)*t) }
-                let p = local(point(Double(i)/Double(count))), q = local(point(Double(i+1)/Double(count)))
-                let d = SIMD2(q.x-p.x,q.z-p.z); if simd_length(d)<0.001 { continue }
-                let n = SIMD2(-d.y,d.x)/simd_length(d)*halfWidth
-                let start = Int32(vertices.count)
-                for v in [p+SIMD3(n.x,0,n.y),p-SIMD3(n.x,0,n.y),q+SIMD3(n.x,0,n.y),q-SIMD3(n.x,0,n.y)] {
-                    var v = v; v.y = height(coordinate(v))+2; vertices.append(SCNVector3(v))
-                }
-                indices += [start,start+1,start+2,start+1,start+3,start+2]
+    private func updateRouteOverlay() {
+        guard let source, let device = device ?? MTLCreateSystemDefaultDevice() else { return }
+        let paths = (routeSegments.isEmpty ? [routePoints] : routeSegments).map { $0.map(\.coordinate) }
+        let tiles = WorldRouteOverlay.build(source:source,paths:paths,waypoints:routeWaypoints.map { $0.point.coordinate })
+        routeOverlays = tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }
+        SCNTransaction.begin(); SCNTransaction.animationDuration = 0
+        for (id,node) in nodes {
+            guard let material=node.geometry?.firstMaterial else { continue }
+            if let overlay=routeOverlays[id] { overlay.apply(to:material,pixelScale:Float(contentScaleFactor)) }
+            else {
+                material.shaderModifiers=nil
+                material.setValue(nil,forKey:"ridgeRouteRecords")
             }
         }
-        }
-        let geometry = SCNGeometry(sources:[SCNGeometrySource(vertices:vertices)],elements:[SCNGeometryElement(indices:indices,primitiveType:.triangles)])
-        let ink = SCNMaterial(); ink.diffuse.contents = UIColor(red:0.85,green:0.23,blue:0.12,alpha:1); ink.lightingModel = .constant; ink.isDoubleSided = true; ink.writesToDepthBuffer = false
-        geometry.materials = [ink]; routeNode.geometry = geometry; routeNode.renderingOrder = 5
-        routeNode.childNodes.forEach { $0.removeFromParentNode() }
-        for waypoint in routeWaypoints {
-            let marker = SCNNode(geometry:SCNSphere(radius:CGFloat(halfWidth*2.5))); marker.geometry?.materials = [ink]
-            var p = local(waypoint.point.coordinate); p.y += halfWidth*3+2; marker.simdPosition = p; marker.categoryBitMask = 2; routeNode.addChildNode(marker)
-        }
-    }
-    private func scheduleRoute() {
-        routeUpdate?.cancel()
-        let task = DispatchWorkItem { [weak self] in self?.drawRoute() }
-        routeUpdate = task; DispatchQueue.main.asyncAfter(deadline: .now()+0.12, execute:task)
+        SCNTransaction.commit()
+        setNeedsDisplay()
     }
     /// Intersect the camera ray with the current drag plane. Using projection
     /// rather than a fixed metres-per-pixel multiplier keeps ground under a finger.
@@ -263,7 +248,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     @objc private func transformMap(_ gesture: WorldTwoFingerGesture) {
         guard gesture.state == .began || gesture.state == .changed else {
-            moveGesture.isEnabled = true; scheduleRoute(); return
+            moveGesture.isEnabled = true; return
         }
         if gesture.state == .began { moveGesture.isEnabled = false; rebaseDragPlane() }
         defer { gesture.consume() }

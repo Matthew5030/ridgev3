@@ -129,8 +129,8 @@ Settings. The world outside the UK retains coarse coastline context.
 
 `sh Tools/test_world_gestures.sh` checks gesture intent for jitter, intentional
 tilt, off-centre pinches, twists and different initial finger orientations.
-Route rebuilding is removed from the camera-movement loop; tile-driven route
-updates are coalesced. Label projection runs after the scene renders its camera.
+Route rendering uses the terrain-material overlay described below; there is no
+camera- or tile-driven ribbon rebuild. Label projection runs after the scene renders its camera.
 
 Camera regression: `test_world_gestures.sh` now also verifies the actual SceneKit
 camera basis through a full heading sweep at three pitch angles. All 321 checks
@@ -184,3 +184,36 @@ iPad is locked. All 349 legacy adaptive codec checks pass.
 `upgrade_overview.py --pack /path/to/original/eryri-grid --world /path/to/local/WorldData.bundle`
 refreshes only a local fixture's overview without rebuilding adaptive chunks.
 Publish remote updates in a new versioned directory; do not overwrite a live source.
+
+## Route surface overlay
+
+The continuous-world route is now vector ink inside the terrain material. A Metal
+fragment modifier evaluates distance to the route segments, with round ends/joins,
+a light outline and antialiasing. There is no separate ribbon, 5 m height sampling,
+2 m lift, or delayed redraw when terrain changes. Waypoint circles use the same
+surface overlay. Normal terrain depth testing hides routes behind other mountains.
+
+Each affected tile has a 16 × 16 spatial lookup table and a small Metal buffer of
+segment endpoints/waypoint coordinates. The lookup includes a 40 m neighbour
+margin; shader widths and antialiasing are capped inside that margin. This avoids
+scanning the full route for each fragment. Imported disconnected sections remain
+separate; duplicate vertices do not produce invalid segments. Tile buffer data is
+built on route edits and reused by replacement terrain materials. Zoom/tilt use
+screen derivatives for continuous line width, without rebuilding route geometry.
+The width has a world-space cap for extreme distant/grazing views.
+
+The Crib Goch → Yr Wyddfa walking route has 227 points, touches 10 overlay tiles,
+and needs 95,568 GPU buffer bytes; its busiest lookup cell contains 37 segments.
+This is route payload size, not a complete GPU performance measurement. The
+previous saved-area Metal renderer and map-file cartography are unchanged.
+
+```sh
+sh Tools/test_world_route_overlay.sh
+sh Tools/render_world_background_study.sh /path/to/route-screenshots --route
+```
+
+Tests compare spatial lookup results with the original segments across tile edges,
+check disconnected GPX sections and corner waypoints, and render the actual Metal
+modifier. Render checks cover pixel width through zoom, normal depth occlusion,
+clearing the overlay and reusing it after terrain replacement. Fixed-camera Crib
+Goch views cover background/fine terrain, wide, close, low-angle and overhead views.
