@@ -13,8 +13,9 @@ struct SettingsView: View {
     @State private var serverMessage: String?
     private var savedCount: Int { store.entries.filter(\.installed).count }
     private var sources: [SourceCredit] {
-        let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas land outlines from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
-        return Array(Set(store.entries.flatMap { $0.manifest.sources } + [naturalEarth])).sorted { $0.name < $1.name }
+        let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas coastlines, lakes, rivers and geographic regions from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
+        let overview = SourceCredit(name: "Overview elevation · Mapzen Terrain Tiles", attribution: "Overview elevation bands derived from Mapzen Terrain Tiles. Europe: produced using Copernicus data and information funded by the European Union — EU-DEM layers. United Kingdom: © Environment Agency copyright and/or database right 2015. All rights reserved. Global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey. Global ETOPO1 terrain data: DOC/NOAA/NESDIS/NCEI, U.S. Department of Commerce. Smoothed and converted to elevation bands for the overview; not used for route elevations.", license: "Open source data; source-specific terms", url: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
+        return Array(Set(store.entries.flatMap { $0.manifest.sources } + [naturalEarth, overview])).sorted { $0.name < $1.name }
     }
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0" }
 
@@ -29,7 +30,7 @@ struct SettingsView: View {
                     Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.055), in: Circle()) }
                         .accessibilityLabel("Close settings")
                 }
-                gestureSection
+                if store.isWorldBrowsing { worldGestureSection } else { gestureSection }
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map source").font(RidgeTheme.sectionTitle)
                     TextField("Hosted world.json URL (optional)", text: $worldAddressDraft).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
@@ -67,6 +68,15 @@ struct SettingsView: View {
             }
     }
 
+    private var worldGestureSection: some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text("Map controls").font(RidgeTheme.sectionTitle)
+            Text("Drag with one finger to move. Pinch to zoom. Twist two fingers to rotate. Slide two fingers up or down to tilt.")
+                .font(.subheadline).foregroundStyle(RidgeTheme.muted)
+            Text("The compass returns to a north-up overhead view. Zooming keeps the angle you chose.")
+                .font(.caption).foregroundStyle(RidgeTheme.muted)
+        }
+    }
     private var gestureSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Map controls").font(RidgeTheme.sectionTitle)

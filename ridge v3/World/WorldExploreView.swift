@@ -7,7 +7,7 @@ struct WorldExploreView: View {
     @AppStorage("ridge.worldSourceURL") private var sourceAddress = ""
     @Environment(\.scenePhase) private var phase
     @State private var query = ""
-    @State private var focus = AtlasFocus(point: GeoPoint(latitude: 54.2, longitude: -3.4), scale: 7400)
+    @State private var focus = AtlasFocus(point: GeoPoint(latitude: 54.2, longitude: -3.4), scale: 7400, bounds: GeoBounds(minLatitude:49.8,minLongitude:-8.3,maxLatitude:59.4,maxLongitude:2.0))
     @State private var selection: GeoBounds?
     @State private var dragging = false
     @State private var export: GPXDocument?
@@ -29,7 +29,7 @@ struct WorldExploreView: View {
             } else {
                 OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: false,
                     selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: false,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged)
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.source?.bounds, onWorldTap: visit)
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
@@ -59,7 +59,7 @@ struct WorldExploreView: View {
                         VStack(spacing:8) {
                             control("plus", "Zoom in") { store.camera = TerrainCameraCommand(action:.zoomIn) }
                             control("minus", "Zoom out") { store.camera = TerrainCameraCommand(action:.zoomOut) }
-                            control("view.3d", "Tilt map") { store.camera = TerrainCameraCommand(action:.overhead) }
+                            control("location.north", "North-up overview") { store.camera = TerrainCameraCommand(action:.overhead) }
                             Menu {
                                 Button("Keep this area offline",systemImage:"arrow.down.circle") { world.keepOffline() }
                                 Button("Import GPX",systemImage:"square.and.arrow.down") { store.showGPXImporter = true }
@@ -87,7 +87,7 @@ struct WorldExploreView: View {
                 }
                 if let notice = store.notice { Text(notice).font(.subheadline).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
                 if world.in3D { routeBar }
-                Text("© OpenStreetMap contributors · Welsh Government OGL v3 · Natural Earth")
+                Text("© OpenStreetMap contributors · Welsh Government OGL v3 · Natural Earth · Mapzen")
                     .font(.system(size:9)).foregroundStyle(RidgeTheme.muted).padding(3).background(.regularMaterial,in:Capsule())
             }.padding(16)
         }

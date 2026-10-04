@@ -10,13 +10,12 @@ struct WorldScene: UIViewRepresentable {
     var command: TerrainCameraCommand
     var onTap: (GeoPoint) -> Void
     var onAtlas: (GeoPoint) -> Void
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle = TerrainGestureStyle.moveWithOneFinger
     func makeUIView(context: Context) -> WorldSceneView {
         let view = WorldSceneView(); view.model = model; view.onTap = onTap; view.onAtlas = onAtlas
-        view.gestureStyle = gestureStyle; view.refresh(route: route, segments: segments, waypoints: waypoints, command: command); return view
+        view.refresh(route: route, segments: segments, waypoints: waypoints, command: command); return view
     }
     func updateUIView(_ view: WorldSceneView, context: Context) {
-        view.model = model; view.onTap = onTap; view.onAtlas = onAtlas; view.gestureStyle = gestureStyle
+        view.model = model; view.onTap = onTap; view.onAtlas = onAtlas
         view.refresh(route: route, segments: segments, waypoints: waypoints, command: command)
     }
     static func dismantleUIView(_ view: WorldSceneView, coordinator: ()) { view.scene = nil; view.model = nil }
@@ -24,11 +23,10 @@ struct WorldScene: UIViewRepresentable {
 
 /// The native renderer is deliberately independent of downloads. Nodes are
 /// replaced a tile at a time, and the camera survives every replacement.
-final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
+final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRendererDelegate {
     weak var model: WorldModel?
     var onTap: ((GeoPoint) -> Void)?
     var onAtlas: ((GeoPoint) -> Void)?
-    var gestureStyle = TerrainGestureStyle.moveWithOneFinger { didSet { configureTouches() } }
     private var source: WorldSource?
     private var overview: WorldOverview?
     private var nodes: [String: SCNNode] = [:]
@@ -40,36 +38,36 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     private var target = SIMD3<Float>(0,0,0)
     private var distance: Float = 6000
     private var yaw: Float = 0
-    private var pitch: Float = 1.3
-    private var manualTilt = false
+    private var pitch: Float = 0.85
     private var moveGesture: UIPanGestureRecognizer!
-    private var orbitGesture: UIPanGestureRecognizer!
+    private var transformGesture: WorldTwoFingerGesture!
+    private var routeUpdate: DispatchWorkItem?
     private var routeNode = SCNNode()
     private var routePoints: [RoutePoint] = []
     private var routeSegments: [[RoutePoint]] = []
     private var routeWaypoints: [RouteWaypoint] = []
     private var lastCommand: TerrainCameraCommand?
     private var labels: [(MapPlace, UILabel)] = []
-    private var labelUpdate: DispatchWorkItem?
 
     init() {
         super.init(frame: .zero, options: nil)
+        delegate = self
         antialiasingMode = .multisampling4X; preferredFramesPerSecond = 60
         rendersContinuously = false; autoenablesDefaultLighting = false; backgroundColor = UIColor(red: 0.76, green: 0.86, blue: 0.91, alpha: 1)
         moveGesture = UIPanGestureRecognizer(target: self, action: #selector(panWorld(_:)))
-        orbitGesture = UIPanGestureRecognizer(target: self, action: #selector(orbit(_:)))
-        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(zoom(_:)))
+        moveGesture.minimumNumberOfTouches = 1; moveGesture.maximumNumberOfTouches = 1
+        transformGesture = WorldTwoFingerGesture(target: self, action: #selector(transformMap(_:)))
         let tap = UITapGestureRecognizer(target: self, action: #selector(tap(_:)))
-        for g in [moveGesture!,orbitGesture!,pinch,tap] { g.delegate = self; addGestureRecognizer(g) }
-        configureTouches(); accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move, pinch to zoom. Two fingers rotate and tilt."
+        tap.require(toFail: moveGesture); tap.require(toFail: transformGesture)
+        for g in [moveGesture!,transformGesture!,tap] { g.delegate = self; addGestureRecognizer(g) }
+        isMultipleTouchEnabled = true
+        accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom, twist to rotate, or slide two fingers up and down to tilt."
     }
     required init?(coder: NSCoder) { nil }
-    private func configureTouches() {
-        moveGesture?.minimumNumberOfTouches = gestureStyle.moveTouches; moveGesture?.maximumNumberOfTouches = gestureStyle.moveTouches
-        orbitGesture?.minimumNumberOfTouches = gestureStyle.rotateTouches; orbitGesture?.maximumNumberOfTouches = gestureStyle.rotateTouches
-    }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        gestureRecognizer is UIPinchGestureRecognizer || other is UIPinchGestureRecognizer
+        // The one-finger pan cancels as the second finger arrives. The transform
+        // recognizer must be allowed to take over that same touch sequence.
+        (gestureRecognizer === moveGesture && other === transformGesture) || (gestureRecognizer === transformGesture && other === moveGesture)
     }
     private func local(_ point: GeoPoint) -> SIMD3<Float> {
         guard let source else { return .zero }
@@ -103,7 +101,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
                     coarse[tile.id]?.materials = [material(nil)]; nodes[tile.id]?.geometry = coarse[tile.id]
                 }
             }
-            SCNTransaction.commit(); drawRoute(); scheduleLabels()
+            SCNTransaction.commit(); scheduleRoute(); scheduleLabels()
         }
         if route != routePoints || segments != routeSegments || waypoints != routeWaypoints { routeSegments = segments; routePoints = route; routeWaypoints = waypoints; drawRoute() }
         if lastCommand != command {
@@ -111,15 +109,15 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             lastCommand = command
             switch command.action {
             case .focus(let point): target = local(point); distance = min(distance, 2000); updateCamera()
-            case .zoomIn: distance /= 1.5; updateCamera()
-            case .zoomOut: distance *= 1.5; updateCamera()
-            case .overhead: manualTilt = true; pitch = pitch > 1.2 ? 0.55 : 1.49; updateCamera()
+            case .zoomIn: distance /= 1.5; updateCamera(); scheduleRoute()
+            case .zoomOut: distance *= 1.5; updateCamera(); scheduleRoute()
+            case .overhead: pitch = 1.49; yaw = 0; updateCamera()
             case .home where initial: break
-            case .home: target = local(next.bounds.center); distance = 10500; manualTilt = false; updateCamera()
+            case .home: target = local(next.bounds.center); distance = 6000; pitch = 0.85; yaw = 0; updateCamera()
             default: break
             }
         }
-        if let point = model.requestFocus { DispatchQueue.main.async { model.requestFocus = nil }; target = local(point); distance = 1500; manualTilt = false; updateCamera() }
+        if let point = model.requestFocus { DispatchQueue.main.async { model.requestFocus = nil }; target = local(point); distance = 1500; updateCamera() }
     }
     private func material(_ image: CGImage?) -> SCNMaterial {
         let m = SCNMaterial(); m.diffuse.contents = image ?? UIColor(red: 0.87,green: 0.89,blue: 0.79,alpha: 1) as Any
@@ -152,21 +150,26 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             label.layer.cornerRadius = 4; label.clipsToBounds = true; label.isUserInteractionEnabled = false
             label.sizeToFit(); label.bounds.size.width += 12; label.bounds.size.height += 6; addSubview(label); labels.append((place,label))
         }
-        target = local(model?.center ?? source.bounds.center); distance = Float(model?.distance ?? 6000); updateCamera()
+        target = local(model?.center ?? source.bounds.center); distance = Float(model?.distance ?? 6000)
+        if let pose = model?.cameraPose, source.bounds.contains(pose.target) {
+            target = local(pose.target); target.y = Float(pose.targetElevationMeters)
+            distance = Float(pose.distanceMeters); yaw = pose.yaw; pitch = pose.pitch
+        }
+        updateCamera()
     }
     override func layoutSubviews() { super.layoutSubviews(); updateLabels() }
-    private func updateCamera() {
+    private func updateCamera(notify: Bool = true) {
         guard let source else { return }
         target.x = min(Float(source.bounds.widthMeters * 0.49), max(-Float(source.bounds.widthMeters * 0.49), target.x))
         target.z = min(Float(source.bounds.depthMeters * 0.49), max(-Float(source.bounds.depthMeters * 0.49), target.z))
-        target.y = height(coordinate(target)) + 12
         distance = min(26000,max(170,distance))
-        if !manualTilt { pitch = min(1.49,max(0.45,0.42 + (distance-500)/8500)) }
         var eye = target + distance * SIMD3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
         let point = coordinate(eye)
         if source.bounds.contains(point) { eye.y = max(eye.y,height(point)+25) }
         cameraNode.simdPosition = eye; cameraNode.look(at: SCNVector3(target))
-        scheduleLabels(); drawRoute()
+        scheduleLabels()
+        guard notify else { return }
+        model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
         let center = coordinate(target), range = Double(distance)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.scene != nil else { return }
@@ -174,10 +177,10 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             if range > 22000 { self.onAtlas?(center) }
         }
     }
-    private func scheduleLabels() {
-        labelUpdate?.cancel()
-        let task = DispatchWorkItem { [weak self] in self?.updateLabels() }
-        labelUpdate = task; DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: task)
+    private func scheduleLabels() { setNeedsDisplay() }
+    nonisolated func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+        // Project only after SceneKit has adopted the new camera transform.
+        DispatchQueue.main.async { [weak self] in self?.updateLabels() }
     }
     private func updateLabels() {
         guard scene != nil, let source else { return }
@@ -218,17 +221,59 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             var p = local(waypoint.point.coordinate); p.y += halfWidth*3+2; marker.simdPosition = p; marker.categoryBitMask = 2; routeNode.addChildNode(marker)
         }
     }
+    private func scheduleRoute() {
+        routeUpdate?.cancel()
+        let task = DispatchWorkItem { [weak self] in self?.drawRoute() }
+        routeUpdate = task; DispatchQueue.main.asyncAfter(deadline: .now()+0.12, execute:task)
+    }
+    /// Intersect the camera ray with the current drag plane. Using projection
+    /// rather than a fixed metres-per-pixel multiplier keeps ground under a finger.
+    private func groundPoint(_ screen: CGPoint) -> SIMD3<Float>? {
+        let a = unprojectPoint(SCNVector3(Float(screen.x),Float(screen.y),0))
+        let b = unprojectPoint(SCNVector3(Float(screen.x),Float(screen.y),1))
+        let origin=SIMD3<Float>(a.x,a.y,a.z), direction=SIMD3<Float>(b.x-a.x,b.y-a.y,b.z-a.z)
+        guard abs(direction.y)>0.0001 else { return nil }
+        let t=(target.y-origin.y)/direction.y
+        guard t>0 else { return nil }
+        let point=origin+direction*t
+        return simd_distance(point,target)<distance*5 ? point : nil
+    }
+    private func rebaseDragPlane() {
+        // Move the orbit centre onto the visible ground without moving the eye
+        // or changing its sight line. A valley can then be zoomed into even when
+        // the previous drag started on a much higher summit.
+        guard let hit=hitTest(CGPoint(x:bounds.midX,y:bounds.midY),options:[.categoryBitMask:1,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first else { return }
+        let p=hit.worldCoordinates, ground=SIMD3<Float>(p.x,p.y,p.z)
+        let offset=cameraNode.simdPosition-ground, length=simd_length(offset)
+        guard length>1 else { return }
+        target=ground; distance=length
+        pitch=asin(max(-1,min(1,offset.y/length))); yaw=atan2(offset.x,offset.z)
+    }
     @objc private func panWorld(_ gesture: UIPanGestureRecognizer) {
-        let d = gesture.translation(in:self); gesture.setTranslation(.zero,in:self)
-        let scale = distance * 0.0009
-        target += SIMD3(-Float(d.x)*cos(yaw)+Float(d.y)*sin(yaw),0,Float(d.x)*sin(yaw)+Float(d.y)*cos(yaw)) * scale
+        guard gesture.numberOfTouches == 1, gesture.state == .began || gesture.state == .changed else { return }
+        if gesture.state == .began { rebaseDragPlane() }
+        let d=gesture.translation(in:self), current=gesture.location(in:self)
+        gesture.setTranslation(.zero,in:self)
+        let previous=CGPoint(x:current.x-d.x,y:current.y-d.y)
+        if let a=groundPoint(previous),let b=groundPoint(current) { target += a-b; updateCamera() }
+    }
+    @objc private func transformMap(_ gesture: WorldTwoFingerGesture) {
+        guard gesture.state == .began || gesture.state == .changed else {
+            moveGesture.isEnabled = true; scheduleRoute(); return
+        }
+        if gesture.state == .began { moveGesture.isEnabled = false; rebaseDragPlane() }
+        defer { gesture.consume() }
+        if gesture.intent == .tilt {
+            let delta=gesture.centroid.y-gesture.previousCentroid.y
+            pitch=min(1.49,max(0.30,pitch-Float(delta)*0.004))
+        } else {
+            let anchor=groundPoint(gesture.previousCentroid)
+            distance /= Float(gesture.scaleDelta); yaw -= Float(gesture.rotationDelta)
+            updateCamera(notify:false)
+            if let anchor,let after=groundPoint(gesture.centroid) { target += anchor-after }
+        }
         updateCamera()
     }
-    @objc private func orbit(_ gesture: UIPanGestureRecognizer) {
-        let d=gesture.translation(in:self);gesture.setTranslation(.zero,in:self);manualTilt=true
-        yaw -= Float(d.x)*0.006; pitch=min(1.50,max(0.24,pitch+Float(d.y)*0.005));updateCamera()
-    }
-    @objc private func zoom(_ gesture: UIPinchGestureRecognizer) { distance /= Float(gesture.scale);gesture.scale=1;updateCamera() }
     @objc private func tap(_ gesture: UITapGestureRecognizer) {
         if let hit = hitTest(gesture.location(in:self),options:[.categoryBitMask:1,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first {
             onTap?(coordinate(SIMD3(hit.worldCoordinates.x,hit.worldCoordinates.y,hit.worldCoordinates.z)))

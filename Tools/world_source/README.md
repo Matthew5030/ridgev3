@@ -83,3 +83,29 @@ and thermal behaviour are not yet verified.
   download device tests. Existing automated GPX/route regressions still pass.
 
 The original packs and route files are not deleted or migrated by this prototype.
+
+## Gesture and overview follow-up
+
+The world camera now uses one-finger ground-plane dragging and a single
+intent-locked two-finger recognizer: spread/twist translates, zooms and rotates;
+a deliberate parallel vertical slide tilts. Pinching no longer changes pitch.
+The compass returns to a north-up overhead view. Camera pose survives tab changes.
+The former gesture preference remains for legacy saved-area scenes only.
+
+The atlas now opens fitted to the UK, anchors pinch zoom at the fingers, and waits
+until navigation ends before entering 3D. The included source has a tappable
+marker. Land/sea colours, lakes, rivers, range names and UK elevation bands provide
+geographic context. `atlas.json` is 2,144,537 bytes, including the existing atlas.
+The UK relief is a smoothed overview, not extra hiking-scale LiDAR coverage.
+
+Reproduce physical context using `build_atlas_context.py`, then
+`build_atlas_relief.py`. The latter reads Mapzen Terrarium elevation tiles at zoom
+6 once during preparation and converts them to vector elevation bands. No raster
+pyramid or new live map dependency ships in the app. Natural Earth and Mapzen
+source URLs/checksums are retained in `atlas-provenance.json`; attribution is in
+Settings. The world outside the UK retains coarse coastline context.
+
+`sh Tools/test_world_gestures.sh` checks gesture intent for jitter, intentional
+tilt, off-centre pinches, twists and different initial finger orientations.
+Route rebuilding is removed from the camera-movement loop; tile-driven route
+updates are coalesced. Label projection runs after the scene renders its camera.

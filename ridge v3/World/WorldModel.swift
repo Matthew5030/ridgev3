@@ -2,6 +2,7 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class WorldModel {
+    @ObservationIgnored var cameraPose: TerrainCameraPose?
     var source: WorldSource?
     var overview: WorldOverview?
     var routeTerrain: LoadedTerrain?
@@ -28,6 +29,7 @@ import Observation
 
     func open(address: String) async {
         guard source == nil || openedAddress != address else { return }
+        cameraPose = nil
         generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; tiles = [:]; failed = []; message = nil; isLoading = true; source = nil; overview = nil; routeTerrain = nil; policyCenter = nil
         defer { if token == generation { isLoading = false } }
@@ -45,9 +47,9 @@ import Observation
         } catch { if token == generation { message = error.localizedDescription } }
     }
     func update(center: GeoPoint, distance: Double) {
-        self.center = center; self.distance = distance
         guard let source else { return }
         if let previous = policyCenter, previous.distance(to: center) < 140, abs(distance / max(1,policyDistance) - 1) < 0.22 { return }
+        self.center = center; self.distance = distance
         policyCenter = center; policyDistance = distance
         let proposed = WorldWorkingSet.requests(source: source, center: center, distance: distance)
         let next = Date() < reduceDetailUntil ? proposed.prefix(12).map { WorldTileRequest(id: $0.id, pixels: 128, fine: false) } : proposed

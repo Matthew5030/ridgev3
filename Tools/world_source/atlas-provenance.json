@@ -1,0 +1,89 @@
+{
+  "prepared": "2026-10-04",
+  "sources": [
+    {
+      "sha256": "b7b26e50ea917d3696aec87f932def2bf5f890f5770e441d59c162c6f4c92a77",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_geography_regions_polys.geojson"
+    },
+    {
+      "sha256": "d350b75978b26fe839b797c2c529b2fb8f47fb3983c03f4964e36d5df9378a52",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_lakes.geojson"
+    },
+    {
+      "sha256": "f286e0ce978fde999ca2d7a78c764be08542e19b63cded52b05c12d5173ccc51",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_rivers_lake_centerlines.geojson"
+    },
+    {
+      "sha256": "2d036f53dedec578001c5c30c2959ee7d4eebc1306900fa4367c49929ec8f2d9",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_lakes.geojson"
+    },
+    {
+      "sha256": "bb854a900ecbd3b408df46d5e16e3e0f974ba55993f9d8b5c26e855273c0905a",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_rivers_lake_centerlines.geojson"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/29/18.png",
+      "sha256": "689f6697103ffbfe100d1071524c98de4fa826f745c9e6186277ff7416ea334f"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/30/18.png",
+      "sha256": "8bc5173124ea60d8babe48bfee2924e237456be53f1b6e5527078205e6bddc4b"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/31/18.png",
+      "sha256": "1a99ecfc03b77c6abd2b144be9c7a5368ce4eff23d87a05febd565830a763b03"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/32/18.png",
+      "sha256": "468d7952231479c92db092cc6a71de5ba52e31f6d1a903f9e5bce899db8df95f"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/29/19.png",
+      "sha256": "ec3da09d3d53f267da64a2093e64c79c300be970ddc534e4b96b8088cb80485f"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/30/19.png",
+      "sha256": "e839d5c182eaf2c3630e5700909dbc66b85bcd3d91c85b5f1298007747363f54"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/31/19.png",
+      "sha256": "dd83aaef7c65edb4a7cf5f99f19af3bff4ef2e9d4d3041a7e0e179e4cfcc44a8"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/32/19.png",
+      "sha256": "8d032161637ca5e65f6ea9d8de082a0c04bf1acc789485002c8ba50cbd2a12d8"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/29/20.png",
+      "sha256": "343e779a1d5ad9f19849ae1709ded267ca6fca2749e32be3d4c30ceb98e17f2c"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/30/20.png",
+      "sha256": "42b9debf641d72e0a6bf3a5d24ea72d187ff480e89af057d3e803fd1a4223c97"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/31/20.png",
+      "sha256": "9317035e9a8c9e5daae9c3487c798bf14d91e1558a211abc1ba44de33e05c087"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/32/20.png",
+      "sha256": "2b3d7202feaa37601ee7abb2675a9c643c7a3c011e46494f42652c770ba11e24"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/29/21.png",
+      "sha256": "0f8178effb2a9aca7e6c19459b88986283858857cc3bc970b68c250781461df5"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/30/21.png",
+      "sha256": "d2d0828490f6d9b9719c63418c8a6908fc93ae716d0cbe08fb2b9425d9274b02"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/31/21.png",
+      "sha256": "078d8582a54bda9b46ce5dab78a3c084a9b9b0dcfd21f3a035253eb51caa4ede"
+    },
+    {
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/6/32/21.png",
+      "sha256": "465bffe3f7a21ee3c00e380c8d900a1354b9095bd6f8d460af15017df933211d"
+    }
+  ]
+}
