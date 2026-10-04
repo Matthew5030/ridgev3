@@ -1,5 +1,11 @@
 # Ridge
 
+The current adaptive/vector world flow and ordered first-release plan are in
+[World app and finish plan](Tools/world_source/README.md). The UK overview is now
+textured; national detailed-source preparation and multi-region app integration
+are separate milestones. The sections below describe the earlier fixed-area flow
+and its compatibility features.
+
 A native iPhone and iPad route planner built around fixed offline terrain tiles. Browse or search the 2D atlas, select a visible block of tiles, then save and open it directly in 3D. A broad surround of coarser terrain carries the view toward a fading horizon. SwiftUI handles the interface; Metal renders the terrain, independent cartography, routes and map boundary. Moving the camera makes no network requests.
 
 ## Run

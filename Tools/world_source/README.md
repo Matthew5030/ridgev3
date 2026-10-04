@@ -1,11 +1,75 @@
 # Native world prototype
 
-The default Explore screen now opens a shaded UK overhead atlas (about 19 MB),
+The default Explore screen now opens a textured UK overhead atlas (about 252 MB),
 using the world terrain palette instead of green elevation bands. Zoom into the included Snowdon
 source, or choose **Explore Snowdon & the Glyderau**, to enter 3D. Moving the camera
 changes a bounded set of fine meshes and vector-derived texture pages. Downloads
 are separate from that resident working set; **Keep offline** pins source assets.
 Saved routes, path following, GPX, and the previous saved-area renderer remain.
+
+## Finish plan for the first TestFlight build — 4 October 2026
+
+The first release milestone is a complete journey through a few connected,
+verified regions: explore the overview, enter 3D, move across a region boundary,
+plan and save a walking route, export/import GPX, keep the area offline, and reopen
+it without a connection. Completing every national source is not a prerequisite
+for that beta. Available coverage must be explicit; the overview is not evidence
+of fine LiDAR or routing coverage.
+
+The UK overview is complete. The separate adaptive/vector conversion is running;
+at this plan's first checkpoint, 144 validated sources occupied about 2.47 GB.
+Use the live external `status.json` and `catalog.json` described in [BATCH.md](BATCH.md)
+for current progress. This process is bounded to 48 hours and has a disk reserve;
+completion and any deferred/failed inputs still need checking. Prepared fine
+LiDAR has real coverage gaps, so completing the batch does not mean universal
+fine UK terrain coverage.
+
+Implement in this order, with a Git checkpoint and verification at each step:
+
+1. **Serve and load one finished region.** Expose the immutable completed assets
+   and catalogue through static HTTP for development and HTTPS for deployment.
+   Exercise the real app reader on the phone against a new region, including
+   checksums, failed requests, retry and cached reopening. No live map computation
+   is required. Pass condition: a region outside the bundled Snowdon fixture opens
+   with its adaptive meshes, vectors, places and graph through the server.
+2. **Connect the catalogue and neighbouring regions.** Resolve an explored place
+   against the published coverage. Keep one camera/world coordinate frame and one
+   bounded memory budget across all active regions. Queue work for the current
+   view, cancel superseded requests, and keep existing imagery visible while
+   replacements arrive. Avoid loading each neighbouring region's entire background
+   and map preview before drawing anything. Pass condition: pan across at least
+   three neighbouring regions and back without a camera reset, blank transition,
+   duplicated surfaces or a growing memory footprint on iPhone and M1 iPad.
+3. **Join routing across boundaries.** Audit the retained graph identities and
+   clipped boundary edges, then preserve verified real connections in the published
+   graph and app's active graph. Do not infer links solely from nearby endpoints or
+   silently fall back to straight lines. Verify shared terrain alignment and route
+   heights at joins. Graph corrections can be published in a new manifest revision
+   while reusing unchanged mesh/vector assets. Pass condition: an independently
+   checked walking route crosses two region boundaries and survives save/reopen,
+   editing and GPX export/import without a gap or change of path.
+4. **Finish keeping areas offline.** Save all assets needed for the chosen area or
+   route, including required neighbouring terrain, maps and routing dependencies.
+   Show truthful storage/progress, support cancellation and resumption, and expose
+   removal of saved data without removing routes. Pass condition: force-quit,
+   enable airplane mode, reopen, inspect the landscape and reopen/edit the saved
+   route successfully. Failed downloads must retain the previous usable data.
+5. **Run the release checks and ship the beta.** Test extended panning, peak memory,
+   frame-time stalls, thermal behaviour, poor connectivity, interrupted downloads,
+   app backgrounding, upgrades that preserve routes, and GPX round trips on both
+   physical devices. Record measurements and fix blockers rather than increasing
+   budgets by assumption. Confirm signing, app metadata, privacy disclosures and
+   map attribution, then upload a TestFlight build with an explicit coverage list.
+
+Alongside these steps, let the national conversion continue and audit its completed
+catalogue, failures and coverage gaps. Publish only verified regions. A running
+batch does not automatically publish a server, connect neighbouring regions in the
+app, or complete the release checks.
+
+Backlog after the first usable beta: nationwide availability, thin route-corridor
+saves, alternative visual themes, automatic route suggestions, and further storage
+optimisation beyond the validated working budget. Existing route editing, saved
+routes, profiles and GPX support remain part of the core journey.
 
 ## Included source
 
@@ -96,8 +160,8 @@ and thermal behaviour are not yet verified.
   at most 256 tiles, fetches its whole graph, and has only that source's horizon.
 - Measure sustained panning, transient CPU/GPU memory and frame time on the M1
   iPad. Tune from measurements before expanding the resident limits.
-- Extend the matching overhead preview to each published source; UK-wide atlas
-  context still uses the simplified elevation-band style outside source coverage.
+- The textured UK overview is complete; validate its transition into each newly
+  available detailed region as catalogue integration is added.
 - Retain dash phase through vector clipping; it currently restarts at cell edges.
 - Add offline-area management, storage estimates, removal, and explicit coverage.
 - Use fine elevations consistently for route statistics. The shared route terrain
