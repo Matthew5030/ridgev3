@@ -34,7 +34,7 @@ Use `--section z10-x500-y333 --limit-sources 1` for a pilot. The output must sta
 ```sh
 /usr/bin/caffeinate -i /tmp/ridge-world-build-env/bin/python Tools/world_source/batch_run.py \
   --staging-status '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1/status.json' \
-  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' --hours 12 -- \
+  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' --hours 48 -- \
   --selection '/Volumes/MLB_EXT_4TB/Ridge Experiments/UK-adaptive-0p5-v3/selection' \
   --fine '/Volumes/MLB_EXT_4TB/Ridge Sources/uk-adaptive-0p5-v3' \
   --public '/Users/matthewbilella/Desktop/ProjectFatRidge/mapping/build/public' \
@@ -52,3 +52,17 @@ sh Tools/test_world_batch.sh '/path/to/published/source'
 ```
 
 The native test uses the real `WorldSourceStore`, adaptive codec, vector drawing and preview renderer. It runs against any completed source, without assuming the original Snowdon study tile IDs. Production catalog delivery, automatic selection of neighbours, source-edge routing and the remaining unavailable LiDAR coverage are separate work; the batch files alone do not turn on those capabilities.
+
+## Exact overhead snapshots
+
+`render_batch_preview.swift` calls the actual app background and preview renderers, including the same light, camera and vector palette. It does not decode fine geometry. `batch_previews.py` watches only fully published world sources and produces one 2048 px-high JPEG at a time, with bounds and image/source/style hashes in a separate catalog. The source directory remains immutable. It stops when world conversion stops, after the time bound, or below the disk reserve. A failed source is recorded and retried on a later invocation.
+
+```sh
+sh Tools/build_world_preview_renderer.sh /tmp/ridge-world-preview-renderer
+/tmp/ridge-world-build-env/bin/python Tools/world_source/batch_previews.py \
+  --world-root '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' \
+  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-previews-v1-2026-10-04' \
+  --renderer /tmp/ridge-world-preview-renderer/render-preview --hours 48
+```
+
+Changing the renderer/style requires a new preview output directory; this prevents silently mixing palettes across a mosaic. These detailed snapshots are separate from the lower-resolution UK overview. Sources with missing terrain cells still contain uncovered cells in their snapshots; the coverage metadata must control where detailed imagery overlays the nationwide map.

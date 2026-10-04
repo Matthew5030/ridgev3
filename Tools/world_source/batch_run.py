@@ -10,7 +10,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--staging-status', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
-    p.add_argument('--hours', type=float, default=12)
+    p.add_argument('--hours', type=float, default=48)
     p.add_argument('builder_args', nargs=argparse.REMAINDER)
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
