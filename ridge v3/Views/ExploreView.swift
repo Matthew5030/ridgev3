@@ -440,6 +440,8 @@ struct OfflineAtlasView: View {
     private var maximumScale: Double { worldCoverage == nil ? 4_000_000 : 16_000_000 }
     var worldPreview: CGImage? = nil
     var onWorldTap: ((GeoPoint) -> Void)? = nil
+    // The callback identifies the world flow even before its terrain source opens.
+    private var usesWorldStyle: Bool { onWorldTap != nil || worldCoverage != nil }
     private let verticalOffset: CGFloat = 0
     private let selectionInsets = EdgeInsets(top: 55, leading: 25, bottom: 60, trailing: 60)
     @State private var images: [String: UIImage] = [:]
@@ -468,7 +470,7 @@ struct OfflineAtlasView: View {
         GeometryReader { geometry in
             ZStack {
                 Canvas { context, size in
-                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red:0.68,green:0.81,blue:0.86)))
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(usesWorldStyle ? WorldAtlasPalette.sea : Color(red:0.68,green:0.81,blue:0.86)))
                     if let atlas { drawLand(atlas, context: &context, size: size); drawPhysical(atlas, context: &context, size: size) }
                 }
                 WorldAtlasLayer(center: center, scale: scale, size: geometry.size)
@@ -711,14 +713,19 @@ struct OfflineAtlasView: View {
             }
             path.closeSubpath()
             guard path.boundingRect.intersects(visible) else { continue }
-            context.stroke(path, with: .color(Color(red:0.57,green:0.73,blue:0.78).opacity(0.5)), lineWidth: 4)
-            context.fill(path, with: .color(Color(red:0.83,green:0.87,blue:0.73)))
-            context.stroke(path, with: .color(RidgeTheme.forest.opacity(0.3)), lineWidth: 0.7)
+            if usesWorldStyle {
+                context.fill(path, with: .color(WorldAtlasPalette.land))
+            } else {
+                context.stroke(path, with: .color(Color(red:0.57,green:0.73,blue:0.78).opacity(0.5)), lineWidth: 4)
+                context.fill(path, with: .color(Color(red:0.83,green:0.87,blue:0.73)))
+                context.stroke(path, with: .color(RidgeTheme.forest.opacity(0.3)), lineWidth: 0.7)
+            }
         }
     }
     private func drawPhysical(_ atlas: AtlasData, context: inout GraphicsContext, size: CGSize) {
         let viewport=CGRect(origin:.zero,size:size)
         for feature in atlas.physicalFeatures ?? [] {
+            if usesWorldStyle && feature.kind.hasPrefix("elevation") { continue }
             let rect=rectangle(feature.bounds,size:size)
             guard rect.intersects(viewport),max(rect.width,rect.height)>2 else { continue }
             if feature.kind == "river" && scale < 14000 { continue }
@@ -737,7 +744,7 @@ struct OfflineAtlasView: View {
             case "elevation500": context.fill(path,with:.color(Color(red:0.61,green:0.69,blue:0.51)),style:FillStyle(eoFill:true))
             case "elevation750": context.fill(path,with:.color(Color(red:0.65,green:0.66,blue:0.51)),style:FillStyle(eoFill:true))
             case "elevation1000", "elevation1500", "elevation2500": context.fill(path,with:.color(Color(red:0.72,green:0.69,blue:0.57)),style:FillStyle(eoFill:true))
-            case "lake": context.fill(path,with:.color(Color(red:0.59,green:0.76,blue:0.83)),style:FillStyle(eoFill:true))
+            case "lake": context.fill(path,with:.color(usesWorldStyle ? WorldAtlasPalette.sea : Color(red:0.59,green:0.76,blue:0.83)),style:FillStyle(eoFill:true))
             default: context.stroke(path,with:.color(Color(red:0.41,green:0.64,blue:0.74).opacity(0.8)),lineWidth:scale>80000 ? 1.1 : 0.65)
             }
             if feature.kind == "upland",rect.width>110,rect.height>45,!feature.name.isEmpty {
