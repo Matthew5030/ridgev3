@@ -59,7 +59,7 @@ struct WorldExploreView: View {
                         VStack(spacing:8) {
                             control("plus", "Zoom in") { store.camera = TerrainCameraCommand(action:.zoomIn) }
                             control("minus", "Zoom out") { store.camera = TerrainCameraCommand(action:.zoomOut) }
-                            control("location.north", "North-up overview") { store.camera = TerrainCameraCommand(action:.overhead) }
+                            control("square.3.layers.3d.top.filled", "Look straight down") { store.camera = TerrainCameraCommand(action:.overhead) }
                             Menu {
                                 Button("Keep this area offline",systemImage:"arrow.down.circle") { world.keepOffline() }
                                 Button("Import GPX",systemImage:"square.and.arrow.down") { store.showGPXImporter = true }

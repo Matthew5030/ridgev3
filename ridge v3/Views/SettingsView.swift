@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var store: AppStore
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
@@ -30,7 +29,7 @@ struct SettingsView: View {
                     Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.055), in: Circle()) }
                         .accessibilityLabel("Close settings")
                 }
-                if store.isWorldBrowsing { worldGestureSection } else { gestureSection }
+                worldGestureSection
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map source").font(RidgeTheme.sectionTitle)
                     TextField("Hosted world.json URL (optional)", text: $worldAddressDraft).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
@@ -71,41 +70,12 @@ struct SettingsView: View {
     private var worldGestureSection: some View {
         VStack(alignment:.leading,spacing:12) {
             Text("Map controls").font(RidgeTheme.sectionTitle)
-            Text("Drag with one finger to move. Pinch to zoom. Twist two fingers to rotate. Slide two fingers up or down to tilt.")
+            Text("Drag with one finger to move. Pinch to zoom. Slide two fingers up or down to tilt. North always stays at the top.")
                 .font(.subheadline).foregroundStyle(RidgeTheme.muted)
-            Text("The compass returns to a north-up overhead view. Zooming keeps the angle you chose.")
+            Text("The overview button looks straight down. Zooming keeps the angle you chose.")
                 .font(.caption).foregroundStyle(RidgeTheme.muted)
         }
     }
-    private var gestureSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Map controls").font(RidgeTheme.sectionTitle)
-            VStack(spacing: 10) {
-                ForEach(TerrainGestureStyle.allCases) { style in
-                    Button { gestureStyle = style } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: style == .moveWithOneFinger ? "hand.draw" : "arrow.trianglehead.2.clockwise.rotate.90")
-                                .font(.system(size: 20)).frame(width: 28)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(style.title).font(.system(size: 15, weight: .semibold))
-                                Text(style.subtitle).font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: gestureStyle == style ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 22)).foregroundStyle(gestureStyle == style ? RidgeTheme.forest : RidgeTheme.muted.opacity(0.4))
-                        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(gestureStyle == style ? RidgeTheme.forest.opacity(0.07) : RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
-                            .overlay { RoundedRectangle(cornerRadius: RidgeTheme.controlRadius).strokeBorder(gestureStyle == style ? RidgeTheme.forest.opacity(0.4) : RidgeTheme.line) }
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel(style.title + ". " + style.subtitle)
-                        .accessibilityAddTraits(gestureStyle == style ? .isSelected : [])
-                }
-            }
-            Text("Pinch to zoom. Double-tap to fit the area.")
-                .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
-        }
-    }
-
     private var offlineSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Offline maps").font(RidgeTheme.sectionTitle)

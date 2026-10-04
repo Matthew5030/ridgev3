@@ -209,7 +209,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         primaryFloor = (minimum - sceneMinimum) / max(w, d)
         top = (maximum - sceneMinimum) / max(w, d)
         sceneTop = (sceneMaximum - sceneMinimum) / max(w, d)
-        camera = RidgeCamera(target: SIMD3(0, (minimum - sceneMinimum + (maximum - minimum) * 0.35) / max(w, d), 0), yaw: -0.38, pitch: surroundings.isEmpty ? 0.94 : 20 * .pi / 180, distance: 2)
+        camera = RidgeCamera(target: SIMD3(0, (minimum - sceneMinimum + (maximum - minimum) * 0.35) / max(w, d), 0), yaw: 0, pitch: surroundings.isEmpty ? 0.94 : 20 * .pi / 180, distance: 2)
 
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.label = "Ridge relief, cartography and route"
@@ -1230,7 +1230,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private func homeCamera() -> RidgeCamera {
         let size = viewportSize
         let aspect = Float(size.width > 1 ? size.width : 390) / Float(size.height > 1 ? size.height : 844)
-        let yaw: Float = -0.38, pitch: Float = backdrops.isEmpty ? 0.94 : 20 * .pi / 180
+        let yaw: Float = 0, pitch: Float = backdrops.isEmpty ? 0.94 : 20 * .pi / 180
         let target = SIMD3<Float>(0, primaryFloor + (top - primaryFloor) * 0.35, 0)
         let backward = SIMD3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
         let cameraRight = simd_normalize(simd_cross(SIMD3<Float>(0, 1, 0), backward))
@@ -1258,7 +1258,6 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         guard dx.isFinite, dy.isFinite, abs(dx) + abs(dy) > 0.01 else { return }
         cancelAnimation()
         framedAtHome = false
-        camera.yaw -= dx * 0.006
         camera.pitch += dy * 0.005
         constrainCamera()
         view?.setNeedsDisplay()
@@ -1299,6 +1298,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     @MainActor
     private func constrainCamera() {
+        camera.yaw = 0
         camera.pitch = min(86 * .pi / 180, max((backdrops.isEmpty ? 26 : 16) * .pi / 180, camera.pitch))
         constrainTarget()
         // Context scenes use the terrain under the eye below. A newly detailed
@@ -1375,7 +1375,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             let distance = Float(pose.distanceMeters / frame.metersPerUnit)
             guard let target = frame.target(for: pose), distance.isFinite, distance > 0 else { return }
             cancelAnimation()
-            camera = RidgeCamera(target: target, yaw: pose.yaw, pitch: pose.pitch, distance: distance)
+            camera = RidgeCamera(target: target, yaw: 0, pitch: pose.pitch, distance: distance)
             constrainCamera()
             view?.setNeedsDisplay()
             return

@@ -13,7 +13,7 @@ struct TerrainPlannerView: View {
     @State private var showHelp = false
     @State private var showSettings = false
     @State private var showAreaSelection = false
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
+    private let gestureStyle = TerrainGestureStyle.moveWithOneFinger
     @State private var importGPX = false
     @State private var rename = false
     @State private var routeName = ""
@@ -507,7 +507,7 @@ struct RouteNotesView: View {
 }
 
 struct TerrainHelpView: View {
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
+    private let gestureStyle = TerrainGestureStyle.moveWithOneFinger
     let terrain: LoadedTerrain
     var body: some View {
         ScrollView {

@@ -7,10 +7,10 @@ enum TerrainGestureStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var moveTouches: Int { self == .moveWithOneFinger ? 1 : 2 }
     var rotateTouches: Int { self == .moveWithOneFinger ? 2 : 1 }
-    var title: String { self == .moveWithOneFinger ? "One finger moves" : "One finger rotates" }
-    var subtitle: String { self == .moveWithOneFinger ? "Two fingers rotate and tilt the terrain" : "Two fingers move across the map" }
-    var shortGuide: String { self == .moveWithOneFinger ? "Drag to move · Two fingers to rotate · Pinch to zoom" : "Drag to rotate · Two fingers to move · Pinch to zoom" }
-    var guide: String { self == .moveWithOneFinger ? "One finger moves across the map. Two fingers rotate and tilt the terrain. Pinch to zoom. Double-tap to fit the whole area." : "One finger rotates and tilts the terrain. Two fingers move across the map. Pinch to zoom. Double-tap to fit the whole area." }
+    var title: String { self == .moveWithOneFinger ? "One finger moves" : "One finger tilts" }
+    var subtitle: String { self == .moveWithOneFinger ? "Two fingers tilt the terrain" : "Two fingers move across the map" }
+    var shortGuide: String { self == .moveWithOneFinger ? "Drag to move · Two fingers to tilt · Pinch to zoom" : "Drag to tilt · Two fingers to move · Pinch to zoom" }
+    var guide: String { self == .moveWithOneFinger ? "One finger moves across the map. Two fingers tilt the terrain. Pinch to zoom. Double-tap to fit the whole area." : "One finger tilts the terrain. Two fingers move across the map. Pinch to zoom. Double-tap to fit the whole area." }
 }
 
 /// Geographic camera state survives a new mesh's origin, scale and elevation datum.

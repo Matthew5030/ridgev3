@@ -87,10 +87,10 @@ The original packs and route files are not deleted or migrated by this prototype
 ## Gesture and overview follow-up
 
 The world camera now uses one-finger ground-plane dragging and a single
-intent-locked two-finger recognizer: spread/twist translates, zooms and rotates;
+intent-locked two-finger recognizer: spread/twist translates and zooms; the camera stays north-up;
 a deliberate parallel vertical slide tilts. Pinching no longer changes pitch.
 The compass returns to a north-up overhead view. Camera pose survives tab changes.
-The former gesture preference remains for legacy saved-area scenes only.
+Legacy saved-area scenes also stay north-up. Rotation preferences are no longer exposed.
 
 The atlas now opens fitted to the UK, anchors pinch zoom at the fingers, and waits
 until navigation ends before entering 3D. The included source has a tappable
