@@ -6,15 +6,12 @@ struct WorldAtlasLayer: View {
     let center: CGPoint
     let scale: CGFloat
     let size: CGSize
-    @State private var store = WorldAtlasImages()
-    @State private var pages: [WorldAtlasImage] = []
-    private struct Viewport: Hashable {
-        let x: CGFloat, y: CGFloat, scale: CGFloat, width: CGFloat, height: CGFloat
-    }
-    private var viewport: Viewport { Viewport(x: center.x, y: center.y, scale: scale, width: size.width, height: size.height) }
+    @State private var loader = WorldAtlasLoader()
+    @Environment(\.displayScale) private var displayScale
+    private var viewport: WorldAtlasViewport { WorldAtlasViewport(x: center.x, y: center.y, scale: scale, width: size.width, height: size.height, pixelScale: displayScale) }
     var body: some View {
         Canvas { context, _ in
-            for item in pages {
+            for item in loader.pages {
                 let n = item.page.divisions
                 let rect = CGRect(x: (Double(item.page.x) / n - center.x) * scale + size.width / 2,
                                   y: (Double(item.page.y) / n - center.y) * scale + size.height / 2,
@@ -25,11 +22,39 @@ struct WorldAtlasLayer: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .task(id: viewport) {
-            let images = await store.images(centerX: center.x, centerY: center.y, scale: scale, width: size.width, height: size.height)
-            if !Task.isCancelled { pages = images }
+        .onAppear { loader.request(viewport) }
+        .onChange(of: viewport) { _, value in loader.request(value) }
+        .onDisappear { loader.discardPending() }
+    }
+}
+
+private struct WorldAtlasViewport: Hashable, Sendable {
+    let x: CGFloat, y: CGFloat, scale: CGFloat, width: CGFloat, height: CGFloat, pixelScale: CGFloat
+}
+
+/// Finish a batch even during a continuous gesture, then use the newest viewport.
+/// Cancelling a load on every animation frame can prevent any page being published.
+@Observable @MainActor private final class WorldAtlasLoader {
+    var pages: [WorldAtlasImage] = []
+    @ObservationIgnored private let store = WorldAtlasImages()
+    @ObservationIgnored private var pending: WorldAtlasViewport?
+    @ObservationIgnored private var working = false
+    func request(_ viewport: WorldAtlasViewport) {
+        pending = viewport
+        guard !working else { return }
+        working = true
+        Task {
+            if pages.isEmpty, let initial = pending {
+                pages = await store.images(viewport: initial, coarseOnly: true)
+            }
+            while let viewport = pending {
+                pending = nil
+                pages = await store.images(viewport: viewport)
+            }
+            working = false
         }
     }
+    func discardPending() { pending = nil }
 }
 
 private struct WorldAtlasImage: @unchecked Sendable {
@@ -46,14 +71,14 @@ private actor WorldAtlasImages {
     private var attempted = false
     private var cache: [WorldAtlasPage: CGImage] = [:]
     private var recency: [WorldAtlasPage] = []
-    func images(centerX: Double, centerY: Double, scale: Double, width: Double, height: Double) -> [WorldAtlasImage] {
+    func images(viewport: WorldAtlasViewport, coarseOnly: Bool = false) -> [WorldAtlasImage] {
         if !attempted {
             attempted = true
             root = Bundle.main.url(forResource: "WorldAtlas", withExtension: "bundle")
             if let root, let data = try? Data(contentsOf: root.appendingPathComponent("index.json")) { index = try? WorldAtlasIndex(data: data) }
         }
         guard let root, let index else { return [] }
-        let requested = index.pages(centerX: centerX, centerY: centerY, scale: scale, width: width, height: height)
+        let requested = index.pages(centerX: viewport.x, centerY: viewport.y, scale: viewport.scale, width: viewport.width, height: viewport.height, pixelScale: viewport.pixelScale, coarseOnly: coarseOnly)
         var result: [WorldAtlasImage] = []
         for page in requested {
             guard !Task.isCancelled else { return [] }

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 @main struct WorldAtlasTests {
     static func main() throws {
@@ -36,6 +37,32 @@ import Foundation
         check(index.pages(centerX:0.49,centerY:0.32,scale:.infinity,width:100,height:100).isEmpty, "Nonfinite scale")
         check(index.pages(centerX:0.49,centerY:0.32,scale:100,width:0,height:100).isEmpty, "Empty viewport")
         check(index.pages(centerX:2,centerY:2,scale:100000,width:100,height:100).isEmpty, "Outside world")
+        if CommandLine.arguments.count > 1 {
+            let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+            let real = try WorldAtlasIndex(data: Data(contentsOf: root.appendingPathComponent("index.json")))
+            check(!real.available.isEmpty, "Bundled inventory is populated")
+            for page in real.available {
+                check(FileManager.default.fileExists(atPath: root.appendingPathComponent(page.key).path), "Bundled page exists: \(page.key)")
+                if page.zoom > real.minZoom, let parent = page.parent { check(real.available.contains(parent), "Bundled parent coverage") }
+            }
+            let initial = real.pages(centerX:0.49,centerY:0.3185,scale:7400,width:1024,height:1366,pixelScale:2,coarseOnly:true)
+            check(initial.allSatisfy { $0.zoom == real.minZoom }, "First paint needs coarse pages only")
+            check(initial.count <= 4, "Whole UK first paint is just four pages")
+            let low = real.pages(centerX:0.49,centerY:0.3185,scale:32000,width:400,height:400,pixelScale:1)
+            let retina = real.pages(centerX:0.49,centerY:0.3185,scale:32000,width:400,height:400,pixelScale:2)
+            check(retina.map(\.zoom).max()! > low.map(\.zoom).max()!, "Retina uses finer imagery when within budget")
+            for factor in [1.0, 2, 3] {
+                let visible = real.pages(centerX:0.49,centerY:0.3185,scale:32000,width:1366,height:1024,pixelScale:factor)
+                check(visible.count <= 96, "Retina remains bounded")
+            }
+            for page in initial {
+                let url = root.appendingPathComponent(page.key)
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String:Any] else { fatalError("Unreadable image") }
+                check(properties[kCGImagePropertyPixelWidth as String] as? Int == 256, "Bundle width is 256px")
+                check(properties[kCGImagePropertyPixelHeight as String] as? Int == 256, "Bundle height is 256px")
+            }
+        }
         print("World atlas: \(assertions) checks passed")
     }
 }

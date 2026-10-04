@@ -28,7 +28,11 @@ The existing detailed `WorldPreview` sits on top, preserving the camera handoff
 into 3D. A snapshot's presence does not imply fine terrain is installed.
 
 Only visible pages are decoded, off the UI thread. The selected zoom targets
-256–512 logical points per page; pinch zoom scales existing pages smoothly.
+256–512 device pixels per page, falling back a level when needed to stay within
+the visible-page budget; pinch zoom scales existing pages smoothly. The first
+paint needs only visible minimum-zoom pages (four pages for the UK). A single
+loader finishes each batch and coalesces incoming viewport updates, so a 60 Hz
+zoom animation cannot repeatedly cancel loads before they are published.
 At most 96 pages are requested at once and the actor cache retains at most 96
 256px pages (24 MiB RGBA). During replacement the previous viewport can retain
 another 24 MiB until the new images are published. No UK-sized image is decoded.

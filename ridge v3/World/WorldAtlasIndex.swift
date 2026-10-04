@@ -48,13 +48,14 @@ struct WorldAtlasIndex {
 
     /// At most 64 screen pages plus their parents, regardless of zoom or device size.
     /// Coarse pages remain beneath detail, including where the pyramid is incomplete.
-    func pages(centerX: Double, centerY: Double, scale: Double, width: Double, height: Double) -> [WorldAtlasPage] {
+    func pages(centerX: Double, centerY: Double, scale: Double, width: Double, height: Double, pixelScale: Double = 1, coarseOnly: Bool = false) -> [WorldAtlasPage] {
         guard scale.isFinite, scale > 0, width.isFinite, height.isFinite, width > 0, height > 0,
               centerX.isFinite, centerY.isFinite else { return [] }
         let left = max(0, centerX - width / (2 * scale)), right = min(1, centerX + width / (2 * scale))
         let top = max(0, centerY - height / (2 * scale)), bottom = min(1, centerY + height / (2 * scale))
         guard right > left, bottom > top else { return [] }
-        var zoom = min(maxZoom, max(minZoom, Int(floor(log2(max(1, scale / Double(tileSize)))))))
+        let density = pixelScale.isFinite ? min(3, max(1, pixelScale)) : 1
+        var zoom = coarseOnly ? minZoom : min(maxZoom, max(minZoom, Int(floor(log2(max(1, scale * density / Double(tileSize)))))))
         func range(_ low: Double, _ high: Double, _ z: Int) -> ClosedRange<Int> {
             let n = 1 << z
             return max(0, min(n - 1, Int(floor(low * Double(n)))))...max(0, min(n - 1, Int(ceil(high * Double(n))) - 1))
