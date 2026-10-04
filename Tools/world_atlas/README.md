@@ -4,9 +4,10 @@ The app's `WorldAtlas.bundle` replaces the green UK context with shaded geograph
 terrain. It is a low-resolution **overview**, not additional fine LiDAR coverage.
 It uses the checksum-verified existing `uk-coarse-background-v2` elevations,
 retained Natural Earth coastlines/lakes/rivers, and the base palette and directional
-light orientation from the current world renderer. Fine OSM mapping and adaptive
-terrain still appear through the regional renderer. The overview does not invent
-woodland, paths or survey coverage where those inputs have not been prepared.
+light orientation from the current world renderer. The current bundle adds the
+retained OSM woodland, water, buildings, roads and paths across all 674 prepared UK
+sections; see [TEXTURES.md](TEXTURES.md). Close-up vector mapping and adaptive
+terrain still use the regional renderer. No land cover or survey coverage is invented.
 
 The base 2026-10-04 overview contains 5,460 JPEG pages (19,064,485 bytes),
 256 × 256 pixels, standard Web Mercator zooms 5–10. It includes a surrounding
@@ -14,6 +15,11 @@ rectangle so parents are complete. Elevation coverage is the United Kingdom;
 Ireland and mainland Europe in that rectangle retain plain coastline context.
 Only visible pages and their parents are decoded by the app, with a bounded cache.
 The 19 MB download size is not the decoded/rendering memory footprint.
+
+The current textured snapshot has **18,940 pages, 251,976,373 image bytes**
+(about 252 MB), with zooms 5–12 and semantic mapping in all 674 source sections.
+The app decodes only visible pages; the 96-page cache remains 24 MiB, plus the
+previous viewport during replacement. This does not add new fine 3D coverage.
 
 ## Reproduce
 
@@ -45,16 +51,19 @@ available in the shipping app by generating this overview or that catalogue.
 Automatic neighbour loading and cross-source route continuity remain separate
 integration work.
 
-## Bundled detail snapshot
+## Earlier regional snapshot
 
-The current app bundle also includes the first 35 exact regional overhead previews,
+The previous app bundle included the first 35 exact regional overhead previews,
 composited onto sparse zoom 11–13 pages and their parents. Its frozen inventory is
-5,820 pages, 22,627,562 image bytes (about 23 MB). These use the actual app vector
+5,820 pages, 22,627,562 image bytes (about 23 MB). These used the actual app vector
 cartography and adaptive 2 m-error background. Only verified occupied terrain
 cells are composited; missing cells reveal the UK context underneath.
 
 `composite_previews.py` builds this second atlas into a separate directory and can
 follow the running preview catalogue. See `COMPOSITE.md` for its commands. The
-external batch output continues growing; the app bundle is a tested snapshot and
-is not silently changed by that running job. A subsequent publication can include
-the completed national imagery without rebuilding the terrain.
+external batch output continues growing. The app now uses a consistent national
+cartographic overview instead of that partially completed strip of regional images.
+The foreground preview and transition into the available detailed 3D source remain
+unchanged. The app bundle is a tested snapshot and is not silently changed by any
+running job. A subsequent publication can use the completed national imagery without
+rebuilding the terrain.

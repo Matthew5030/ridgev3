@@ -54,6 +54,12 @@ import ImageIO
             for factor in [1.0, 2, 3] {
                 let visible = real.pages(centerX:0.49,centerY:0.3185,scale:32000,width:1366,height:1024,pixelScale:factor)
                 check(visible.count <= 96, "Retina remains bounded")
+                for scale in [128000.0, 524288, 2097152] {
+                    let detail = real.pages(centerX:500.5/1024,centerY:333.5/1024,scale:scale,width:1366,height:1024,pixelScale:factor)
+                    check(!detail.isEmpty && detail.count <= 96, "Mountain overview at close zoom remains bounded")
+                    check(detail == detail.sorted(), "Close zoom keeps coarse-to-fine drawing order")
+                    check(detail.allSatisfy { real.available.contains($0) }, "Close zoom only requests published pages")
+                }
             }
             for page in initial {
                 let url = root.appendingPathComponent(page.key)
