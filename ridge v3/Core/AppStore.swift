@@ -11,6 +11,9 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
     var pendingPack: PackEntry?
     var pendingSelection: AreaSelection?
     var pendingRemoteURL: URL?
+    var isWorldBrowsing = true
+    var worldTerrain: LoadedTerrain?
+    var worldRouteFocus: GeoPoint?
     var activeTerrain: LoadedTerrain?
     var activeRoute: RidgeRoute?
     var editing = false
@@ -621,6 +624,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
     }
 
     private func present(_ terrain: LoadedTerrain, route: RidgeRoute? = nil) {
+        isWorldBrowsing = false
         activeRoute = route; editing = false; selectedPoint = nil; movingWaypoint = nil; insertingWaypoint = nil
         undoStack = []; redoStack = []
         // Direct lines are always an explicit choice, including empty networks.
@@ -903,6 +907,11 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
     func openRoute(_ route: RidgeRoute) {
         guard !isRouting else { return }
         let current = routes.first { $0.id == route.id } ?? route
+        if let worldTerrain, !current.points.isEmpty, current.points.allSatisfy({ worldTerrain.manifest.bounds.contains($0.coordinate) }) {
+            isWorldBrowsing = true; activeTerrain = worldTerrain; activeRoute = current; editing = false
+            undoStack = []; redoStack = []; tab = .explore; worldRouteFocus = current.points.first?.coordinate
+            return
+        }
         guard let entry = containingEntry(for: current) else {
             pendingRoute = current
             errorMessage = "Import a terrain area covering this route before opening it. The GPX remains available to export."
@@ -959,6 +968,13 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
                 var route = try await Task.detached { try GPXCodec.read(from: url) }.value
+                if let worldTerrain, !route.points.isEmpty, route.points.allSatisfy({ worldTerrain.manifest.bounds.contains($0.coordinate) }) {
+                    route.regionID = worldTerrain.manifest.id
+                    guard await persist(route) else { return }
+                    activeTerrain = worldTerrain; activeRoute = route; editing = false; isWorldBrowsing = true
+                    undoStack = []; redoStack = []; showGPXImporter = false; tab = .explore; worldRouteFocus = route.points.first?.coordinate
+                    toast("GPX imported and saved."); return
+                }
                 let candidate = containingEntry(for: route)
                 route.regionID = candidate?.id ?? ""
                 guard await persist(route) else { return }

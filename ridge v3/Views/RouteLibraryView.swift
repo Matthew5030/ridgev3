@@ -54,7 +54,7 @@ struct RouteLibraryView: View {
                             let entry = store.entries.first { $0.id == route.regionID }
                             Button { store.openRoute(route) } label: {
                                 LibraryRouteCard(route: route, entry: entry, packs: store.packs,
-                                                 favourite: favouriteIDs.contains(route.id))
+                                                 favourite: favouriteIDs.contains(route.id), worldAvailable: store.worldTerrain.map { terrain in !route.points.isEmpty && route.points.allSatisfy { terrain.manifest.bounds.contains($0.coordinate) } } ?? false)
                             }.buttonStyle(.plain)
                                 .contextMenu {
                                     Button("Open in 3D", systemImage: "mountain.2") { store.openRoute(route) }.disabled(store.isRouting)
@@ -153,7 +153,8 @@ private struct LibraryRouteCard: View {
     let entry: PackEntry?
     let packs: PackStore
     let favourite: Bool
-    private var terrainReady: Bool { entry?.installed == true }
+    var worldAvailable = false
+    private var terrainReady: Bool { entry?.installed == true || worldAvailable }
     @State private var summary: RouteStatistics?
 
     var body: some View {
@@ -184,7 +185,7 @@ private struct LibraryRouteCard: View {
             Rectangle().fill(RidgeTheme.line.opacity(0.7)).frame(height: 1)
             HStack(spacing: 8) {
                 Image(systemName: terrainReady ? "checkmark.circle.fill" : "square.dashed")
-                Text(terrainReady ? "Available offline" : "Map needed for 3D")
+                Text(worldAvailable ? "Open in 3D" : terrainReady ? "Available offline" : "Map needed for 3D")
                 Spacer(minLength: 3)
             }.padding(.trailing, 38).font(.system(size: 11, weight: .medium)).foregroundStyle(terrainReady ? RidgeTheme.forest : RidgeTheme.muted)
             }.padding(20)

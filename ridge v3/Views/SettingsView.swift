@@ -6,7 +6,9 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
+    @AppStorage("ridge.worldSourceURL") private var worldAddress = ""
     @AppStorage("ridge.downloadServer") private var serverAddress = ""
+    @State private var worldAddressDraft = ""
     @State private var connectingServer = false
     @State private var serverMessage: String?
     private var savedCount: Int { store.entries.filter(\.installed).count }
@@ -28,6 +30,12 @@ struct SettingsView: View {
                         .accessibilityLabel("Close settings")
                 }
                 gestureSection
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Map source").font(RidgeTheme.sectionTitle)
+                    TextField("Hosted world.json URL (optional)", text: $worldAddressDraft).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
+                    Button("Use this source") { worldAddress = worldAddressDraft.trimmingCharacters(in: .whitespacesAndNewlines); dismiss() }
+                    Text("Leave blank to use the included Snowdon map. Nearby detail loads as you move; Keep offline retains it for later.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                }
                 offlineSection
                 downloadServerSection
                 legendSection
@@ -43,6 +51,7 @@ struct SettingsView: View {
             }.padding(24).padding(.top, 12).frame(maxWidth: 700).frame(maxWidth: .infinity)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
             .onAppear {
+                worldAddressDraft = worldAddress
                 if serverAddress.isEmpty, let remote = store.entries.compactMap(\.remoteSource).first {
                     serverAddress = remote.deletingLastPathComponent().absoluteString
                 }
