@@ -87,8 +87,8 @@ The original packs and route files are not deleted or migrated by this prototype
 ## Gesture and overview follow-up
 
 The world camera now uses one-finger ground-plane dragging and a single
-intent-locked two-finger recognizer: spread/twist translates, zooms and changes heading;
-a deliberate parallel vertical slide tilts. Pinching no longer changes pitch.
+intent-locked two-finger recognizer: a parallel drag changes heading horizontally
+and pitch vertically. Spreading zooms; twisting never changes the viewing angle. Pinching no longer changes pitch.
 The compass returns to a north-up overhead view. Camera pose survives tab changes.
 Heading rotation is enabled; camera roll is locked to world-up, so the horizon stays level. Legacy scenes also permit heading rotation. Rotation preferences are no longer exposed.
 

@@ -70,7 +70,7 @@ struct SettingsView: View {
     private var worldGestureSection: some View {
         VStack(alignment:.leading,spacing:12) {
             Text("Map controls").font(RidgeTheme.sectionTitle)
-            Text("Drag with one finger to move. Pinch to zoom. Twist two fingers to turn around the terrain. Slide two fingers up or down to tilt. The horizon stays level.")
+            Text("Drag with one finger to move. Pinch to zoom. Drag two fingers left or right to turn around the terrain, or up and down to tilt. Twisting does not turn the camera; the horizon stays level.")
                 .font(.subheadline).foregroundStyle(RidgeTheme.muted)
             Text("The overview button looks straight down. Zooming keeps the angle you chose.")
                 .font(.caption).foregroundStyle(RidgeTheme.muted)

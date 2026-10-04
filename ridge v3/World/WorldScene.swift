@@ -61,7 +61,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         tap.require(toFail: moveGesture); tap.require(toFail: transformGesture)
         for g in [moveGesture!,transformGesture!,tap] { g.delegate = self; addGestureRecognizer(g) }
         isMultipleTouchEnabled = true
-        accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom, twist two fingers to turn, or slide two fingers up and down to tilt. The horizon stays level."
+        accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom. Drag two fingers left or right to turn, up or down to tilt. The horizon stays level."
     }
     required init?(coder: NSCoder) { nil }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
@@ -263,12 +263,14 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         }
         if gesture.state == .began { moveGesture.isEnabled = false; rebaseDragPlane() }
         defer { gesture.consume() }
-        if gesture.intent == .tilt {
-            let delta=gesture.centroid.y-gesture.previousCentroid.y
-            pitch=min(1.49,max(0.30,pitch-Float(delta)*0.004))
+        if gesture.intent == .angle {
+            let dx=gesture.centroid.x-gesture.previousCentroid.x
+            let dy=gesture.centroid.y-gesture.previousCentroid.y
+            yaw -= Float(dx)*0.005
+            pitch=min(1.49,max(0.30,pitch-Float(dy)*0.004))
         } else {
             let anchor=groundPoint(gesture.previousCentroid)
-            distance /= Float(gesture.scaleDelta); yaw -= Float(gesture.rotationDelta)
+            distance /= Float(gesture.scaleDelta)
             updateCamera(notify:false)
             if let anchor,let after=groundPoint(gesture.centroid) { target += anchor-after }
         }

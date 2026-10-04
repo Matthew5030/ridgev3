@@ -11,10 +11,10 @@ import simd
         }
         let a=CGPoint(x:100,y:100),b=CGPoint(x:300,y:100)
         try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:101,y:102),b:CGPoint(x:300,y:103)) == .undecided,"Touch jitter must not tilt")
-        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:100,y:130),b:CGPoint(x:300,y:130)) == .tilt,"Parallel vertical motion tilts")
+        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:100,y:130),b:CGPoint(x:300,y:130)) == .angle,"Parallel vertical motion tilts")
         try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:80,y:125),b:CGPoint(x:320,y:125)) == .transform,"Off-centre pinch must not tilt")
-        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:110,y:80),b:CGPoint(x:290,y:120)) == .transform,"Twist changes heading without entering tilt mode")
-        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:130,y:104),b:CGPoint(x:330,y:104)) == .transform,"Horizontal two-finger translation must not orbit")
+        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:110,y:80),b:CGPoint(x:290,y:120)) == .transform,"Twist must not enter viewing-angle mode")
+        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:130,y:104),b:CGPoint(x:330,y:104)) == .angle,"Horizontal two-finger drag changes heading")
         // Both orientations and both zoom directions, with a moving midpoint.
         for direction in [-1.0,1.0] {
             for angle in stride(from:0.0,to:6.28,by:0.2) {
