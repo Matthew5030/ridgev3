@@ -17,6 +17,7 @@ def main():
     lock = (a.output / '.supervisor.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     deadline = time.monotonic() + a.hours * 3600
+    deadline_unix = time.time() + a.hours * 3600
     builder = Path(__file__).with_name('batch_world.py')
     args = a.builder_args[1:] if a.builder_args[:1] == ['--'] else a.builder_args
     previous = None
@@ -29,12 +30,12 @@ def main():
         marker=stage.get('ready',0)
         if previous is None or marker != previous:
             status('converting',stagedArchives=marker)
-            result=subprocess.run([sys.executable,str(builder),'--output',str(a.output),*args])
+            result=subprocess.run([sys.executable,str(builder),'--output',str(a.output),*args,'--deadline-unix',str(deadline_unix)])
             if result.returncode:
                 status('failed',exitCode=result.returncode);return result.returncode
             previous=marker
             state=json.loads((a.output/'status.json').read_bytes())['state']
-            if state=='paused-low-disk':status(state);return 0
+            if state.startswith('paused-'):status(state);return 0
             # Read again after potentially hours of work so newly staged inputs get a pass.
             try:stage=json.loads(a.staging_status.read_bytes())
             except FileNotFoundError:pass

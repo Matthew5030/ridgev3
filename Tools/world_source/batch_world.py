@@ -218,7 +218,7 @@ def validate(folder,binaries):
     return dict(id=m['id'],path='sources/'+m['id']+'/world.json',bounds=m['bounds'],tileCount=len(tiles),downloadBytes=sum(p.stat().st_size for p in folder.iterdir() if p.is_file() and not p.name.endswith('.checkpoint.json')),backgroundResidentBytes=memory)
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--selection',type=Path,required=True);p.add_argument('--fine',type=Path,required=True);p.add_argument('--public',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--staged-public',type=Path);p.add_argument('--workers',type=int,default=2);p.add_argument('--source-cells',type=int,choices=(8,16),default=16);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--section');p.add_argument('--limit-sources',type=int);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--selection',type=Path,required=True);p.add_argument('--fine',type=Path,required=True);p.add_argument('--public',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--staged-public',type=Path);p.add_argument('--workers',type=int,default=2);p.add_argument('--source-cells',type=int,choices=(8,16),default=16);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--section');p.add_argument('--limit-sources',type=int);p.add_argument('--deadline-unix',type=float);a=p.parse_args()
     if not 1<=a.workers<=4:p.error('Use 1–4 workers')
     a.output.mkdir(parents=True,exist_ok=True)
     lock=(a.output/'.batch.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -238,6 +238,7 @@ def main():
         atomic(a.output/'status.json',rawjson(dict(state=state,pid=os.getpid(),updatedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),elapsedSeconds=round(time.time()-started),current=current,completedSources=len(entries),completedTiles=sum(s['tileCount'] for s in entries.values()),downloadBytes=sum(s['downloadBytes'] for s in entries.values()),deferred=deferred,failures=failures)))
     selections=sorted(a.selection.glob('*.json'),key=lambda f:(f.stem!='z10-x500-y333',f.name))
     for selection_path in selections:
+        if a.deadline_unix and time.time()>=a.deadline_unix:status('paused-time-limit');return
         if a.section and selection_path.stem!=a.section:continue
         s=json.loads(selection_path.read_bytes());section=a.fine/(s['id']+'-adaptive-0p5')
         if not s['chunks'] or not (section/'adaptive.json').exists():continue
@@ -253,6 +254,7 @@ def main():
             if c['id'] not in fine:raise ValueError('Frozen selection has no corrected fine mesh')
             x,y=cell(c);groups.setdefault((x//a.source_cells*a.source_cells,y//a.source_cells*a.source_cells),[]).append(c)
         for (x,y),chunks in sorted(groups.items()):
+            if a.deadline_unix and time.time()>=a.deadline_unix:status('paused-time-limit');return
             key=f"world-{s['id']}-c{x:02d}-r{y:02d}"
             if key in entries:continue
             if shutil.disk_usage(a.output).free<a.reserve_gib*1024**3:status('paused-low-disk',key);return
