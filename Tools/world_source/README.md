@@ -61,8 +61,10 @@ Validation on 4 October 2026: simulator and signed iOS Release builds succeeded;
 6,409 world checks, 17 route UX assertions and 137 core route assertions passed.
 Simulator inspection confirmed terrain/vector alignment, ridge route draping,
 labels, and saved-route reopening after replacing the app without uninstalling.
-Physical iPad installation initially failed with a connection reset; sustained
-device performance and thermal behaviour are not yet verified.
+Signed Release installed on Matthew's M1 iPad Pro over USB without uninstalling
+the existing app. Device Hub inspection confirmed the atlas opens and Snowdon
+loads in 3D with contours, paths and peak labels. Sustained device performance
+and thermal behaviour are not yet verified.
 
 ## Before extending or releasing
 
