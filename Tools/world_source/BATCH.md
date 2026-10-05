@@ -56,6 +56,7 @@ The lossless native codec runs inside each worker rather than launching encode/d
 
 ```sh
 /tmp/ridge-world-build-env/bin/python Tools/world_source/test_batch_world.py
+python3 Tools/world_source/test_batch_previews.py
 sh Tools/test_world_batch.sh '/path/to/published/source'
 ```
 
@@ -63,7 +64,7 @@ The native test uses the real `WorldSourceStore`, adaptive codec, vector drawing
 
 ## Exact overhead snapshots
 
-`render_batch_preview.swift` calls the actual app background and preview renderers, including the same light, camera and vector palette. It does not decode fine geometry. `batch_previews.py` watches only fully published world sources and produces one 2048 px-high JPEG at a time, with bounds and image/source/style hashes in a separate catalog. The source directory remains immutable. It stops when world conversion stops, after the time bound, or below the disk reserve. Use `--hours 0` to follow the build without a time cutoff. A failed source is recorded and retried on a later invocation.
+`render_batch_preview.swift` calls the actual app background and preview renderers, including the same light, camera and vector palette. It does not decode fine geometry. `batch_previews.py` watches only fully published world sources and produces one 2048 px-high JPEG at a time, with bounds and image/source/style hashes in a separate catalog. The source directory remains immutable. It stops when world conversion stops, after the time bound, or below the disk reserve. Use `--hours 0` to follow the build without a time cutoff. A failed source is recorded and retried on a later invocation. Before stopping, the preview worker rereads the completed source catalog so regions published during its last render pass are included. Dense urban routing assets may be up to 64 MB in the app reader; other world assets retain their 32 MB limit.
 
 ```sh
 sh Tools/build_world_preview_renderer.sh /tmp/ridge-world-preview-renderer

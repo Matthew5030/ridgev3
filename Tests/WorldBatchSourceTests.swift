@@ -11,6 +11,8 @@ import CoreGraphics
         let (source, overview, graph) = try await store.open(address: "")
         try source.validate()
         guard !source.tiles.isEmpty, source.tiles.count <= 256,
+              graph.nodes.count <= RouteEngine.maximumGraphNodes,
+              graph.edges.count <= RouteEngine.maximumGraphEdges,
               graph.edges.allSatisfy({ $0.distance.isFinite && $0.distance > 0 }) else {
             throw RidgeError.message("Invalid batch graph or coverage")
         }

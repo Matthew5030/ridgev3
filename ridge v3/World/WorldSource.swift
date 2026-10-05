@@ -169,7 +169,7 @@ actor WorldSourceStore {
         let source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
         let overview = try JSONDecoder().decode(WorldOverview.self, from: await read(source.overview))
         guard (2...2049).contains(overview.width), (2...2049).contains(overview.height), overview.heights.count == overview.width * overview.height, overview.heights.allSatisfy(\.isFinite) else { throw RidgeError.message("Invalid world overview.") }
-        let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph))
+        let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph, maximumBytes: 64_000_000))
         return (source, overview, graph)
     }
     func backdrop(source: WorldSource, overview: WorldOverview) async throws -> WorldBackdrop {
@@ -232,12 +232,15 @@ actor WorldSourceStore {
         // beginning of a large offline operation before the final asset arrives.
         let previous = pins
         do {
-            for asset in keep { _ = try await read(asset); pins.insert(asset.sha256) }
+            for asset in keep {
+                _ = try await read(asset, maximumBytes: asset.file == source.graph.file ? 64_000_000 : 32_000_000)
+                pins.insert(asset.sha256)
+            }
             try JSONEncoder().encode(pins).write(to: cache.appendingPathComponent("pins.json"), options: .atomic)
         } catch { pins = previous; throw error }
     }
-    private func read(_ asset: WorldMapAsset) async throws -> Data {
-        guard PackStore.safeName(asset.file), (1...32_000_000).contains(asset.byteCount), asset.sha256.count == 64, asset.sha256.allSatisfy(\.isHexDigit) else { throw RidgeError.message("Invalid world asset.") }
+    private func read(_ asset: WorldMapAsset, maximumBytes: Int = 32_000_000) async throws -> Data {
+        guard PackStore.safeName(asset.file), (1...maximumBytes).contains(asset.byteCount), asset.sha256.count == 64, asset.sha256.allSatisfy(\.isHexDigit) else { throw RidgeError.message("Invalid world asset.") }
         let saved = cache.appendingPathComponent(asset.sha256)
         func checked(_ data: Data) -> Bool { data.count == asset.byteCount && AdaptiveTerrainCodec.hash(data) == asset.sha256 }
         if base.isFileURL {

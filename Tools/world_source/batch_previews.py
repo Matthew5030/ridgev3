@@ -52,6 +52,10 @@ def main():
         supervisor=a.world_root/'supervisor.json'
         upstream=json.loads(supervisor.read_bytes()) if supervisor.exists() else dict(state='unknown')
         if upstream['state'] in ('finished','failed','paused-time-limit','paused-low-disk'):
+            # The source catalog can grow while this pass renders. Re-read after
+            # the writer stops so the last published sources cannot be skipped.
+            latest=json.loads(source_catalog.read_bytes())['sources'] if source_catalog.exists() else []
+            if any(item['id'] not in entries and item['id'] not in failures for item in latest):continue
             status('complete-with-errors' if failures else 'complete');return
         status('waiting-for-world-sources');time.sleep(20)
     status('paused-time-limit')
