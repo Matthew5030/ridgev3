@@ -437,7 +437,7 @@ struct OfflineAtlasView: View {
     var onViewport: (GeoBounds) -> Void
     var snapToTiles = false
     var worldCoverage: GeoBounds? = nil
-    private var maximumScale: Double { worldCoverage == nil ? 4_000_000 : 16_000_000 }
+    private var maximumScale: Double { onWorldTap != nil || worldCoverage != nil ? 16_000_000 : 4_000_000 }
     var worldPreview: CGImage? = nil
     var onWorldTap: ((GeoPoint) -> Void)? = nil
     // The callback identifies the world flow even before its terrain source opens.
@@ -489,7 +489,7 @@ struct OfflineAtlasView: View {
                     if rect.width < 45 {
                         let p=CGPoint(x:rect.midX,y:rect.midY)
                         context.fill(Path(ellipseIn:CGRect(x:p.x-5,y:p.y-5,width:10,height:10)),with:.color(RidgeTheme.forest))
-                        let label=context.resolve(Text("Snowdon · 3D").font(.system(size:12,weight:.semibold)).foregroundStyle(RidgeTheme.forest))
+                        let label=context.resolve(Text("3D terrain").font(.system(size:12,weight:.semibold)).foregroundStyle(RidgeTheme.forest))
                         context.draw(label,at:CGPoint(x:p.x+10,y:p.y),anchor:.leading)
                     }
                 }
@@ -516,10 +516,8 @@ struct OfflineAtlasView: View {
                         center=CGPoint(x:min(1,max(0,before.x-offset.x/scale)),y:min(0.94,max(0.06,before.y-offset.y/scale)))
                         if ended { reportViewport(geometry.size) }
                     }, onTap: { location in
-                        if let worldCoverage, let onWorldTap {
-                            let rect=rectangle(worldCoverage,size:geometry.size)
-                            let target=rect.width<45 ? CGRect(x:rect.midX-15,y:rect.midY-20,width:140,height:40) : rect
-                            if target.contains(location) { onWorldTap(worldCoverage.center);return }
+                        if let onWorldTap {
+                            onWorldTap(coordinate(at: location, size: geometry.size)); return
                         }
                         if selecting && !movingMap {
                             let point = coordinate(at: location, size: geometry.size)

@@ -173,6 +173,7 @@ actor WorldSourceStore {
         return (source, overview, graph)
     }
     func backdrop(source: WorldSource, overview: WorldOverview) async throws -> WorldBackdrop {
+        try await prefetch(source.tiles.compactMap(\.background).map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) })
         var geometries:[String:SCNGeometry]=[:]
         var meshes:[String:AdaptiveMesh]=[:]
         let maximumDivisions = ProcessInfo.processInfo.physicalMemory >= 6 * 1024 * 1024 * 1024 ? 64 : 32
@@ -190,6 +191,7 @@ actor WorldSourceStore {
         return WorldBackdrop(geometries:geometries,meshes:meshes)
     }
     func preview(source: WorldSource, backdrop: WorldBackdrop) async throws -> (CGImage,[String:WorldPreparedTile]) {
+        try await prefetch(source.tiles.map(\.map))
         var pages:[String:WorldPreparedTile]=[:]
         for tile in source.tiles {
             try Task.checkCancellation()
@@ -236,8 +238,27 @@ actor WorldSourceStore {
                 _ = try await read(asset, maximumBytes: asset.file == source.graph.file ? 64_000_000 : 32_000_000)
                 pins.insert(asset.sha256)
             }
+            refreshPins()
             try JSONEncoder().encode(pins).write(to: cache.appendingPathComponent("pins.json"), options: .atomic)
         } catch { pins = previous; throw error }
+    }
+    /// Fetch at most six files at a time. Geometry and image work stays serial.
+    private func prefetch(_ assets: [WorldMapAsset]) async throws {
+        guard !base.isFileURL else { return }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var next = 0
+            for _ in 0..<min(6, assets.count) {
+                let asset = assets[next]; next += 1
+                group.addTask { _ = try await self.read(asset) }
+            }
+            while try await group.next() != nil {
+                try Task.checkCancellation()
+                if next < assets.count {
+                    let asset = assets[next]; next += 1
+                    group.addTask { _ = try await self.read(asset) }
+                }
+            }
+        }
     }
     private func read(_ asset: WorldMapAsset, maximumBytes: Int = 32_000_000) async throws -> Data {
         guard PackStore.safeName(asset.file), (1...maximumBytes).contains(asset.byteCount), asset.sha256.count == 64, asset.sha256.allSatisfy(\.isHexDigit) else { throw RidgeError.message("Invalid world asset.") }
@@ -258,7 +279,12 @@ actor WorldSourceStore {
         guard (response as? HTTPURLResponse)?.statusCode == 200, checked(data) else { throw RidgeError.message("A map file is incomplete. Move back to retry.") }
         try data.write(to: saved, options: .atomic); prune(protecting: asset.sha256); return data
     }
+    private func refreshPins() {
+        if let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")),
+           let saved = try? JSONDecoder().decode(Set<String>.self, from: data) { pins.formUnion(saved) }
+    }
     private func prune(protecting hash: String) {
+        refreshPins()
         let urls = (try? FileManager.default.contentsOfDirectory(at: cache, includingPropertiesForKeys: [.fileSizeKey,.contentModificationDateKey])) ?? []
         let files = urls.filter { $0.lastPathComponent.count == 64 }.compactMap { url -> (URL, Int64, Date)? in
             guard let v = try? url.resourceValues(forKeys: [.fileSizeKey,.contentModificationDateKey]) else { return nil }

@@ -5,7 +5,10 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
-    @AppStorage("ridge.worldSourceURL") private var worldAddress = ""
+    @State private var sourceError: String?
+    @AppStorage("ridge.mapSourceMode") private var mapMode = "cloud"
+    @AppStorage("ridge.localMapServer") private var localMapServer = ""
+    @State private var selectedMapMode = "cloud"
     @AppStorage("ridge.downloadServer") private var serverAddress = ""
     @State private var worldAddressDraft = ""
     @State private var connectingServer = false
@@ -32,19 +35,29 @@ struct SettingsView: View {
                 worldGestureSection
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map source").font(RidgeTheme.sectionTitle)
-                    TextField("Hosted world.json URL (optional)", text: $worldAddressDraft).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
-                    Button("Use this source") { worldAddress = worldAddressDraft.trimmingCharacters(in: .whitespacesAndNewlines); dismiss() }
-                    Menu("Try the online Snowdon maps") {
-                        Button("Snowdon & Crib Goch") { usePilot("c16-r00") }
-                        Button("Snowdon · west") { usePilot("c00-r00") }
-                        Button("Snowdon · south") { usePilot("c16-r16") }
-                        Button("Snowdon · south-west") { usePilot("c00-r16") }
+                    Picker("Map source", selection: $selectedMapMode) {
+                        Text("Cloud").tag("cloud")
+                        Text("Local network").tag("local")
+                    }.pickerStyle(.segmented)
+                    if selectedMapMode == "local" {
+                        TextField("http://your-mac.local:8787", text: $worldAddressDraft)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Local map server")
+                        Text("Use the Mac serving your external drive. Keep it running and connect to the same network.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    } else {
+                        Text("Terrain loads as you explore. Cloud coverage currently includes the Snowdon pilot.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     }
-                    Button("Use the included map") { worldAddress = ""; dismiss() }
-                    Text("The online pilot covers four neighbouring areas around Snowdon. Detail is cached as you explore; Keep this area offline saves it for later. Leave the address blank to use the included map.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Button("Use this source") {
+                        do {
+                            _ = try WorldLibrary.root(mode: selectedMapMode, local: worldAddressDraft)
+                            localMapServer = worldAddressDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            mapMode = selectedMapMode; dismiss()
+                        } catch { sourceError = error.localizedDescription }
+                    }
+                    if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
+                    Text("Browse and zoom into a place to load its terrain. Keep offline saves the area for use without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 offlineSection
-                downloadServerSection
                 legendSection
                 storageSection
                 estimatesSection
@@ -58,7 +71,8 @@ struct SettingsView: View {
             }.padding(24).padding(.top, 12).frame(maxWidth: 700).frame(maxWidth: .infinity)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
             .onAppear {
-                worldAddressDraft = worldAddress
+                selectedMapMode = mapMode
+                worldAddressDraft = localMapServer.isEmpty ? serverAddress : localMapServer
                 if serverAddress.isEmpty, let remote = store.entries.compactMap(\.remoteSource).first {
                     serverAddress = remote.deletingLastPathComponent().absoluteString
                 }
@@ -74,11 +88,6 @@ struct SettingsView: View {
             }
     }
 
-    private func usePilot(_ area: String) {
-        worldAddress = "https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev/pilot-2026-10-07/sources/world-z10-x500-y333-\(area)/world.json"
-        dismiss()
-    }
-
     private var worldGestureSection: some View {
         VStack(alignment:.leading,spacing:12) {
             Text("Map controls").font(RidgeTheme.sectionTitle)
@@ -91,7 +100,7 @@ struct SettingsView: View {
     private var offlineSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Offline maps").font(RidgeTheme.sectionTitle)
-            Text("Download a region from Packs, then choose smaller areas to open in 3D. Packs include terrain, maps and paths for offline use.")
+            Text("Choose Keep offline while exploring to save terrain, maps and paths for later. Browsing online does not require a separate download step.")
                 .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
             if store.activeTerrain == nil {
             VStack(spacing: 0) {

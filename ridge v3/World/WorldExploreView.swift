@@ -4,7 +4,10 @@ import UniformTypeIdentifiers
 struct WorldExploreView: View {
     @Bindable var store: AppStore
     @Bindable var world: WorldModel
-    @AppStorage("ridge.worldSourceURL") private var sourceAddress = ""
+    @AppStorage("ridge.mapSourceMode") private var mapMode = "cloud"
+    @AppStorage("ridge.localMapServer") private var localMapServer = ""
+    @State private var visibleBounds: GeoBounds?
+    private var connectionID: String { mapMode + "|" + (mapMode == "local" ? localMapServer : "") }
     @Environment(\.scenePhase) private var phase
     @State private var query = ""
     @State private var atlasRequest: UUID?
@@ -21,7 +24,8 @@ struct WorldExploreView: View {
     private var candidates: [MapPlace] {
         let places = (world.source?.places ?? []) + (store.atlas?.places ?? [])
         var names = Set<String>()
-        return places.filter { $0.name.localizedCaseInsensitiveContains(query) && names.insert($0.name).inserted }.prefix(8).map { $0 }
+        let term = "snowdon".hasPrefix(query.lowercased()) && !query.isEmpty ? "Yr Wyddfa" : query
+        return places.filter { $0.name.localizedCaseInsensitiveContains(term) && names.insert($0.name).inserted }.prefix(8).map { $0 }
     }
     var body: some View {
         ZStack(alignment: .top) {
@@ -54,7 +58,8 @@ struct WorldExploreView: View {
                 HStack(alignment:.top) {
                     if world.in3D {
                         VStack(alignment:.leading,spacing:4) {
-                            Text(world.source?.name ?? "Terrain").font(.subheadline.weight(.semibold))
+                            Text("Terrain").font(.subheadline.weight(.semibold))
+                            if world.loadingRegionID != nil { ProgressView("Loading nearby terrain").font(.caption) }
                             if world.pending > 0 { Label("Adding detail",systemImage:"arrow.down.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
                         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                         Spacer()
@@ -71,19 +76,19 @@ struct WorldExploreView: View {
                     } else {
                         VStack(alignment:.leading,spacing:10) {
                             Text("Explore the mountains").font(.headline)
-                            Text("Zoom into a place to explore in 3D.").font(.subheadline)
-                            if let source = world.source {
-                                Button("Explore \(source.name)") { visit(world.center) }.buttonStyle(.borderedProminent).foregroundStyle(.white)
-                                Text(sourceAddress.isEmpty ? "Snowdon test map included · more coverage to follow" : "Online map · save an area for offline use").font(.caption).foregroundStyle(RidgeTheme.muted)
-                            } else if world.isLoading { ProgressView("Opening map") }
+                            Text("Zoom in to see the terrain.").font(.subheadline)
+                            Text(mapMode == "cloud" ? "Cloud · Snowdon pilot coverage" : "Local network")
+                                .font(.caption).foregroundStyle(RidgeTheme.muted)
+                            if world.isLoading { ProgressView(world.catalog == nil ? "Connecting to maps" : "Loading terrain") }
                         }.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                         Spacer()
                     }
                 }
                 Spacer()
                 if let message = world.message {
-                    HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.source == nil { Task { await world.open(address: sourceAddress) } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
+                    HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
+                if let message = world.coverageMessage { Text(message).font(.caption).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
                 if let message = world.offlineMessage {
                     HStack { Text(message).font(.caption);Spacer();Button("OK") { world.offlineMessage=nil } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -96,9 +101,14 @@ struct WorldExploreView: View {
         .onGeometryChange(for:CGSize.self) { $0.size } action: { mapSize=$0 }
         .animation(.easeInOut(duration:0.25),value:world.in3D)
         .foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
-        .task(id:sourceAddress) {
-            await world.open(address:sourceAddress)
-            if let terrain=world.routeTerrain { store.worldTerrain=terrain; if store.activeTerrain==nil || store.isWorldBrowsing { store.activeTerrain=terrain;store.isWorldBrowsing=true } }
+        .task(id:connectionID) {
+            store.worldTerrain = nil
+            await world.configure(mode: mapMode, local: localMapServer)
+            if let bounds = visibleBounds { viewportChanged(bounds) }
+        }
+        .onChange(of: world.source?.id) { _, _ in
+            if let terrain = world.routeTerrain { store.worldTerrain = terrain; store.activeTerrain = terrain; store.isWorldBrowsing = true }
+            if let bounds = visibleBounds, !world.in3D { viewportChanged(bounds) }
         }
         .onAppear { world.resume(); store.isWorldBrowsing=true; if let terrain=world.routeTerrain { store.activeTerrain=terrain }; if let point=store.worldRouteFocus {visit(point);store.worldRouteFocus=nil} }
         .onDisappear { world.suspend() }
@@ -160,20 +170,24 @@ struct WorldExploreView: View {
         Button(action:action) {Image(systemName:symbol).frame(width:42,height:42).background(.regularMaterial,in:Circle())}.accessibilityLabel(label)
     }
     private func visit(_ point:GeoPoint) {
-        query=""
-        guard let source=world.source,source.bounds.contains(point) else {
-            focus=AtlasFocus(point:point,scale:150_000);world.message="Detailed coverage for this place hasn’t been published yet.";return
+        query = ""
+        if world.in3D {
+            if world.hasCoverage(point) { world.requestFocus = point; world.browse(point) }
+            else { world.browse(point) }
+            return
         }
-        if world.in3D { world.requestFocus=point;return }
-        // Fly through the same overhead cartography before introducing perspective.
-        let bounds=WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))
-        focus=AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
-        store.isWorldBrowsing=true;store.activeTerrain=world.routeTerrain
+        let bounds = WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))
+        focus = AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
+        viewportChanged(bounds)
     }
     private func viewportChanged(_ bounds:GeoBounds) {
-        guard !world.in3D,let source=world.source,source.bounds.contains(bounds.center),bounds.depthMeters<7000 else{return}
-        world.center=bounds.center;world.cameraPose=nil;world.entrySpan=bounds.depthMeters;world.distance=max(1800,bounds.depthMeters);atlasRequest=nil;world.in3D=true
-        store.isWorldBrowsing=true;store.activeTerrain=world.routeTerrain
+        visibleBounds = bounds
+        guard !world.in3D else { return }
+        guard bounds.depthMeters < 7000 else { world.cancelRegionLoad(); world.coverageMessage = nil; return }
+        guard world.browse(bounds.center), let source = world.source, source.bounds.contains(bounds.center) else { return }
+        world.center = bounds.center; world.cameraPose = nil; world.entrySpan = bounds.depthMeters
+        world.distance = max(1800,bounds.depthMeters); atlasRequest = nil; world.in3D = true
+        store.isWorldBrowsing = true; store.activeTerrain = world.routeTerrain
     }
     private func leaveWorld(_ bounds:GeoBounds) {
         focus=AtlasFocus(point:bounds.center,scale:1,bounds:bounds,exactViewport:true)
@@ -182,6 +196,12 @@ struct WorldExploreView: View {
     private func tapped(_ point:GeoPoint) {
         if store.editing,store.movingWaypoint==nil,let waypoint=store.activeRoute?.waypoints.min(by:{$0.point.coordinate.distance(to:point)<$1.point.coordinate.distance(to:point)}),waypoint.point.coordinate.distance(to:point)<max(8,world.distance*0.007) {
             editWaypoint=waypoint;return
+        }
+        guard world.source?.bounds.contains(point) == true else { world.browse(point); return }
+        if store.editing, let last = store.activeRoute?.waypoints.last?.point.coordinate,
+           world.source?.bounds.contains(last) != true {
+            store.toast("Paths across this map boundary aren’t joined yet. Your route hasn’t changed.")
+            return
         }
         store.tapTerrain(point)
     }

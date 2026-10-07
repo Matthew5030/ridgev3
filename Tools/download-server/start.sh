@@ -8,4 +8,6 @@ cp "$RIDGE_SERVER_SOURCE/compose.yaml" "$RIDGE_SERVER_RUNTIME/compose.yaml"
 cp "$RIDGE_SERVER_SOURCE/nginx.conf" "$RIDGE_SERVER_RUNTIME/nginx.conf"
 export RIDGE_SOURCE_DIRECTORY="${1:-/Volumes/MLB_EXT_4TB/Ridge Sources}"
 docker compose -f "$RIDGE_SERVER_RUNTIME/compose.yaml" up -d
+docker compose -f "$RIDGE_SERVER_RUNTIME/compose.yaml" exec -T downloads nginx -t
+docker compose -f "$RIDGE_SERVER_RUNTIME/compose.yaml" exec -T downloads nginx -s reload
 printf 'Ridge downloads: http://%s.local:%s\n' "$(scutil --get LocalHostName)" "${RIDGE_DOWNLOAD_PORT:-8787}"

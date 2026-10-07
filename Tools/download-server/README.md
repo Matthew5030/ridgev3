@@ -1,9 +1,9 @@
 # Ridge local downloads
 
 This serves immutable prepared terrain and map files over your home network.
-It does no LiDAR processing, scene generation, route calculation or camera
-streaming. The app downloads the selected detail, its bounded horizon, map
-images and walking graph, then prepares the normal offline 3D area.
+It does no LiDAR processing, scene generation or route calculation. Ridge reads
+the catalogue, selects data geographically as you explore, and renders the
+adaptive terrain and vector maps on the device.
 
 ## Start
 
@@ -15,19 +15,36 @@ sh Tools/download-server/start.sh '/Volumes/MLB_EXT_4TB/Ridge Sources'
 
 Allow Docker's macOS removable-volume prompt. The data mount is read-only.
 The script prints the Mac's `.local` address. On the same network, enter it in
-Ridge → Settings → Download server → Connect and refresh coverage. Return to
-the map, select highlighted tiles and tap **Download & open in 3D**.
+Ridge → Settings → Map source → Local network, then tap **Use this source**.
+Browse or search in Explore and zoom in; no region or tile selection is needed.
 
-The app connects explicitly, downloads only missing files, verifies their
-SHA-256 checksums and retains completed files when a download is cancelled.
-Download and terrain-preparation progress have separate labels. Moving the
-camera never makes requests. Previously saved areas open with the server off.
+The app downloads missing files, verifies SHA-256 checksums and retains completed
+files when a request is cancelled. Moving into a new catalogue region loads it
+automatically. Keep offline pins the current area for use with the server off.
 
 The server listens on port 8787. Set `RIDGE_DOWNLOAD_PORT` before starting to
 use another port. It serves only app asset filenames, hides directories and
 build reports, and accepts GET/HEAD. This is a local-network development server.
 
-## Publish adaptive Eryri
+## Current adaptive/vector library
+
+`/world/catalog.json` aliases `world-v1-2026-10-04/catalog.json` on the drive.
+`/world/sources/<id>/…` exposes only world manifests, overview elevation, paths,
+compressed adaptive meshes and vector map assets. The completed catalogue has
+2,531 regions. Reports and directory listings are not exposed. The start script
+validates and reloads nginx so configuration changes take effect on an existing
+container. This needs no data regeneration.
+
+```sh
+curl http://127.0.0.1:8787/world/catalog.json
+```
+
+## Legacy saved-area publication
+
+The sections below describe the previous pack flow retained for older saves,
+not the current Explore source selector.
+
+### Publish adaptive Eryri
 
 The normal `/catalog.json` uses schema 2 and advertises `ridge-adaptive-v2-eryri`.
 It joins the audited UK-v3 RAT1 chunks to existing Eryri maps, walking graphs and

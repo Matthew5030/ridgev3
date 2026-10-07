@@ -141,9 +141,10 @@ sh Tools/test_routes.sh /path/to/snowdon-horseshoe
 ```
 
 For local HTTP/cache integration, serve the source on port 8776, then run
-`sh Tools/test_world_source.sh --http`. On iOS, Settings → World source accepts
-the full `world.json` URL; blank restores the bundled source. A physical iPad
-requires an address it can reach, rather than the Mac's localhost.
+`sh Tools/test_world_source.sh --http`. In the app, Settings → Map source selects
+Cloud or Local network. For LAN use the server root, such as
+`http://Matthews-MacBook-Pro.local:8787`; Ridge resolves `/world/catalog.json`.
+A physical device needs the Mac’s network address, not localhost.
 
 ### Static hosting pilot
 
@@ -169,8 +170,8 @@ The inventory is local upload bookkeeping and need not be published.
 The native reader test checks decoded fine and background terrain, vector image
 rendering, a walking graph segment, cache checksums and offline pin bookkeeping.
 It reports cold and cached timings. It does not replace an iPad test in airplane
-mode or verify sustained frame rate. The pilot opens each region separately;
-automatic movement between catalogue regions remains to be implemented.
+mode or verify sustained frame rate. The app selects regions geographically from
+the catalogue; `test_world_catalog.sh` exercises selection and handover separately.
 
 ### Public R2 pilot — 7 October 2026
 
@@ -185,9 +186,9 @@ prototype is preserved in Git commit `c6582de`, not shipped in the app.
 - Origin: `https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev`.
 - Immutable revision prefix: `pilot-2026-10-07/`.
 - Entry point: `/pilot-2026-10-07/index.html` lists the four map source addresses.
-- In Ridge: Settings → Map source → Try the online Snowdon maps. The included
-  map remains available without a network connection. Custom source URLs work
-  as before. Keep this area offline pins the downloaded data.
+- In Ridge: Settings → Map source → Cloud. Browse the overview and zoom into
+  Snowdon; the app chooses the source automatically. There is no region picker.
+  Keep offline pins the currently explored area and its surroundings.
 
 The upload tool verifies local hashes, uploads dependencies before manifests,
 reads every object back, and refuses to replace different bytes at existing keys.
@@ -219,8 +220,8 @@ The `r2.dev` endpoint is intended for development and may throttle traffic. For
 production, attach an unused subdomain of an existing Cloudflare-managed domain
 directly to R2 and configure caching; that still does not require a Worker.
 <https://developers.cloudflare.com/r2/buckets/public-buckets/>.
-Automatic cross-region catalogue movement remains a separate app task. The pilot
-currently opens each region separately.
+Automatic catalogue selection is implemented below. Cloud coverage is still only
+the four uploaded pilot regions; selecting Cloud does not imply UK-wide 3D coverage.
 
 All 3,090 objects were uploaded and read back through the public endpoint with
 matching SHA-256 hashes (121,856,580 bytes). Signed iOS and simulator builds
@@ -430,9 +431,44 @@ across 342 sections. Those meshes are reused. Verified source archives are stage
 from retained iCloud products; the resumable batch creates bounded adaptive/vector
 world sources and exact overhead previews. See `BATCH.md` for commands, progress
 files and restart instructions. Originals remain in place. The UK-wide overview
-is already bundled; automatic discovery/loading of new 3D regions and routing
-across source boundaries still require app integration.
+is already bundled. Automatic source discovery/loading is now integrated; joining
+walking graphs across source boundaries remains outstanding.
 
 Simulator QA confirmed opening the shaded UK overview, entering Snowdon in 3D,
 and returning to an overhead map centred on the same place. The iPad build was
 installed; physical launch was blocked by the device lock.
+
+## Catalogue browsing — 7 October 2026
+
+Settings now has one Cloud / Local network source choice. Both serve the same
+`catalog.json` contract with relative `sources/<id>/world.json` paths. The LAN
+`/world/` alias serves all 2,531 prepared regions on the external drive. The cloud
+root serves only the four Snowdon pilot regions. Source switching cancels old
+requests. The overview is bundled and remains usable without terrain coverage.
+
+Zooming below a 7 km viewport or visiting a place selects the containing region,
+loads its background and vector preview, then enters 3D. Crossing a catalogue
+boundary starts the next region automatically. The existing scene stays visible
+until the replacement is ready; camera heading and tilt are preserved. Reversing
+direction cancels the pending handover. Missing coverage shows a message.
+
+Six concurrent asset fetches replace serial background/map downloads; decoding
+and rasterisation stay bounded. Cold cloud background preparation fell from
+32.8 s to 5.4 s on this Mac/network. This is not a physical-device frame-rate
+measurement. Only the current region plus a preparing candidate are retained;
+this is not yet a multi-region horizon mesh.
+
+Validation: `sh Tools/test_world_catalog.sh` (requires the local server and cloud
+pilot) checks root validation, geographic selection, boundary retention, real
+loads, cancellation, camera-pose preservation and source changes. Native hosted
+reader checks also passed for Scafell Pike and Kinder Scout from the LAN server.
+
+Release backlog: the producer currently drops graph edges crossing source
+boundaries. Join these graphs before claiming continuous cross-region routing.
+The app refuses to append a route waypoint when the previous waypoint belongs
+to another source, rather than invoking the obsolete area-download flow.
+Simulator UI checks verified Cloud → Yr Wyddfa → Llanberis, and changing to
+Local network → searching Keswick → automatic Lake District 3D rendering with
+contours, paths, buildings and labels. The final signed build was installed on
+Matthew’s iPhone. Physical-device offline and sustained cross-boundary panning
+tests remain needed.

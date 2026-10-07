@@ -178,8 +178,16 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     override func layoutSubviews() { super.layoutSubviews(); updateLabels() }
     private func updateCamera(notify: Bool = true) {
         guard let source else { return }
-        target.x = min(Float(source.bounds.widthMeters * 0.49), max(-Float(source.bounds.widthMeters * 0.49), target.x))
-        target.z = min(Float(source.bounds.depthMeters * 0.49), max(-Float(source.bounds.depthMeters * 0.49), target.z))
+        let proposed = coordinate(target)
+        if model?.hasCoverage(proposed) != true {
+            model?.browse(proposed)
+            if source.bounds.contains(proposed), let previous = model?.cameraPose, model?.hasCoverage(previous.target) == true {
+                target = local(previous.target)
+            } else {
+                target.x = min(Float(source.bounds.widthMeters * 0.4999), max(-Float(source.bounds.widthMeters * 0.4999), target.x))
+                target.z = min(Float(source.bounds.depthMeters * 0.4999), max(-Float(source.bounds.depthMeters * 0.4999), target.z))
+            }
+        }
         distance = min(flightLink == nil ? 26000 : 300000,max(170,distance))
         cameraNode.camera?.zFar=max(60000,Double(distance)*2)
         // A narrow-FOV overhead camera is far away even when its footprint is small.
@@ -193,9 +201,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         scheduleLabels()
         guard notify else { return }
         model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
-        let center = coordinate(target), range = Double(distance)
+        let center = coordinate(target), range = Double(distance), originID = source.id
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.scene != nil else { return }
+            guard let self, self.scene != nil, self.source?.id == originID else { return }
             self.model?.update(center: center, distance: range)
             if range > 12000 && self.flightLink == nil { self.beginExit() }
         }
