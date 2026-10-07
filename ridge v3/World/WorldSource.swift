@@ -145,7 +145,7 @@ actor WorldSourceStore {
         var url = cache; var values = URLResourceValues(); values.isExcludedFromBackup = true; try? url.setResourceValues(values)
         if let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")), let saved = try? JSONDecoder().decode(Set<String>.self, from: data) { pins = saved }
     }
-    func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
+    func manifest(address: String, routing: WorldMapAsset? = nil, preferCached: Bool = false) async throws -> WorldSource {
         let manifest: Data
         if address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             base = bundled; manifest = try Data(contentsOf: bundled.appendingPathComponent("world.json"))
@@ -153,23 +153,34 @@ actor WorldSourceStore {
             guard let url = URL(string: address), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { throw RidgeError.message("Enter the full address of a world.json file.") }
             base = url.deletingLastPathComponent()
             let cached = cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8)) + ".index")
-            do {
-                var request = URLRequest(url: url); request.timeoutInterval = 15
-                let (temporary, response) = try await URLSession.shared.download(for: request)
-                defer { try? FileManager.default.removeItem(at: temporary) }
-                let size = try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max
-                guard size < 16_000_000 else { throw RidgeError.message("World index is too large.") }
-                let raw = try Data(contentsOf: temporary)
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200, raw.count < 16_000_000 else { throw RidgeError.message("The world source could not be read.") }
-                let source = try JSONDecoder().decode(WorldSource.self, from: raw); try source.validate()
-                try raw.write(to: cached, options: .atomic); manifest = raw
-            } catch {
-                try Task.checkCancellation()
-                guard let raw = try? Data(contentsOf: cached) else { throw error }; manifest = raw
+            if preferCached, let raw = try? Data(contentsOf:cached),
+               let saved = try? JSONDecoder().decode(WorldSource.self,from:raw), (try? saved.validate()) != nil {
+                manifest = raw
+            } else {
+                do {
+                    var request = URLRequest(url: url); request.timeoutInterval = 15
+                    let (temporary, response) = try await URLSession.shared.download(for: request)
+                    defer { try? FileManager.default.removeItem(at: temporary) }
+                    let size = try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max
+                    guard size < 16_000_000 else { throw RidgeError.message("World index is too large.") }
+                    let raw = try Data(contentsOf: temporary)
+                    guard let http = response as? HTTPURLResponse, http.statusCode == 200, raw.count < 16_000_000 else { throw RidgeError.message("The world source could not be read.") }
+                    let source = try JSONDecoder().decode(WorldSource.self, from: raw); try source.validate()
+                    try raw.write(to: cached, options: .atomic); manifest = raw
+                } catch {
+                    try Task.checkCancellation()
+                    guard let raw = try? Data(contentsOf: cached) else { throw error }; manifest = raw
+                }
             }
         }
         var source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
         if let routing { source.graph = routing }
+        return source
+    }
+    func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
+        try await contents(of: manifest(address:address,routing:routing))
+    }
+    func contents(of source: WorldSource) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
         let overview = try JSONDecoder().decode(WorldOverview.self, from: await read(source.overview))
         guard (2...2049).contains(overview.width), (2...2049).contains(overview.height), overview.heights.count == overview.width * overview.height, overview.heights.allSatisfy(\.isFinite) else { throw RidgeError.message("Invalid world overview.") }
         let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph, maximumBytes: 64_000_000))
@@ -238,21 +249,54 @@ actor WorldSourceStore {
         try Task.checkCancellation()
         return WorldPreparedTile(request:request,mesh:mesh,image:image,geometry:geometry)
     }
-    func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = []) async throws {
+    static func assets(tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = []) -> [WorldMapAsset] {
         var keep = [source.overview, source.graph] + surroundings
         keep += source.tiles.compactMap(\.background).map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) }
-        for tile in tiles { keep += [tile.map, WorldMapAsset(file: tile.mesh.path, byteCount: tile.mesh.byteCount, sha256: tile.mesh.sha256)] }
-        // Reserve completed files as they arrive; eviction must not remove the
-        // beginning of a large offline operation before the final asset arrives.
-        let previous = pins
-        do {
-            for asset in keep {
-                _ = try await read(asset, maximumBytes: asset.file == source.graph.file ? 64_000_000 : 32_000_000)
-                pins.insert(asset.sha256)
+        for tile in tiles { keep += [tile.map, WorldMapAsset(file:tile.mesh.path,byteCount:tile.mesh.byteCount,sha256:tile.mesh.sha256)] }
+        var seen = Set<String>()
+        return keep.filter { seen.insert($0.sha256).inserted }
+    }
+    func cachedBytes(for assets: [WorldMapAsset]) throws -> Int64 {
+        var bytes: Int64 = 0
+        for asset in assets {
+            try Task.checkCancellation()
+            guard PackStore.safeName(asset.file), (1...64_000_000).contains(asset.byteCount),
+                  asset.sha256.count == 64, asset.sha256.allSatisfy(\.isHexDigit) else { throw RidgeError.message("Invalid world asset.") }
+            let url = base.isFileURL ? base.appendingPathComponent(asset.file) : cache.appendingPathComponent(asset.sha256)
+            if let data = try? Data(contentsOf:url), data.count == asset.byteCount, AdaptiveTerrainCodec.hash(data) == asset.sha256 { bytes += Int64(asset.byteCount) }
+        }
+        return bytes
+    }
+    // Shared cache writers reserve hashes atomically before starting downloads.
+    // Partial saves remain reserved so a cancelled operation can be resumed.
+    private static let pinLock = NSLock()
+    private static func reserve(_ hashes: Set<String>, cache: URL) throws -> Set<String> {
+        pinLock.lock(); defer { pinLock.unlock() }
+        let url = cache.appendingPathComponent("pins.json")
+        let saved = (try? JSONDecoder().decode(Set<String>.self,from:Data(contentsOf:url))) ?? []
+        let merged = saved.union(hashes)
+        try JSONEncoder().encode(merged).write(to:url,options:.atomic)
+        return merged
+    }
+    func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = [], countCachedInProgress: Bool = true, progress: @Sendable (Int64) async -> Void = { _ in }) async throws {
+        let assets = Self.assets(tiles:tiles,source:source,surroundings:surroundings)
+        pins = try Self.reserve(Set(assets.map(\.sha256)),cache:cache)
+        try await withThrowingTaskGroup(of:Int64.self) { group in
+            var next = 0, completed: Int64 = 0
+            func add(_ asset: WorldMapAsset) {
+                group.addTask {
+                    let cached = countCachedInProgress ? 0 : try await self.cachedBytes(for:[asset])
+                    _ = try await self.read(asset,maximumBytes:asset.file == source.graph.file ? 64_000_000 : 32_000_000)
+                    return Int64(asset.byteCount) - cached
+                }
             }
-            refreshPins()
-            try JSONEncoder().encode(pins).write(to: cache.appendingPathComponent("pins.json"), options: .atomic)
-        } catch { pins = previous; throw error }
+            for _ in 0..<min(6,assets.count) { add(assets[next]); next += 1 }
+            while let bytes = try await group.next() {
+                try Task.checkCancellation()
+                completed += bytes; await progress(completed)
+                if next < assets.count { add(assets[next]); next += 1 }
+            }
+        }
     }
     /// Fetch at most six files at a time. Geometry and image work stays serial.
     private func prefetch(_ assets: [WorldMapAsset]) async throws {

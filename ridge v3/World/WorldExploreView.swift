@@ -59,7 +59,7 @@ struct WorldExploreView: View {
                     if world.in3D {
                         VStack(alignment:.leading,spacing:4) {
                             Text("Terrain").font(.subheadline.weight(.semibold))
-                            if world.loadingRegionID != nil { ProgressView("Loading nearby terrain").font(.caption) }
+                            if world.downloadPhase == "Preparing terrain" { ProgressView("Preparing nearby terrain").font(.caption) }
                             if world.pending > 0 { Label("Adding detail",systemImage:"arrow.down.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
                         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                         Spacer()
@@ -68,7 +68,7 @@ struct WorldExploreView: View {
                             control("minus", "Zoom out") { store.camera = TerrainCameraCommand(action:.zoomOut) }
                             control("square.3.layers.3d.top.filled", "Look straight down") { store.camera = TerrainCameraCommand(action:.overhead) }
                             Menu {
-                                Button("Keep this area offline",systemImage:"arrow.down.circle") { world.keepOffline() }
+                                Button("Saved on this device",systemImage:"checkmark.circle") { world.keepOffline() }
                                 Button("Import GPX",systemImage:"square.and.arrow.down") { store.showGPXImporter = true }
                                 Button("Saved areas",systemImage:"folder") { store.tab = .areas }
                             } label: { Image(systemName:"ellipsis").frame(width:42,height:42).background(.regularMaterial,in:Circle()) }
@@ -76,15 +76,16 @@ struct WorldExploreView: View {
                     } else {
                         VStack(alignment:.leading,spacing:10) {
                             Text("Explore the mountains").font(.headline)
-                            Text("Zoom in to see the terrain.").font(.subheadline)
+                            Text("Choose a place. Save the surrounding map, then explore in 3D.").font(.subheadline)
                             Text(mapMode == "cloud" ? "Cloud · Snowdon pilot coverage" : "Local network")
                                 .font(.caption).foregroundStyle(RidgeTheme.muted)
-                            if world.isLoading { ProgressView(world.catalog == nil ? "Connecting to maps" : "Loading terrain") }
+                            if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps") }
                         }.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                         Spacer()
                     }
                 }
                 Spacer()
+                if world.downloadPhase != nil { downloadCard }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -141,6 +142,31 @@ struct WorldExploreView: View {
             Button("Cancel",role:.cancel) {}
         }
     }
+    private var downloadCard: some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack {
+                Text(world.downloadPhase ?? "Maps").font(.headline)
+                Spacer()
+                Button("Cancel") { world.pauseDownload() }
+            }
+            if let summary = world.downloadSummary {
+                Text(String(format:"%.0f × %.0f km · terrain, maps and walking paths",summary.bounds.widthMeters/1000,summary.bounds.depthMeters/1000))
+                    .font(.subheadline)
+                if world.downloadPhase == "Download this area" {
+                    Text("Save the surrounding landscape before entering 3D. It will also work offline.").font(.subheadline).foregroundStyle(RidgeTheme.muted)
+                    Button("Download \(ByteCountFormatter.string(fromByteCount:summary.remainingBytes,countStyle:.file)) & explore") { world.downloadArea() }
+                        .buttonStyle(.borderedProminent).foregroundStyle(.white)
+                } else if world.downloadPhase == "Downloading maps" {
+                    ProgressView(value:Double(world.downloadCompleted),total:Double(max(1,summary.totalBytes)))
+                    Text("\(ByteCountFormatter.string(fromByteCount:world.downloadCompleted,countStyle:.file)) of \(ByteCountFormatter.string(fromByteCount:summary.totalBytes,countStyle:.file)) saved")
+                        .font(.caption).monospacedDigit()
+                } else {
+                    ProgressView()
+                    Text("Your map is saved. Preparing the landscape before you enter.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                }
+            } else { ProgressView("Checking the surrounding area") }
+        }.padding(16).frame(maxWidth:500,alignment:.leading).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
+    }
     private var routeBar: some View {
         VStack(spacing:10) {
             if let route=store.activeRoute {
@@ -173,7 +199,7 @@ struct WorldExploreView: View {
                         if store.activeRoute == nil {store.startRoute()} else {store.editing=true}
                     }.buttonStyle(.borderedProminent).foregroundStyle(.white)
                     Spacer()
-                    Button("Keep offline",systemImage:"arrow.down.circle") {world.keepOffline()}.disabled(world.saving)
+                    Label("Saved offline",systemImage:"checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }.disabled(store.isRouting)
         }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:14))
@@ -184,8 +210,7 @@ struct WorldExploreView: View {
     private func visit(_ point:GeoPoint) {
         query = ""
         if world.in3D {
-            if world.hasCoverage(point) { world.requestFocus = point; world.browse(point) }
-            else { world.browse(point) }
+            world.visit(point)
             return
         }
         let bounds = WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))

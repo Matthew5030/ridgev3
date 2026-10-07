@@ -4,6 +4,13 @@ import SceneKit
 
 /// Storage regions remain immutable. One bounded landscape combines their tiles
 /// into a common geographic frame and shares the existing fine-detail budget.
+struct WorldDownloadSummary: Sendable {
+    var bounds: GeoBounds
+    var totalBytes: Int64
+    var cachedBytes: Int64
+    var remainingBytes: Int64 { max(0,totalBytes-cachedBytes) }
+}
+
 actor WorldLandscapeStore {
     struct Part: Sendable {
         var source: WorldSource
@@ -13,6 +20,7 @@ actor WorldLandscapeStore {
         var connected: Bool
     }
     private let cacheURL: URL?
+    private var downloads: [(WorldSource,WorldSourceStore)] = []
     private var parts: [Part] = []
     private var owners: [String:(Int,WorldTile)] = [:]
     init(cacheURL: URL? = nil) { self.cacheURL = cacheURL }
@@ -23,16 +31,64 @@ actor WorldLandscapeStore {
         return catalog.sources.filter {
             abs($0.bounds.center.longitude-p.longitude) < dx*1.1 && abs($0.bounds.center.latitude-p.latitude) < dy*1.1
         }.sorted {
+            if $0.id == $1.id { return false }
             if $0.id == anchor.id { return true }; if $1.id == anchor.id { return false }
             return $0.bounds.center.distance(to:p) < $1.bounds.center.distance(to:p)
         }.prefix(9).map { $0 }
+    }
+    /// Read small manifests and verify cached payloads without loading terrain.
+    func inspect(anchor: WorldCatalog.Region, catalog: WorldCatalog, root: URL) async throws -> WorldDownloadSummary {
+        downloads = []
+        var total: Int64 = 0, cached: Int64 = 0
+        for region in Self.neighbours(anchor,catalog:catalog) {
+            try Task.checkCancellation()
+            let store = WorldSourceStore(cacheURL:cacheURL)
+            let source = try await store.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true)
+            guard source.id == region.id, source.bounds == region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
+            let assets = WorldSourceStore.assets(tiles:source.tiles,source:source)
+            total += assets.reduce(Int64(0)) { $0 + Int64($1.byteCount) }
+            cached += try await store.cachedBytes(for:assets)
+            downloads.append((source,store))
+        }
+        let bounds = GeoBounds(minLatitude:downloads.map { $0.0.bounds.minLatitude }.min()!,minLongitude:downloads.map { $0.0.bounds.minLongitude }.min()!,maxLatitude:downloads.map { $0.0.bounds.maxLatitude }.max()!,maxLongitude:downloads.map { $0.0.bounds.maxLongitude }.max()!)
+        return WorldDownloadSummary(bounds:bounds,totalBytes:total,cachedBytes:cached)
+    }
+    func download(progress: @Sendable (Int64) async -> Void) async throws {
+        guard !downloads.isEmpty else { throw RidgeError.message("Choose an area first.") }
+        var needed: Int64 = 0, total: Int64 = 0
+        var missingByRegion: [Int64] = []
+        for (source,store) in downloads {
+            let assets = WorldSourceStore.assets(tiles:source.tiles,source:source)
+            let cached = try await store.cachedBytes(for:assets)
+            let size = assets.reduce(Int64(0)) { $0 + Int64($1.byteCount) }
+            total += size; needed += size - cached
+            missingByRegion.append(size-cached)
+        }
+        let disk = cacheURL ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0]
+        if let free = try FileManager.default.attributesOfFileSystem(forPath:disk.path)[.systemFreeSize] as? NSNumber,
+           free.int64Value < needed + 128*1024*1024 {
+            throw RidgeError.message("There isn’t enough free storage for this area. Free some space and retry.")
+        }
+        var completed = total-needed
+        await progress(completed)
+        for (index,entry) in downloads.enumerated() {
+            let (source,store) = entry
+            try Task.checkCancellation()
+            let offset = completed
+            try await store.pin(source.tiles,source:source,countCachedInProgress:false,progress: { bytes in await progress(offset+bytes) })
+            completed += missingByRegion[index]
+            await progress(completed)
+        }
     }
     func open(anchor: WorldCatalog.Region, catalog: WorldCatalog, root: URL, includeNeighbours: Bool = true) async throws -> (WorldSource, WorldOverview, WalkingGraph, WorldBackdrop, CGImage, [String:WorldPreparedTile]) {
         parts = []; owners = [:]
         for region in (includeNeighbours ? Self.neighbours(anchor,catalog:catalog) : [anchor]) {
             try Task.checkCancellation()
-            let store = WorldSourceStore(cacheURL:cacheURL)
-            let (source,overview,graph) = try await store.open(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing)
+            let saved = downloads.first { $0.0.id == region.id }
+            let store = saved?.1 ?? WorldSourceStore(cacheURL:cacheURL)
+            let (source,overview,graph): (WorldSource,WorldOverview,WalkingGraph)
+            if let saved { (source,overview,graph) = try await store.contents(of:saved.0) }
+            else { (source,overview,graph) = try await store.open(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing) }
             guard source.id == region.id, source.bounds == region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
             parts.append(.init(source:source,overview:overview,graph:graph,files:store,connected:region.routing != nil))
         }
