@@ -23,6 +23,7 @@ struct WorldCatalog: Decodable, Sendable {
         let path: String
         let bounds: GeoBounds
         let tileCount: Int
+        var routing: WorldMapAsset? = nil
     }
     let schemaVersion: Int
     let revision: String

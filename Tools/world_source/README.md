@@ -472,3 +472,52 @@ Local network → searching Keswick → automatic Lake District 3D rendering wit
 contours, paths, buildings and labels. The final signed build was installed on
 Matthew’s iPhone. Physical-device offline and sustained cross-boundary panning
 tests remain needed.
+
+## Neighbouring landscapes — 7 October 2026
+
+Explore now retains a neighbourhood of up to nine storage regions in a common
+geographic frame (roughly 24 × 24 km around Snowdon, subject to actual coverage).
+The first region appears before the larger landscape is prepared. Moving within
+that landscape changes detail, not the whole scene. Within 2.5 km of its outer
+boundary the next neighbourhood begins loading; the old scene stays until ready.
+There is still a finite outer edge and missing source coverage is not fabricated.
+
+Tile IDs are namespaced by source. Nearby fine geometry keeps one shared
+96/192 MiB budget, rather than multiplying it by nine. Adaptive background has
+a separate 160/384 MiB estimated budget depending on device RAM; any distant
+chunks exceeding it use the existing overview. All visible cells retain vector
+cartography, including outside the 256-tile detailed texture working set. The
+far context is rasterised at 64 px, with existing 256/512/1024 px upgrades near
+the camera. At most two regions prepare in parallel. Disk eviction checks run
+in batches rather than scanning the entire cache for every tiny file.
+
+`publish_connected_paths.py` restores original path edges that cross the smaller
+world-source partitions. It publishes new `paths-connected-v1.json` sidecars and
+adds checksum references to the mutable local catalogue. Terrain, vectors and
+existing manifests are unchanged. Original parent graphs are verified against
+the retained archive hashes. Nodes within a parent retain their original identity;
+across parents only matching boundary coordinates on the same original feature
+share identity. Nearby but distinct paths are never snapped together. The app
+merges these graphs and clips them to actual loaded tile coverage. The route
+shader already draws the route on every affected terrain tile.
+
+```sh
+python3 Tools/world_source/publish_connected_paths.py \
+  --world '/Volumes/MLB_EXT_4TB/Ridge Sources/world-v1-2026-10-04' \
+  --archives '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1'
+python3 Tools/world_source/test_connected_paths.py
+sh Tools/test_world_catalog.sh
+```
+
+The script checkpoints the catalogue per original source and is safe to resume.
+The public cloud pilot has not received these routing sidecars; its cross-region
+path connectivity is still limited. A route may exceed the visible neighbourhood,
+but editing a leg requires both its waypoints within loaded walking coverage.
+
+Validation: 33 catalogue/landscape checks include real boundary-crossing path
+routing, unique tile IDs, complete background/textures, the shared fine budget,
+landscape retention, cancellation and lifecycle recovery. Simulator QA moved from
+Yr Wyddfa to Llanberis and zoomed out: the former cut-off at Llanberis is filled
+with terrain and map detail. Physical-device sustained frame rate and memory
+pressure are still to be checked; the Mac test process peaked around 1.4 GiB
+while preparing a new landscape alongside the existing scene and detail.

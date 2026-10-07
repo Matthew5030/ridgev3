@@ -106,7 +106,7 @@ struct WorldExploreView: View {
             await world.configure(mode: mapMode, local: localMapServer)
             if let bounds = visibleBounds { viewportChanged(bounds) }
         }
-        .onChange(of: world.source?.id) { _, _ in
+        .onChange(of: world.source?.revision) { _, _ in
             if let terrain = world.routeTerrain { store.worldTerrain = terrain; store.activeTerrain = terrain; store.isWorldBrowsing = true }
             if let bounds = visibleBounds, !world.in3D { viewportChanged(bounds) }
         }
@@ -212,7 +212,7 @@ struct WorldExploreView: View {
         guard world.source?.bounds.contains(point) == true else { world.browse(point); return }
         if store.editing, let last = store.activeRoute?.waypoints.last?.point.coordinate,
            world.source?.bounds.contains(last) != true {
-            store.toast("Paths across this map boundary aren’t joined yet. Your route hasn’t changed.")
+            store.toast("Move back towards your last waypoint so its walking paths can stay loaded. Your route hasn’t changed.")
             return
         }
         store.tapTerrain(point)

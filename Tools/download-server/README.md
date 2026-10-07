@@ -30,7 +30,8 @@ build reports, and accepts GET/HEAD. This is a local-network development server.
 
 `/world/catalog.json` aliases `world-v1-2026-10-04/catalog.json` on the drive.
 `/world/sources/<id>/…` exposes only world manifests, overview elevation, paths,
-compressed adaptive meshes and vector map assets. The completed catalogue has
+compressed adaptive meshes, vector map assets and optional `paths-connected-v1.json`
+routing sidecars. The completed catalogue has
 2,531 regions. Reports and directory listings are not exposed. The start script
 validates and reloads nginx so configuration changes take effect on an existing
 container. This needs no data regeneration.

@@ -10,5 +10,5 @@ xcrun swiftc -swift-version 5 -O -parse-as-library \
  "$ROOT/ridge v3/Core/PackStore.swift" "$ROOT/ridge v3/Core/AdaptivePackStore.swift" \
  "$ROOT/ridge v3/Core/RouteEngine.swift" \
  "$ROOT/ridge v3/World/WorldPreview.swift" "$ROOT/ridge v3/World/WorldSource.swift" "$ROOT/ridge v3/World/WorldCartography.swift" \
- "$ROOT/ridge v3/World/WorldGeometry.swift" "$ROOT/ridge v3/World/WorldCameraTransition.swift" "$ROOT/ridge v3/Core/TerrainNavigation.swift" "$ROOT/ridge v3/World/WorldCatalog.swift" "$ROOT/ridge v3/World/WorldModel.swift" "$ROOT/Tests/WorldCatalogTests.swift" -o "$TEST/run"
+ "$ROOT/ridge v3/World/WorldGeometry.swift" "$ROOT/ridge v3/World/WorldCameraTransition.swift" "$ROOT/ridge v3/Core/TerrainNavigation.swift" "$ROOT/ridge v3/World/WorldCatalog.swift" "$ROOT/ridge v3/World/WorldLandscape.swift" "$ROOT/ridge v3/World/WorldModel.swift" "$ROOT/Tests/WorldCatalogTests.swift" -o "$TEST/run"
 "$TEST/run" "$ROOT/ridge v3/Resources/WorldData.bundle" "$@"

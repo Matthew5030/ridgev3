@@ -85,10 +85,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     private func height(_ point: GeoPoint) -> Float {
         guard let source, let overview else { return 0 }
-        let uv = source.bounds.uv(point), col = min(source.columns - 1, max(0, Int(uv.u * Double(source.columns)))), row = min(source.rows - 1, max(0, Int(uv.v * Double(source.rows))))
-        if let id = tileIDs[row * source.columns + col],
-           let mesh = model?.tiles[id]?.mesh ?? model?.backdrop?.meshes[id],
-           let h = mesh.elevation(at: point) { return Float(h) }
+        if let tile = source.tiles.first(where: { $0.mesh.bounds.contains(point) }),
+           let mesh = model?.tiles[tile.id]?.mesh ?? model?.backdrop?.meshes[tile.id],
+           let h = mesh.elevation(at:point) { return Float(h) }
         return overview.elevation(point, bounds: source.bounds)
     }
     func refresh(route: [RoutePoint], segments: [[RoutePoint]], waypoints: [RouteWaypoint], command: TerrainCameraCommand, atlasRequest: UUID?) {
@@ -101,7 +100,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             revision = model.revision
             SCNTransaction.begin(); SCNTransaction.animationDuration = 0
             for tile in next.tiles {
-                if let prepared = model.tiles[tile.id] {
+                if let prepared = model.preparedTile(tile.id) {
                     guard applied[tile.id] != prepared.request else { continue }
                     let geometry = prepared.geometry ?? coarse[tile.id]!
                     geometry.materials = [material(prepared.image, tileID:tile.id)]

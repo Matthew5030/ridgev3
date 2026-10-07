@@ -134,6 +134,8 @@ actor WorldSourceStore {
     private let cache: URL
     private var base: URL
     private var pins: Set<String> = []
+    private var bytesSincePrune = 0
+    private var writesSincePrune = 0
     private let diskLimit: Int64 = 256 * 1024 * 1024
     init(bundledURL: URL? = nil, cacheURL: URL? = nil) {
         bundled = bundledURL ?? Bundle.main.url(forResource: "WorldData", withExtension: "bundle") ?? Bundle.main.bundleURL
@@ -143,7 +145,7 @@ actor WorldSourceStore {
         var url = cache; var values = URLResourceValues(); values.isExcludedFromBackup = true; try? url.setResourceValues(values)
         if let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")), let saved = try? JSONDecoder().decode(Set<String>.self, from: data) { pins = saved }
     }
-    func open(address: String) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
+    func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
         let manifest: Data
         if address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             base = bundled; manifest = try Data(contentsOf: bundled.appendingPathComponent("world.json"))
@@ -166,13 +168,14 @@ actor WorldSourceStore {
                 guard let raw = try? Data(contentsOf: cached) else { throw error }; manifest = raw
             }
         }
-        let source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
+        var source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
+        if let routing { source.graph = routing }
         let overview = try JSONDecoder().decode(WorldOverview.self, from: await read(source.overview))
         guard (2...2049).contains(overview.width), (2...2049).contains(overview.height), overview.heights.count == overview.width * overview.height, overview.heights.allSatisfy(\.isFinite) else { throw RidgeError.message("Invalid world overview.") }
         let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph, maximumBytes: 64_000_000))
         return (source, overview, graph)
     }
-    func backdrop(source: WorldSource, overview: WorldOverview) async throws -> WorldBackdrop {
+    func backdrop(source: WorldSource, overview: WorldOverview, frame: GeoBounds? = nil) async throws -> WorldBackdrop {
         try await prefetch(source.tiles.compactMap(\.background).map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) })
         var geometries:[String:SCNGeometry]=[:]
         var meshes:[String:AdaptiveMesh]=[:]
@@ -183,7 +186,7 @@ actor WorldSourceStore {
                 let compressed=try await read(WorldMapAsset(file:chunk.path,byteCount:chunk.byteCount,sha256:chunk.sha256))
                 let mesh=try AdaptiveTerrainCodec.decode(compressed,chunk:chunk,maximumErrorMetres:tolerance)
                 meshes[tile.id]=mesh
-                geometries[tile.id]=WorldGeometry.fine(mesh,sourceBounds:source.bounds,pixels:256)
+                geometries[tile.id]=WorldGeometry.fine(mesh,sourceBounds:frame ?? source.bounds,pixels:256)
             } else {
                 geometries[tile.id]=WorldGeometry.coarse(tile:tile,source:source,overview:overview,maximumDivisions:maximumDivisions)
             }
@@ -200,6 +203,15 @@ actor WorldSourceStore {
         let image=try WorldPreview.render(source:source,backdrop:backdrop,tiles:pages)
         try Task.checkCancellation()
         return (image,pages)
+    }
+    func mapPages(source: WorldSource, pixels: Int) async throws -> [String:WorldPreparedTile] {
+        try await prefetch(source.tiles.map(\.map))
+        var result: [String:WorldPreparedTile] = [:]
+        for tile in source.tiles {
+            try Task.checkCancellation()
+            result[tile.id] = try await prepare(tile, request: .init(id:tile.id,pixels:pixels,fine:false), sourceBounds:source.bounds)
+        }
+        return result
     }
     func prepare(_ tile: WorldTile, request: WorldTileRequest, sourceBounds: GeoBounds, previous: WorldPreparedTile? = nil) async throws -> WorldPreparedTile {
         let image:CGImage
@@ -277,13 +289,16 @@ actor WorldSourceStore {
         guard try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize == asset.byteCount else { throw RidgeError.message("Incomplete map download.") }
         let data = try Data(contentsOf: temporary)
         guard (response as? HTTPURLResponse)?.statusCode == 200, checked(data) else { throw RidgeError.message("A map file is incomplete. Move back to retry.") }
-        try data.write(to: saved, options: .atomic); prune(protecting: asset.sha256); return data
+        try data.write(to: saved, options: .atomic); prune(protecting: asset.sha256, writtenBytes:data.count); return data
     }
     private func refreshPins() {
         if let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")),
            let saved = try? JSONDecoder().decode(Set<String>.self, from: data) { pins.formUnion(saved) }
     }
-    private func prune(protecting hash: String) {
+    private func prune(protecting hash: String, writtenBytes: Int) {
+        bytesSincePrune += writtenBytes; writesSincePrune += 1
+        guard bytesSincePrune >= 4*1024*1024 || writesSincePrune >= 32 else { return }
+        bytesSincePrune = 0; writesSincePrune = 0
         refreshPins()
         let urls = (try? FileManager.default.contentsOfDirectory(at: cache, includingPropertiesForKeys: [.fileSizeKey,.contentModificationDateKey])) ?? []
         let files = urls.filter { $0.lastPathComponent.count == 64 }.compactMap { url -> (URL, Int64, Date)? in

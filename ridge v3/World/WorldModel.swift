@@ -26,13 +26,13 @@ import CoreGraphics
     var libraryRoot: URL?
     var loadingRegionID: String?
     var coverageMessage: String?
-    @ObservationIgnored private var files = WorldSourceStore()
+    @ObservationIgnored private var files = WorldLandscapeStore()
     @ObservationIgnored private let catalogs: WorldCatalogStore
     @ObservationIgnored private let cacheURL: URL?
     init(cacheURL: URL? = nil) {
         self.cacheURL = cacheURL
         self.catalogs = WorldCatalogStore(cacheURL: cacheURL)
-        self.files = WorldSourceStore(cacheURL: cacheURL)
+        self.files = WorldLandscapeStore(cacheURL: cacheURL)
     }
     @ObservationIgnored private var regionLoad: Task<Void, Never>?
     @ObservationIgnored private var selectionGeneration = 0
@@ -71,23 +71,30 @@ import CoreGraphics
     /// Called by both atlas zooming and the 3D camera. No region picker is involved.
     @discardableResult func browse(_ point: GeoPoint) -> Bool {
         requestedPoint = point
-        guard let region = catalog?.region(at: point, retaining: source?.id), let root = libraryRoot else {
+        guard let catalog, let region = catalog.region(at: point, retaining: source?.id), let root = libraryRoot else {
             cancelRegionLoad()
             coverageMessage = catalog == nil ? nil : "Detailed terrain isn’t available here from this source yet. You can keep browsing the overview."
             return false
         }
         coverageMessage = nil
-        if region.id == source?.id {
-            if loadingRegionID != nil { cancelRegionLoad() }
-            guard hasCoverage(point) else { coverageMessage = "Detailed terrain is missing at this location. The overview is still available."; return false }
-            return true
+        if let source, source.bounds.contains(point), !hasCoverage(point) {
+            coverageMessage = "Detailed terrain is missing at this location. The overview is still available."
+            return false
+        }
+        if let source, source.bounds.contains(point), hasCoverage(point) {
+            let uv = source.bounds.uv(point)
+            let margin = min(min(uv.u,1-uv.u)*source.bounds.widthMeters,min(uv.v,1-uv.v)*source.bounds.depthMeters)
+            if margin > 2500 || region.id == source.id {
+                if let loadingRegionID, loadingRegionID != source.id { cancelRegionLoad() }
+                return true
+            }
         }
         guard region.id != loadingRegionID, region.id != failedRegionID else { return false }
         cancelRegionLoad(); let ticket = selectionGeneration
         loadingRegionID = region.id; isLoading = true; message = nil
         // Each candidate owns its URL base. An old in-flight request must never
         // read filenames from a newly selected region or a different server.
-        let candidate = WorldSourceStore(cacheURL: cacheURL)
+        let candidate = WorldLandscapeStore(cacheURL: cacheURL)
         regionLoad = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -95,23 +102,17 @@ import CoreGraphics
             }
             do {
                 let address = root.appendingPathComponent(region.path).absoluteString
-                let (next, elevation, graph) = try await candidate.open(address: address)
-                guard next.id == region.id, next.bounds == region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
-                let background = try await candidate.backdrop(source: next, overview: elevation)
-                let (image, pages) = try await candidate.preview(source: next, backdrop: background)
+                if source == nil {
+                    let first = WorldLandscapeStore(cacheURL:cacheURL)
+                    let (next,elevation,graph,background,image,pages) = try await first.open(anchor:region,catalog:catalog,root:root,includeNeighbours:false)
+                    try Task.checkCancellation()
+                    guard ticket == selectionGeneration else { return }
+                    install(next,elevation:elevation,graph:graph,background:background,image:image,pages:pages,files:first,address:address)
+                }
+                let (next, elevation, graph, background, image, pages) = try await candidate.open(anchor:region,catalog:catalog,root:root)
                 try Task.checkCancellation()
                 guard ticket == selectionGeneration else { return }
-                generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
-                files = candidate; source = next; overview = elevation; backdrop = background; preview = image
-                tiles = pages; previewPages = pages; openedAddress = address; failedRegionID = nil
-                if let point = requestedPoint { center = point }
-                let spacing = max(1, Int((next.bounds.widthMeters / Double(elevation.width - 1)).rounded()))
-                let level = TerrainLOD(spacing: spacing, width: elevation.width, height: elevation.height, file: next.overview.file, byteCount: Int64(next.overview.byteCount), sha256: next.overview.sha256)
-                let manifest = RegionManifest(schemaVersion: 1, id: next.id, name: next.name, subtitle: "", bounds: next.bounds, sourceResolution: 1, heightScale: 1, noDataValue: -32768,
-                    levels: [level], textures: [], graphFile: next.graph.file, graphSHA256: next.graph.sha256, graphByteCount: Int64(next.graph.byteCount), places: next.places,
-                    sources: next.sources, defaultSpacing: spacing, version: next.revision, summary: "", verticalDatum: "Source EGM96")
-                routeTerrain = LoadedTerrain(manifest: manifest, level: level, heights: elevation.heights, textureURLs: [], graph: graph, directory: Bundle.main.bundleURL)
-                revision += 1
+                install(next, elevation:elevation, graph:graph, background:background, image:image, pages:pages, files:candidate, address:address)
             } catch {
                 guard ticket == selectionGeneration, !Task.isCancelled else { return }
                 failedRegionID = region.id
@@ -120,6 +121,26 @@ import CoreGraphics
         }
         return false
     }
+    private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, image: CGImage, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore, address: String) {
+        generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
+        files = candidate; source = next; overview = elevation; backdrop = background; preview = image
+        // Keep sharp images for overlapping tiles while rebuilding geometry in
+        // the new landscape frame. Reusing the old geometry would misplace it.
+        let previous = tiles
+        tiles = pages
+        for (id,old) in previous where pages[id] != nil && old.request.pixels > (pages[id]?.request.pixels ?? 0) {
+            tiles[id] = WorldPreparedTile(request:.init(id:id,pixels:old.request.pixels,fine:false),mesh:nil,image:old.image,geometry:nil)
+        }
+        previewPages = pages; openedAddress = address; failedRegionID = nil
+        if let point = requestedPoint { center = point }
+        let spacing = max(1, Int((next.bounds.widthMeters / Double(elevation.width - 1)).rounded()))
+        let level = TerrainLOD(spacing: spacing, width: elevation.width, height: elevation.height, file: next.overview.file, byteCount: Int64(next.overview.byteCount), sha256: next.overview.sha256)
+        let manifest = RegionManifest(schemaVersion: 1, id: next.id, name: next.name, subtitle: "", bounds: next.bounds, sourceResolution: 1, heightScale: 1, noDataValue: -32768,
+            levels: [level], textures: [], graphFile: next.graph.file, graphSHA256: next.graph.sha256, graphByteCount: Int64(next.graph.byteCount), places: next.places,
+            sources: next.sources, defaultSpacing: spacing, version: next.revision, summary: "", verticalDatum: "Source EGM96")
+        routeTerrain = LoadedTerrain(manifest: manifest, level: level, heights: elevation.heights, textureURLs: [], graph: graph, directory: Bundle.main.bundleURL)
+        revision += 1
+    }
     func cancelRegionLoad() {
         if loadingRegionID != nil { isLoading = false }
         selectionGeneration += 1; regionLoad?.cancel(); regionLoad = nil; loadingRegionID = nil
@@ -127,7 +148,7 @@ import CoreGraphics
     func update(center: GeoPoint, distance: Double) {
         guard let source else { return }
         self.center = center; self.distance = distance
-        if !source.bounds.contains(center) || loadingRegionID != nil { browse(center) }
+        browse(center)
         if let previous = policyCenter, previous.distance(to: center) < 140, abs(distance / max(1,policyDistance) - 1) < 0.22 { return }
         self.center = center; self.distance = distance
         policyCenter = center; policyDistance = distance
@@ -148,6 +169,7 @@ import CoreGraphics
         revision += 1
         pump()
     }
+    func preparedTile(_ id: String) -> WorldPreparedTile? { tiles[id] ?? previewPages[id] }
     private func pump() {
         guard work == nil, let source else { return }
         let token = generation
@@ -196,7 +218,7 @@ import CoreGraphics
         let files = self.files
         Task {
             defer { saving = false }
-            do { try await files.pin(chosen, source: source, surroundings: source.tiles.map(\.map)); offlineMessage = "This area is available offline." }
+            do { try await files.pin(chosen, source: source); offlineMessage = "This area is available offline." }
             catch { offlineMessage = "Could not finish saving. Completed files remain cached; try again." }
         }
     }
