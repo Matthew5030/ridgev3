@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ridge-maps",
+  "main": "src/index.ts",
+  "account_id": "055908295cfc15192a94c0d2df71a408",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "APPLE_TEAM_ID": "J8M4ND59V4",
+    "APPLE_BUNDLE_ID": "Bilella-Works.ridge-v3",
+    "MAP_PREFIX": "pilot-2026-10-07/"
+  },
+  "r2_buckets": [{"binding": "MAPS", "bucket_name": "ridge-maps-private"}],
+  "d1_databases": [{"binding": "AUTH_DB", "database_name": "ridge-map-auth", "database_id": "4a8f722a-c129-408f-8fc1-ef4b9259326e", "migrations_dir": "migrations"}],
+  "ratelimits": [
+    {"name": "AUTH_LIMIT", "namespace_id": "1001", "simple": {"limit": 30, "period": 60}},
+    {"name": "MAP_LIMIT", "namespace_id": "1002", "simple": {"limit": 2400, "period": 60}},
+    {"name": "INVALID_LIMIT", "namespace_id": "1003", "simple": {"limit": 120, "period": 60}}
+  ],
+  "triggers": {"crons": ["17 * * * *"]},
+  "limits": {"cpu_ms": 100},
+  "observability": {"enabled": true, "logs": {"enabled": true, "head_sampling_rate": 0.05}, "traces": {"enabled": true, "head_sampling_rate": 0.01}},
+  "secrets": {"required": ["TOKEN_SECRET"]}
+}

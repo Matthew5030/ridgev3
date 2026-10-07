@@ -175,8 +175,67 @@ automatic movement between catalogue regions remains to be implemented.
 On 7 October 2026 the four neighbouring Snowdon regions produced 1,024 cells
 and 121,856,580 bytes including previews and metadata. All four regions passed
 the native reader test over local HTTP. Cloudflare MCP authentication is complete;
-upload and public-network measurements remain pending a Codex restart to load
-the connection.
+the private `ridge-maps-private` bucket is created with public access disabled.
+Upload and public-network measurements remain pending deployment authorization.
+
+### Private production map service
+
+`Services/maps` contains the authenticated Cloudflare Worker. Its R2 bucket must
+have both managed `r2.dev` access and direct custom-domain access disabled. A
+custom map hostname, if added, must point to the Worker, never directly to R2.
+The Worker serves only GET/HEAD requests for the configured immutable map prefix.
+The upload tool verifies local hashes, uploads dependencies before manifests,
+reads every object back, and refuses to replace different bytes at existing keys.
+
+Ridge uses a production Apple App Attest key per installation, with a random
+two-minute challenge consumed atomically in D1. Registration checks the Apple
+certificate chain, certificate dates, app identity and production environment.
+Session renewal checks the signature and advances its stored assertion counter
+with a conditional update. Development attestations and unsigned requests fail
+closed. The service issues 15-minute tokens tied to its origin and map revision;
+there is no shared client secret. Revoke an installation by setting its D1
+`revoked` field to 1; existing tokens expire within 15 minutes. Rotate the server
+`TOKEN_SECRET` to invalidate all sessions immediately. An attested installation
+can still save or copy downloaded maps; this is abuse control, not DRM.
+
+Authentication precedes every internal cache lookup. Client responses use
+`private, no-store`; the app's existing checksum-verified disk cache still works
+offline. The Worker streams stored bytes without recompressing them. Auth traffic
+is limited per IP, downloads per installation, with explicit 429 responses.
+Cloudflare's binding limits are approximate per location, not global spending
+caps; rejected Worker requests still count toward usage. Configure account budget
+alerts and monitor usage before a wider release. No CAPTCHA is placed in the app.
+
+To finish deployment after account authorization:
+
+1. Create `ridge-map-auth` in D1, replace the placeholder database ID in
+   `Services/maps/wrangler.jsonc`, and apply `migrations/0001_auth.sql` remotely.
+2. Set a random server-only `TOKEN_SECRET` through Wrangler secrets. Never put it
+   in the app, source control, command arguments or logs. The local `.dev.vars`
+   file is ignored. Keep the Apple App ID prefix and bundle identifier matched
+   to the signed app's entitlements.
+3. From `Services/maps`, run `npm ci`, `npm run types`, `npm run check`,
+   `npm test`, `npm run build`, then `npm run deploy`. Use Workers Paid for the
+   configured 100 ms CPU ceiling; account activation is not performed by scripts.
+4. Run `Tools/world_source/upload_hosting_pilot.py` with Python 3.11+, the pilot
+   directory, account ID, bucket and `pilot-2026-10-07/` prefix. It reads a local
+   Wrangler OAuth session; first run `wrangler whoami` to refresh that session.
+5. Put the deployed HTTPS origin in the app's `RidgeMapServiceURL` Info.plist key.
+   Set Settings → Map source to the complete hosted `world.json` address. Other
+   custom sources never receive Ridge credentials. Follow redirects only for
+   unprotected custom sources; protected map and auth requests reject redirects.
+6. Verify real-device registration and renewal, revoked/expired tokens, cold and
+   cached downloads, network interruption and offline reopening. The native
+   `test_world_hosted.sh` accepts an operator-issued `RIDGE_MAP_TEST_TOKEN` only
+   in its test executable; the shipped app has no token override.
+
+Local validation currently covers request authorization, cache access, token
+expiry/tampering, scope, atomic challenge replay, signed assertions, counters,
+revocation, malformed attestations and bounded request sizes. Real Apple-signed
+production attestation and real-network delivery still require deployment and
+a physical device; simulator success cannot establish those. Apple fraud-receipt
+assessment, App Store receipt entitlements, and cross-region catalogue integration
+are separate follow-ups, not implemented by this service.
 
 Validation on 4 October 2026: simulator and signed iOS Release builds succeeded;
 6,409 world checks, 17 route UX assertions and 137 core route assertions passed.

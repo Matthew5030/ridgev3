@@ -10,7 +10,17 @@ import CoreGraphics
         for address in CommandLine.arguments.dropFirst() {
             let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: cache) }
-            let store = WorldSourceStore(cacheURL: cache)
+            // Only this command-line test accepts an operator-issued test token.
+            // The shipped app always uses App Attest through WorldMapAccess.
+            let token = ProcessInfo.processInfo.environment["RIDGE_MAP_TEST_TOKEN"]
+            let origin = URL(string:address)!
+            let store = WorldSourceStore(cacheURL: cache, download: { request in
+                var request = request
+                if let token, let url = request.url, WorldMapAccess.isProtected(url,service:origin) {
+                    request.setValue("Bearer \(token)",forHTTPHeaderField:"Authorization")
+                }
+                return try await URLSession.shared.download(for:request)
+            })
             let start = Date()
             let (source, overview, graph) = try await store.open(address: address)
             let indexSeconds = Date().timeIntervalSince(start)

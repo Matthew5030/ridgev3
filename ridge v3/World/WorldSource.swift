@@ -130,12 +130,15 @@ enum WorldWorkingSet {
 }
 
 actor WorldSourceStore {
+    typealias Download = @Sendable (URLRequest) async throws -> (URL, URLResponse)
     private let bundled: URL
     private let cache: URL
+    private let download: Download
     private var base: URL
     private var pins: Set<String> = []
     private let diskLimit: Int64 = 256 * 1024 * 1024
-    init(bundledURL: URL? = nil, cacheURL: URL? = nil) {
+    init(bundledURL: URL? = nil, cacheURL: URL? = nil, download: @escaping Download = { try await WorldMapAccess.download($0) }) {
+        self.download = download
         bundled = bundledURL ?? Bundle.main.url(forResource: "WorldData", withExtension: "bundle") ?? Bundle.main.bundleURL
         base = bundled
         cache = cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("WorldCache", isDirectory: true)
@@ -153,7 +156,7 @@ actor WorldSourceStore {
             let cached = cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8)) + ".index")
             do {
                 var request = URLRequest(url: url); request.timeoutInterval = 15
-                let (temporary, response) = try await URLSession.shared.download(for: request)
+                let (temporary, response) = try await download(request)
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 let size = try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max
                 guard size < 16_000_000 else { throw RidgeError.message("World index is too large.") }
@@ -250,7 +253,7 @@ actor WorldSourceStore {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: saved.path); return data
         }
         var request = URLRequest(url: base.appendingPathComponent(asset.file)); request.timeoutInterval = 20
-        let (temporary, response) = try await URLSession.shared.download(for: request)
+        let (temporary, response) = try await download(request)
         defer { try? FileManager.default.removeItem(at: temporary) }
         try Task.checkCancellation()
         guard try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize == asset.byteCount else { throw RidgeError.message("Incomplete map download.") }
