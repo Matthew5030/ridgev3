@@ -74,7 +74,7 @@ struct WorldExploreView: View {
                             Text("Zoom into a place to explore in 3D.").font(.subheadline)
                             if let source = world.source {
                                 Button("Explore \(source.name)") { visit(world.center) }.buttonStyle(.borderedProminent).foregroundStyle(.white)
-                                Text("Snowdon test map included · more coverage to follow").font(.caption).foregroundStyle(RidgeTheme.muted)
+                                Text(sourceAddress.isEmpty ? "Snowdon test map included · more coverage to follow" : "Online map · save an area for offline use").font(.caption).foregroundStyle(RidgeTheme.muted)
                             } else if world.isLoading { ProgressView("Opening map") }
                         }.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                         Spacer()

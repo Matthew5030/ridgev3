@@ -34,7 +34,14 @@ struct SettingsView: View {
                     Text("Map source").font(RidgeTheme.sectionTitle)
                     TextField("Hosted world.json URL (optional)", text: $worldAddressDraft).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
                     Button("Use this source") { worldAddress = worldAddressDraft.trimmingCharacters(in: .whitespacesAndNewlines); dismiss() }
-                    Text("Leave blank to use the included Snowdon map. Nearby detail loads as you move; Keep offline retains it for later.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Menu("Try the online Snowdon maps") {
+                        Button("Snowdon & Crib Goch") { usePilot("c16-r00") }
+                        Button("Snowdon · west") { usePilot("c00-r00") }
+                        Button("Snowdon · south") { usePilot("c16-r16") }
+                        Button("Snowdon · south-west") { usePilot("c00-r16") }
+                    }
+                    Button("Use the included map") { worldAddress = ""; dismiss() }
+                    Text("The online pilot covers four neighbouring areas around Snowdon. Detail is cached as you explore; Keep this area offline saves it for later. Leave the address blank to use the included map.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 offlineSection
                 downloadServerSection
@@ -65,6 +72,11 @@ struct SettingsView: View {
                     savedAssetBytes = total
                 } catch { storageError = "Saved area sizes could not be read." }
             }
+    }
+
+    private func usePilot(_ area: String) {
+        worldAddress = "https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev/pilot-2026-10-07/sources/world-z10-x500-y333-\(area)/world.json"
+        dismiss()
     }
 
     private var worldGestureSection: some View {

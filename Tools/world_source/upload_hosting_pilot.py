@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload a verified pilot to private R2, then read back every uploaded object.
+"""Upload a verified pilot to R2, then read back every uploaded object.
 
 Uses Wrangler's existing OAuth session locally; never emits credential values.
 Run `wrangler whoami` first to refresh its session. Python 3.11+.
@@ -11,14 +11,18 @@ import json
 from pathlib import Path
 import time
 import tomllib
-from urllib.error import HTTPError
-from urllib.parse import quote
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 
-def run(root, account, bucket, prefix, auth_file, workers):
+def run(root, account, bucket, prefix, auth_file, workers, public_origin=None):
     if not prefix.endswith('/') or '..' in prefix.split('/'):
         raise ValueError('Use a versioned prefix ending with /')
+    if public_origin:
+        origin = urlparse(public_origin)
+        if origin.scheme != 'https' or not origin.hostname or origin.username or origin.password or origin.path not in ('', '/') or origin.query or origin.fragment:
+            raise ValueError('Public origin must be an HTTPS origin')
     inventory = json.loads((root / 'upload-inventory.json').read_text())['objects']
     if not inventory:
         raise ValueError('Empty upload inventory')
@@ -45,9 +49,13 @@ def run(root, account, bucket, prefix, auth_file, workers):
         headers = {'Authorization': 'Bearer ' + token, 'Content-Type': content_type, 'cf-r2-data-catalog-check': 'true'}
         if data is not None:
             headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-        for attempt in range(5):
+        public_read = method == 'GET' and public_origin
+        target = public_origin.rstrip('/') + '/' if public_read else endpoint
+        if public_read:
+            headers = {'User-Agent': 'RidgeHostingVerifier/1.0'}  # No account token on a public host.
+        for attempt in range(8):
             try:
-                with urlopen(Request(endpoint + quote(prefix + key, safe='/'), data=data, headers=headers, method=method), timeout=60) as response:
+                with urlopen(Request(target + quote(prefix + key, safe='/'), data=data, headers=headers, method=method), timeout=60) as response:
                     return response.read()
             except HTTPError as error:
                 status = error.code
@@ -58,6 +66,8 @@ def run(root, account, bucket, prefix, auth_file, workers):
                     continue
                 # The response can contain account diagnostics. Emit only status/key.
                 raise RuntimeError(f'R2 {method} failed ({status}): {key}') from None
+            except (URLError, TimeoutError):
+                time.sleep(min(30, 2 ** attempt))
         raise RuntimeError('R2 retries exhausted: ' + key)
 
     def upload(item):
@@ -75,13 +85,23 @@ def run(root, account, bucket, prefix, auth_file, workers):
             raise ValueError('Remote verification failed: ' + key)
         return item
 
-    # Publish manifests only after every dependency has been uploaded and verified.
-    metadata = lambda item: item['key'].endswith(('world.json', 'catalog.json', 'index.html'))
+    # Publish region manifests after their assets, and the catalogue/page last.
+    def stage(item):
+        if item['key'].endswith(('catalog.json', 'index.html')):
+            return 2
+        return 1 if item['key'].endswith('world.json') else 0
     total = 0
-    for batch in ([i for i in inventory if not metadata(i)], [i for i in inventory if metadata(i)]):
+    for stage_number in range(3):
+        batch = [item for item in inventory if stage(item) == stage_number]
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for future in as_completed([pool.submit(upload, item) for item in batch]):
-                item = future.result()
+            futures = [pool.submit(upload, item) for item in batch]
+            for future in as_completed(futures):
+                try:
+                    item = future.result()
+                except BaseException:
+                    for pending in futures:
+                        pending.cancel()
+                    raise
                 complete[item['key']] = item['sha256']
                 total += 1
                 if total % 100 == 0 or total == len(inventory):
@@ -100,5 +120,6 @@ if __name__ == '__main__':
     p.add_argument('--prefix',required=True)
     p.add_argument('--auth-file',type=Path,default=Path.home()/'Library/Preferences/.wrangler/config/default.toml')
     p.add_argument('--workers',type=int,default=4,choices=range(1,9))
+    p.add_argument('--public-origin',help='Read back via this public HTTPS origin; writes still use the authenticated API')
     a = p.parse_args()
-    run(a.root,a.account,a.bucket,a.prefix,a.auth_file,a.workers)
+    run(a.root,a.account,a.bucket,a.prefix,a.auth_file,a.workers,a.public_origin)

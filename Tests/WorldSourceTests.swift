@@ -7,12 +7,6 @@ import CoreGraphics
         let source=try JSONDecoder().decode(WorldSource.self,from:Data(contentsOf:root.appendingPathComponent("world.json")))
         try source.validate();var checks=0
         func check(_ condition:Bool,_ message:String)throws{checks+=1;if !condition{throw RidgeError.message(message)}}
-        let service=URL(string:"https://maps.example.test")!
-        try check(WorldMapAccess.isProtected(URL(string:"https://maps.example.test/v1/world.json")!,service:service),"Authenticate the configured map origin")
-        for value in ["http://maps.example.test/v1/world.json","https://maps.example.test.attacker.test/world.json","https://maps.example.test:444/world.json","https://user@maps.example.test/world.json","https://another.test/world.json"] {
-            try check(!WorldMapAccess.isProtected(URL(string:value)!,service:service),"Never send map credentials outside the configured origin")
-        }
-        try check(!WorldMapAccess.isProtected(service,service:nil),"Unconfigured sources receive no map credentials")
         var maxMesh:Int64=0,maxTexture:Int64=0
         for distance in [200.0,1500,5000,10000,22000] {
             for tile in source.tiles {

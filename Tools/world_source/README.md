@@ -172,70 +172,80 @@ It reports cold and cached timings. It does not replace an iPad test in airplane
 mode or verify sustained frame rate. The pilot opens each region separately;
 automatic movement between catalogue regions remains to be implemented.
 
-On 7 October 2026 the four neighbouring Snowdon regions produced 1,024 cells
-and 121,856,580 bytes including previews and metadata. All four regions passed
-the native reader test over local HTTP. Cloudflare MCP authentication is complete;
-the private `ridge-maps-private` bucket is created with public access disabled.
-Upload and public-network measurements remain pending deployment authorization.
+### Public R2 pilot — 7 October 2026
 
-### Private production map service
+The four neighbouring Snowdon regions contain 1,024 cells and 121,856,580 bytes
+including previews and metadata. The initial service uses **public R2 directly**.
+No Worker, app authentication or paid Workers subscription is required. Map URLs
+are intentionally public, as approved by the owner. The optional App Attest
+prototype is preserved in Git commit `c6582de`, not shipped in the app.
 
-`Services/maps` contains the authenticated Cloudflare Worker. Its R2 bucket must
-have both managed `r2.dev` access and direct custom-domain access disabled. A
-custom map hostname, if added, must point to the Worker, never directly to R2.
-The Worker serves only GET/HEAD requests for the configured immutable map prefix.
+- Account: `055908295cfc15192a94c0d2df71a408`.
+- Bucket: `ridge-maps-private` (historical name; public access is now enabled).
+- Origin: `https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev`.
+- Immutable revision prefix: `pilot-2026-10-07/`.
+- Entry point: `/pilot-2026-10-07/index.html` lists the four map source addresses.
+- In Ridge: Settings → Map source → Try the online Snowdon maps. The included
+  map remains available without a network connection. Custom source URLs work
+  as before. Keep this area offline pins the downloaded data.
+
 The upload tool verifies local hashes, uploads dependencies before manifests,
 reads every object back, and refuses to replace different bytes at existing keys.
+The `--public-origin` option verifies through the same public endpoint used by
+Ridge. Account credentials are sent only to the Cloudflare management API, never
+to the public host. Example (Python 3.11+):
 
-Ridge uses a production Apple App Attest key per installation, with a random
-two-minute challenge consumed atomically in D1. Registration checks the Apple
-certificate chain, certificate dates, app identity and production environment.
-Session renewal checks the signature and advances its stored assertion counter
-with a conditional update. Development attestations and unsigned requests fail
-closed. The service issues 15-minute tokens tied to its origin and map revision;
-there is no shared client secret. Revoke an installation by setting its D1
-`revoked` field to 1; existing tokens expire within 15 minutes. Rotate the server
-`TOKEN_SECRET` to invalidate all sessions immediately. An attested installation
-can still save or copy downloaded maps; this is abuse control, not DRM.
+```sh
+python3 Tools/world_source/upload_hosting_pilot.py \
+  --root Tools/PreparedPacks/cloudflare-pilot-2026-10-07 \
+  --account 055908295cfc15192a94c0d2df71a408 \
+  --bucket ridge-maps-private --prefix pilot-2026-10-07/ \
+  --workers 8 \
+  --public-origin https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev
+```
 
-Authentication precedes every internal cache lookup. Client responses use
-`private, no-store`; the app's existing checksum-verified disk cache still works
-offline. The Worker streams stored bytes without recompressing them. Auth traffic
-is limited per IP, downloads per installation, with explicit 429 responses.
-Cloudflare's binding limits are approximate per location, not global spending
-caps; rejected Worker requests still count toward usage. Configure account budget
-alerts and monitor usage before a wider release. No CAPTCHA is placed in the app.
+Here `--workers` means local parallel upload threads, not Cloudflare Workers.
+The uploader reads an existing local Wrangler OAuth session; run `wrangler whoami`
+to refresh it before a long upload. It never publishes credential files or the
+local upload inventory.
 
-To finish deployment after account authorization:
+R2 Standard includes 10 GB-month storage, one million write-class operations and
+10 million read-class operations per month across the account, with free egress.
+The 122 MB pilot fits the storage allowance; this is not a hard billing cap.
+Do not upload the full ~33.5 GB collection as a zero-cost test. Current pricing:
+<https://developers.cloudflare.com/r2/pricing/>.
 
-1. Create `ridge-map-auth` in D1, replace the placeholder database ID in
-   `Services/maps/wrangler.jsonc`, and apply `migrations/0001_auth.sql` remotely.
-2. Set a random server-only `TOKEN_SECRET` through Wrangler secrets. Never put it
-   in the app, source control, command arguments or logs. The local `.dev.vars`
-   file is ignored. Keep the Apple App ID prefix and bundle identifier matched
-   to the signed app's entitlements.
-3. From `Services/maps`, run `npm ci`, `npm run types`, `npm run check`,
-   `npm test`, `npm run build`, then `npm run deploy`. Use Workers Paid for the
-   configured 100 ms CPU ceiling; account activation is not performed by scripts.
-4. Run `Tools/world_source/upload_hosting_pilot.py` with Python 3.11+, the pilot
-   directory, account ID, bucket and `pilot-2026-10-07/` prefix. It reads a local
-   Wrangler OAuth session; first run `wrangler whoami` to refresh that session.
-5. Put the deployed HTTPS origin in the app's `RidgeMapServiceURL` Info.plist key.
-   Set Settings → Map source to the complete hosted `world.json` address. Other
-   custom sources never receive Ridge credentials. Follow redirects only for
-   unprotected custom sources; protected map and auth requests reject redirects.
-6. Verify real-device registration and renewal, revoked/expired tokens, cold and
-   cached downloads, network interruption and offline reopening. The native
-   `test_world_hosted.sh` accepts an operator-issued `RIDGE_MAP_TEST_TOKEN` only
-   in its test executable; the shipped app has no token override.
+The `r2.dev` endpoint is intended for development and may throttle traffic. For
+production, attach an unused subdomain of an existing Cloudflare-managed domain
+directly to R2 and configure caching; that still does not require a Worker.
+<https://developers.cloudflare.com/r2/buckets/public-buckets/>.
+Automatic cross-region catalogue movement remains a separate app task. The pilot
+currently opens each region separately.
 
-Local validation currently covers request authorization, cache access, token
-expiry/tampering, scope, atomic challenge replay, signed assertions, counters,
-revocation, malformed attestations and bounded request sizes. Real Apple-signed
-production attestation and real-network delivery still require deployment and
-a physical device; simulator success cannot establish those. Apple fraud-receipt
-assessment, App Store receipt entitlements, and cross-region catalogue integration
-are separate follow-ups, not implemented by this service.
+All 3,090 objects were uploaded and read back through the public endpoint with
+matching SHA-256 hashes (121,856,580 bytes). Signed iOS and simulator builds
+succeeded, and 8,490 local world assertions passed. The build was installed on
+Matthew’s iPhone without uninstalling it. Simulator testing opened the hosted
+Snowdon / Crib Goch source through the new Settings menu, rendered its 3D terrain,
+contours, paths and peak labels, and completed Keep offline. All four regions
+passed the native public-network reader test: fine/background terrain decoding,
+vector rasterisation, a walking-graph edge, checksum-verified cache reuse and
+260 pinned assets per tested region. This is not a comprehensive cross-region
+route test or an airplane-mode device test. Physical-device screen inspection
+was unavailable because the device camera or microphone was active.
+
+Measured on this Mac/network (not a device performance guarantee): manifests,
+overview and graph opened in 1.03–1.54 s; the first fine tile took 0.34–0.49 s;
+the cached tile took 0.054–0.101 s. Downloading and building all 256 adaptive
+background chunks took **32.8–36.5 s cold**. The app then also prepares its map
+preview, so these are component timings, not full app startup times.
+
+Next performance task: prefetch background and preview assets with bounded
+network concurrency (or publish a compact startup bundle), while retaining
+serial geometry/image preparation and the existing memory budget. The current
+reader fetches background chunks sequentially, paying a round trip per file.
+Then benchmark cold opening, cached reopening and interruption on a physical
+iPhone. This optimisation does not require a Worker or a paid plan.
 
 Validation on 4 October 2026: simulator and signed iOS Release builds succeeded;
 6,409 world checks, 17 route UX assertions and 137 core route assertions passed.
