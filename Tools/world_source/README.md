@@ -145,6 +145,39 @@ For local HTTP/cache integration, serve the source on port 8776, then run
 the full `world.json` URL; blank restores the bundled source. A physical iPad
 requires an address it can reach, rather than the Mac's localhost.
 
+### Static hosting pilot
+
+`prepare_hosting_pilot.py` creates a small upload directory from published
+regions and their matching previews. It verifies every referenced asset's size
+and SHA-256 and checks each preview against its source manifest. It copies the
+existing files without recomputing terrain or vectors.
+
+```sh
+python3 Tools/world_source/prepare_hosting_pilot.py \
+  --world /path/to/world-output --previews /path/to/preview-output \
+  --output Tools/PreparedPacks/hosting-pilot \
+  --source world-z10-x500-y333-c00-r00
+sh Tools/test_world_hosted.sh https://maps.example.com/pilot/sources/world-z10-x500-y333-c00-r00/world.json
+```
+
+Supply multiple `--source` arguments to prepare neighbouring regions; the test
+accepts multiple manifest URLs. Upload objects listed in `upload-inventory.json`
+in order, with manifests/catalogue/landing page after their dependencies. Serve
+the exact bytes without setting HTTP `Content-Encoding` on compressed assets.
+The inventory is local upload bookkeeping and need not be published.
+
+The native reader test checks decoded fine and background terrain, vector image
+rendering, a walking graph segment, cache checksums and offline pin bookkeeping.
+It reports cold and cached timings. It does not replace an iPad test in airplane
+mode or verify sustained frame rate. The pilot opens each region separately;
+automatic movement between catalogue regions remains to be implemented.
+
+On 7 October 2026 the four neighbouring Snowdon regions produced 1,024 cells
+and 121,856,580 bytes including previews and metadata. All four regions passed
+the native reader test over local HTTP. Cloudflare MCP authentication is complete;
+upload and public-network measurements remain pending a Codex restart to load
+the connection.
+
 Validation on 4 October 2026: simulator and signed iOS Release builds succeeded;
 6,409 world checks, 17 route UX assertions and 137 core route assertions passed.
 Simulator inspection confirmed terrain/vector alignment, ridge route draping,
