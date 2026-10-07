@@ -39,6 +39,22 @@ container. This needs no data regeneration.
 curl http://127.0.0.1:8787/world/catalog.json
 ```
 
+## Configure a development device without typing the address
+
+Debug builds accept `RIDGE_LOCAL_TEST_SERVER` at launch. The app validates it and
+saves Local network plus that address in the usual settings; subsequent launches
+keep it and the user can still switch to Cloud. Release builds ignore this flag.
+
+```sh
+xcrun devicectl device process launch --device DEVICE_ID --terminate-existing \
+  --environment-variables '{"RIDGE_LOCAL_TEST_SERVER":"http://Matthews-MacBook-Pro.local:8787"}' \
+  Bilella-Works.ridge-v3
+```
+
+The phone must be on the server’s network and permit Ridge local-network access.
+Permission sheets no longer cancel map loading; returning from the background
+resumes a cancelled terrain load or reconnects a cancelled catalogue request.
+
 ## Legacy saved-area publication
 
 The sections below describe the previous pack flow retained for older saves,

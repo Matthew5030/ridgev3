@@ -112,7 +112,19 @@ struct WorldExploreView: View {
         }
         .onAppear { world.resume(); store.isWorldBrowsing=true; if let terrain=world.routeTerrain { store.activeTerrain=terrain }; if let point=store.worldRouteFocus {visit(point);store.worldRouteFocus=nil} }
         .onDisappear { world.suspend() }
-        .onChange(of:phase) { _, value in if value == .active { world.resume() } else { world.suspend() } }
+        .onChange(of:phase) { _, value in
+            // System permission sheets briefly make the app inactive. They must
+            // not cancel the connection whose permission is being requested.
+            if value == .background { world.suspend() }
+            else if value == .active {
+                if world.catalog == nil && !world.isLoading {
+                    Task {
+                        await world.configure(mode: mapMode, local: localMapServer)
+                        if let bounds = visibleBounds { viewportChanged(bounds) }
+                    }
+                } else { world.resume() }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for:UIApplication.didReceiveMemoryWarningNotification)) { _ in world.memoryWarning() }
         .onChange(of:store.worldRouteFocus) { _, point in if let point { visit(point);store.worldRouteFocus=nil } }
         .sheet(isPresented:$showWaypoints) { WaypointsSheet(store:store).presentationDetents([.medium,.large]) }

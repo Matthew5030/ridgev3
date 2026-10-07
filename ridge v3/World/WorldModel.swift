@@ -177,8 +177,11 @@ import CoreGraphics
         if let point = requestedPoint { browse(point) }
         pump()
     }
-    func suspend() { cancelRegionLoad(); generation += 1; work?.cancel(); work = nil; pending = 0; tiles = previewPages; revision += 1 }
-    func resume() { pump() }
+    func suspend() { cancelRegionLoad(); generation += 1; work?.cancel(); work = nil; pending = 0; isLoading = false; tiles = previewPages; revision += 1 }
+    func resume() {
+        if catalog != nil, let point = requestedPoint { browse(point) }
+        pump()
+    }
     func memoryWarning() {
         reduceDetailUntil = Date().addingTimeInterval(30)
         tiles = [:]; wanted = wanted.prefix(12).map { WorldTileRequest(id: $0.id, pixels: 256, fine: false) }; revision += 1
