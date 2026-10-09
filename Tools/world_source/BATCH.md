@@ -79,3 +79,30 @@ Changing the renderer/style requires a new preview output directory; this preven
 ### Partial coverage and compositing
 
 A preview JPEG is **not a coverage mask**. The native renderer starts transparent; JPEG has no alpha and the tested ImageIO encoder flattens missing terrain cells to white. Never paste a partial-source JPEG over its entire geographic rectangle. Before compositing, verify `sourceManifestSHA256`, read the referenced `world.json`, and construct an occupancy mask from its actual `tiles[].column` / `row` values divided by `columns` / `rows`. Only occupied cells may replace the nationwide overview. Missing cells must reveal that overview. This avoids inventing detailed coverage or painting white gaps over existing land. No separate mask worker is needed: the immutable world manifest already contains the exact coverage grid.
+
+## International baseline (2026-10-09)
+
+`../global_source/batch.py` builds new terrain/vector/route sources from public Copernicus GLO-30 and Geofabrik OSM extracts. This is a **roughly 30 m digital surface model**, including vegetation/buildings where present, not international 1 m LiDAR. Fine adaptive error is 0.5 m relative to the resampled and decimetre-quantised DSM; it does not claim 0.5 m real-world accuracy. Background adaptive error is 2 m. The same RAT codec, vector palette and app reader are reused. Per-chunk height offsets support high mountains without signed-int16 overflow. Contours are 20 m, with 100 m index lines.
+
+The first target is Switzerland. `--all-regions` queues Geofabrik leaf extracts, prioritising Switzerland, Austria, Nepal and New Zealand and excluding the existing Great Britain build. Each completed country/extract has its own app-format catalogue under `output/<extract>/catalog.json`; this is not yet an app-wide international catalogue or overview. `plan.json` records the queue, and `status.json` records progress, deferred cells and failures. No source is uploaded and no Cloudflare service is enabled.
+
+```sh
+python3 -m venv /tmp/ridge-global-env
+/tmp/ridge-global-env/bin/pip install -r Tools/global_source/requirements.txt
+/tmp/ridge-global-env/bin/python -m unittest discover -s Tools/global_source -p test_pipeline.py -v
+/tmp/ridge-global-env/bin/python -u Tools/global_source/batch.py \
+  --root '/Volumes/MLB_EXT_4TB/Ridge Global/v1' \
+  --all-regions --workers 4 --reserve-gib 40 --max-extract-gib 1
+```
+
+Use `--region switzerland --limit-sources 1` for a pilot, then run the full command to resume. Keep the Mac powered, awake and drive attached. An outer `caffeinate -i` prevents idle system sleep while running; it cannot survive shutdown or an unplugged drive. Restart the same command after an interruption. Completed sources are immutable and tile checkpoints are validated before reuse. The builder fingerprint prevents mixing changed code in an existing output generation. Input PBFs are checked against Geofabrik MD5, their SHA-256 is recorded, and cached DEM tiles retain source URL/checksum receipts.
+
+SQLite indexing uses temporary Mac SSD space with an 8 GiB reserve, then copies the completed index to the external drive. The default 40 GiB external free-space reserve and 1 GiB per-extract download ceiling limit this first local batch. Oversized extracts, polar/dateline extracts needing subdivision, incomplete extract borders/coasts, and absent DEM tiles are deferred explicitly. Missing elevations are never filled with invented flat land. A public-domain Natural Earth land mask excludes sea and coastal cells from this first pass; it is a conservative planning mask, not detailed shoreline data. Wholly covered z12 geographic cells become 4 × 4 mesh/vector tiles; ocean/coast masking, joining adjacent country extracts at their boundaries, global overview generation, and nationwide higher-resolution LiDAR are follow-up work. The OSM semantic vocabulary is reused from the existing ProjectFatRidge converter; true node identities and deterministic clipped-edge identities preserve route connections without joining bridges just because they cross in a map.
+
+The first source in each extract must pass the native app validation before entering its catalogue. A failure pauses the batch. To repeat this validation manually:
+
+```sh
+sh Tools/test_world_batch.sh '/Volumes/MLB_EXT_4TB/Ridge Global/v1/output/switzerland/sources/world-global-z12-x2136-y1456'
+```
+
+Dataset documentation: [Copernicus DEM public registry](https://registry.opendata.aws/copernicus-dem/), [COG layout](https://copernicus-dem-30m.s3.amazonaws.com/readme.html), [Geofabrik](https://download.geofabrik.de/), [OpenStreetMap licence](https://www.openstreetmap.org/copyright). Attribution is included in every source manifest. Review redistribution requirements before publishing these new packs.
