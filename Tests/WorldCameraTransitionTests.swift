@@ -3,7 +3,7 @@ import Foundation
     static func main() {
         var checks=0
         func check(_ pass:Bool) { precondition(pass);checks+=1 }
-        for span in [2000.0,3500,6900] {
+        for span in [2000.0,3500,6900,9900] {
             var previous=Double.infinity
             for i in 0...100 {
                 let p=WorldCameraTransition.entry(span:span,progress:Double(i)/100)
@@ -28,7 +28,7 @@ import Foundation
         }
         // Focused ground and its nearby route remain outside the haze at every
         // stage of the sky/terrain transition, including its final frame.
-        for span in [2000.0,3500,6900] {
+        for span in [2000.0,3500,6900,9900] {
             for i in 0...100 {
                 let pose = WorldCameraTransition.entry(span:span,progress:Double(i)/100)
                 let fog = WorldAtmosphere.range(cameraDistance:pose.distance)

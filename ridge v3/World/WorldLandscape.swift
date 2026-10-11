@@ -30,7 +30,9 @@ actor WorldLandscapeStore {
     /// Build only newly exposed pieces. A candidate owns its state until the
     /// model commits it, so cancellation cannot invalidate the visible window.
     func window(center: GeoPoint, radius: Double, frame: GeoBounds, catalog: WorldCatalog, root: URL,
-                previous: Snapshot?, priority: GeoPoint? = nil, offlineBounds: [GeoBounds]? = nil, progress: @escaping @Sendable (WorldSource,WorldOverview,WorldBackdrop,[String:WorldPreparedTile]) async -> Void = { _,_,_,_ in }) async throws -> (WorldSource,WorldOverview,WalkingGraph,WorldBackdrop,[String:WorldPreparedTile]) {
+                previous: Snapshot?, priority: GeoPoint? = nil, offlineBounds: [GeoBounds]? = nil,
+                preview: @escaping @Sendable (WorldSource,WorldOverview) async -> Void = { _,_ in },
+                progress: @escaping @Sendable (WorldSource,WorldOverview,WorldBackdrop,[String:WorldPreparedTile]) async -> Void = { _,_,_,_ in }) async throws -> (WorldSource,WorldOverview,WalkingGraph,WorldBackdrop,[String:WorldPreparedTile]) {
         let priority = priority ?? center
         let saved = offlineBounds.map { Set($0) }
         let regions = catalog.sources.filter { region in
@@ -44,16 +46,15 @@ actor WorldLandscapeStore {
             try Task.checkCancellation()
             let needsPaths = WorldWindow.distance(center,to:region.bounds) <= WorldWindow.routingRadius
             if var old = oldParts[region.id], offlineBounds == nil || !old.files.allowsNetwork {
-                if needsPaths && !old.routingLoaded { old.graph = try await old.files.walkingGraph(old.source) }
                 if !needsPaths { old.graph = WalkingGraph(nodes:[],edges:[]) }
-                old.routingLoaded = needsPaths
+                if !needsPaths { old.routingLoaded = false }
                 parts.append(old); continue
             }
             let files = WorldSourceStore(cacheURL:cacheURL,allowsNetwork:offlineBounds == nil)
             let source = try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true,recoverCoverage:offlineBounds == nil)
             guard source.id == region.id, source.bounds == region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
-            let (_,overview,graph) = try await files.contents(of:source,includeGraph:needsPaths)
-            parts.append(Part(source:source,overview:overview,graph:graph,files:files,connected:region.routing != nil,routingLoaded:needsPaths))
+            let (_,overview,graph) = try await files.contents(of:source,includeGraph:false)
+            parts.append(Part(source:source,overview:overview,graph:graph,files:files,connected:region.routing != nil,routingLoaded:false))
         }
         let bounds = GeoBounds(minLatitude:parts.map { $0.source.bounds.minLatitude }.min()!,minLongitude:parts.map { $0.source.bounds.minLongitude }.min()!,maxLatitude:parts.map { $0.source.bounds.maxLatitude }.max()!,maxLongitude:parts.map { $0.source.bounds.maxLongitude }.max()!)
         var combined = parts[0].source
@@ -70,12 +71,6 @@ actor WorldLandscapeStore {
         guard !combined.tiles.isEmpty else { throw RidgeError.message("Detailed terrain is missing here.") }
         combined.sources = Array(Set(combined.sources))
         var names = Set<String>(); combined.places = combined.places.filter { names.insert($0.id).inserted }
-        let routingParts=parts.map { part in
-            var selected=part
-            if let saved { selected.source.tiles=part.source.tiles.filter { saved.contains($0.mesh.bounds) } }
-            return selected
-        }
-        let graph = try Self.joinGraphs(routingParts,center:center,radius:WorldWindow.routingRadius)
         // Route/camera fallback only; the visible surface uses the stored meshes.
         let size = 513
         var heights = [Float](repeating:0,count:size*size)
@@ -89,6 +84,23 @@ actor WorldLandscapeStore {
             }
         }
         let overview = WorldOverview(width:size,height:size,heights:heights)
+        // The bundled textured relief can open the scene before vector drawing,
+        // adaptive geometry and walking-graph decoding finish. Empty tiles mean
+        // it cannot claim detailed coverage or supply route waypoints yet.
+        var starter=combined;starter.tiles=[]
+        try Task.checkCancellation()
+        await preview(starter,overview)
+        for index in parts.indices where !parts[index].routingLoaded && WorldWindow.distance(center,to:parts[index].source.bounds)<=WorldWindow.routingRadius {
+            try Task.checkCancellation()
+            parts[index].graph=try await parts[index].files.walkingGraph(parts[index].source)
+            parts[index].routingLoaded=true
+        }
+        let routingParts=parts.map { part in
+            var selected=part
+            if let saved { selected.source.tiles=part.source.tiles.filter { saved.contains($0.mesh.bounds) } }
+            return selected
+        }
+        let graph = try Self.joinGraphs(routingParts,center:center,radius:WorldWindow.routingRadius)
         // This allowance includes retained backgrounds. New terrain cannot
         // multiply it by the number of storage regions in the window.
         let limit = WorldWindow.backgroundBudget

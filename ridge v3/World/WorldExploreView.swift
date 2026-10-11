@@ -119,7 +119,7 @@ struct WorldExploreView: View {
                     }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(380,mapSize.height*0.46))
                         .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                 }
-                if let phase=world.downloadPhase, (visibleBounds?.depthMeters ?? 0)<WorldCameraTransition.entrySpanLimit { preparationCard(phase) }
+                if !world.in3D,let phase=world.downloadPhase, (visibleBounds?.depthMeters ?? 0)<WorldCameraTransition.entrySpanLimit { preparationCard(phase) }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { retryConnection() } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -161,6 +161,9 @@ struct WorldExploreView: View {
         }
         .onChange(of:world.streaming) { _, streaming in
             if !streaming,!world.in3D,let bounds=visibleBounds { viewportChanged(bounds) }
+        }
+        .onChange(of:world.distantTerrain?.id) { _, _ in
+            if !world.in3D,let bounds=visibleBounds { viewportChanged(bounds) }
         }
         .onChange(of: world.source?.revision) { _, _ in
             if let terrain = world.routeTerrain { store.worldTerrain = terrain; store.activeTerrain = terrain; store.isWorldBrowsing = true }
@@ -342,7 +345,8 @@ struct WorldExploreView: View {
                     Spacer()
                     Label("Route saved",systemImage:"checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
-            }.disabled(store.isRouting)
+            }.disabled(store.isRouting || world.routeTerrain == nil)
+            if world.routeTerrain == nil { Text("Preparing walking paths…").font(.caption).foregroundStyle(RidgeTheme.muted) }
         }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:14))
     }
     private func control(_ symbol:String,_ label:String,action:@escaping()->Void)->some View {
@@ -381,7 +385,8 @@ struct WorldExploreView: View {
             if world.hasCoverage(bounds.center) { world.browse(bounds.center) }
             return
         }
-        guard world.browse(bounds.center), !world.streaming, let source = world.source, source.bounds.contains(bounds.center) else { return }
+        world.browse(bounds.center)
+        guard world.canEnterTerrain(at:bounds.center) else { return }
         world.center = bounds.center; world.cameraPose = nil; world.entrySpan = bounds.depthMeters
         world.distance = max(1800,bounds.depthMeters); atlasRequest = nil; world.in3D = true
         store.isWorldBrowsing = true; store.activeTerrain = world.routeTerrain
@@ -393,6 +398,7 @@ struct WorldExploreView: View {
         if let pack=world.downloadRegion { let point=explorePoint;selectRegion(pack);explorePoint=point }
     }
     private func tapped(_ point:GeoPoint) {
+        guard world.routeTerrain != nil else { return }
         if store.editing,store.movingWaypoint==nil,let waypoint=store.activeRoute?.waypoints.min(by:{$0.point.coordinate.distance(to:point)<$1.point.coordinate.distance(to:point)}),waypoint.point.coordinate.distance(to:point)<max(8,world.distance*0.007) {
             editWaypoint=waypoint;return
         }

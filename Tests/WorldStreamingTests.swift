@@ -42,9 +42,9 @@ import SceneKit
         let second = WorldLandscapeStore(cacheURL:cache)
         let nextBegan = Date()
         let progress = ProgressProbe()
-        let (next,_,nextGraph,nextBackground,nextPages) = try await second.window(center:shifted,radius:5000,frame:source.frame,catalog:catalog,root:root,previous:await first.snapshot(),priority:WorldWindow.leadingPoint(from:point,to:shifted)) { _,_,background,pages in
+        let (next,_,nextGraph,nextBackground,nextPages) = try await second.window(center:shifted,radius:5000,frame:source.frame,catalog:catalog,root:root,previous:await first.snapshot(),priority:WorldWindow.leadingPoint(from:point,to:shifted),progress: { _,_,background,pages in
             await progress.receive(background,pages)
-        }
+        })
         print("Shifted window: \(next.tiles.count) tiles, \(Date().timeIntervalSince(nextBegan)) s")
         try check(progress.batches.count > 1,"Additions publish in multiple batches before the final window")
         for (geometry,maps) in progress.batches {

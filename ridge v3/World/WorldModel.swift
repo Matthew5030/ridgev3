@@ -5,7 +5,7 @@ import CoreGraphics
 @MainActor @Observable final class WorldModel {
     @ObservationIgnored var cameraPose: TerrainCameraPose?
     var distantTerrain: WorldDistantTerrain?
-    @ObservationIgnored private let distantStore = WorldDistantTerrainStore()
+    @ObservationIgnored private let distantStore: WorldDistantTerrainStore
     @ObservationIgnored private var distantLoad: Task<Void,Never>?
     var source: WorldSource?
     var overview: WorldOverview?
@@ -78,8 +78,9 @@ import CoreGraphics
     @ObservationIgnored private var files = WorldLandscapeStore()
     @ObservationIgnored private let catalogs: WorldCatalogStore
     @ObservationIgnored private let cacheURL: URL?
-    init(cacheURL: URL? = nil) {
+    init(cacheURL: URL? = nil, distantStore: WorldDistantTerrainStore = WorldDistantTerrainStore()) {
         self.cacheURL = cacheURL
+        self.distantStore = distantStore
         self.catalogs = WorldCatalogStore(cacheURL: cacheURL)
         self.files = WorldLandscapeStore(cacheURL: cacheURL)
     }
@@ -131,6 +132,13 @@ import CoreGraphics
     func hasCoverage(_ point: GeoPoint) -> Bool {
         offlineBounds.contains { $0.contains(point) }
     }
+    func canEnterTerrain(at point:GeoPoint) -> Bool {
+        guard hasCoverage(point),let source,overview != nil,source.bounds.contains(point) else { return false }
+        if !streaming,source.tiles.contains(where: { $0.mesh.bounds.contains(point) }) { return true }
+        // A matching, already textured local horizon is enough to begin flying.
+        // Routing remains unavailable until the detailed window is committed.
+        return distantTerrain.map { $0.frame==source.frame && $0.center.distance(to:point)<20000 } ?? false
+    }
     /// Navigation only opens completed downloads. All stores used to render
     /// this window are cache-only, including later fine geometry and textures.
     @discardableResult func browse(_ point: GeoPoint) -> Bool {
@@ -146,8 +154,8 @@ import CoreGraphics
             return false
         }
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
-        // Enter with the complete nearby window. Only grow the distant horizon
-        // once the user is in 3D; atlas callbacks must not restart that wait.
+        // Finish the nearby detail window before extending it. The textured
+        // overview can begin the flight while that first window is preparing.
         let radius = in3D ? WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)+3000 : WorldWindow.entryRadius
         guard WorldWindow.needsUpdate(center:point,radius:radius,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
             if ready { coverageMessage = nil }
@@ -177,7 +185,9 @@ import CoreGraphics
             guard let self else { return }
             do {
                 let previous = initial ? nil : await oldFiles.snapshot()
-                var (next,elevation,graph,background,pages) = try await candidate.window(center:point,radius:requestedRadius,frame:frame,catalog:catalog,root:root,previous:previous,priority:priority,offlineBounds:savedBounds) { [weak self] metadata,elevation,background,pages in
+                var (next,elevation,graph,background,pages) = try await candidate.window(center:point,radius:requestedRadius,frame:frame,catalog:catalog,root:root,previous:previous,priority:priority,offlineBounds:savedBounds,preview: { [weak self] metadata,elevation in
+                    await self?.receivePreview(metadata,elevation:elevation,files:candidate,ticket:ticket,sessionID:sessionID)
+                }) { [weak self] metadata,elevation,background,pages in
                     await self?.receiveAddition(metadata,elevation:elevation,background:background,pages:pages,files:candidate,ticket:ticket)
                 }
                 next.id = sessionID
@@ -207,6 +217,12 @@ import CoreGraphics
             }
         }
         return ready
+    }
+    private func receivePreview(_ metadata:WorldSource,elevation:WorldOverview,files candidate:WorldLandscapeStore,ticket:Int,sessionID:String) {
+        guard ticket==selectionGeneration,source == nil else { return }
+        var starter=metadata;starter.id=sessionID
+        files=candidate;overview=elevation;backdrop=WorldBackdrop(geometries:[:],meshes:[:]);source=starter
+        revision+=1
     }
     private func receiveAddition(_ metadata: WorldSource, elevation: WorldOverview, background: WorldBackdrop, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore, ticket: Int) {
         guard ticket==selectionGeneration else { return }

@@ -1,8 +1,8 @@
 import Foundation
 
 enum WorldCameraTransition {
-    static let entrySpanLimit = 7000.0
-    static let preparationSpanLimit = 14000.0
+    static let entrySpanLimit = 10000.0
+    static let preparationSpanLimit = 18000.0
     static let skyPitch = 1.567 // Near vertical, with an unambiguous north-up camera basis.
     struct Pose {
         var distance: Double

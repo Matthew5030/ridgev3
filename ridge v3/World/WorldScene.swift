@@ -113,6 +113,13 @@ final class WorldSceneView: SCNView {
             distantID = distant.id; contextCoverage=nil
             distantNode.categoryBitMask = 4 // Context cannot create route waypoints.
             if distantNode.parent == nil { scene?.rootNode.addChildNode(distantNode);seamNode.categoryBitMask=4;scene?.rootNode.addChildNode(seamNode) }
+            if nodes.isEmpty {
+                let geometry=distant.geometry(excluding:[])
+                let material=SCNMaterial();material.lightingModel = .constant
+                material.diffuse.contents=distant.image;material.diffuse.mipFilter = .linear
+                material.diffuse.maxAnisotropy=4;material.isDoubleSided=true
+                geometry.materials=[material];distantNode.geometry=geometry;contextCoverage=[]
+            }
             scheduleContextMask()
         }
         if revision != model.revision {
@@ -468,7 +475,9 @@ final class WorldSceneView: SCNView {
         if let hit = hitTest(gesture.location(in:self),options:[.categoryBitMask:1,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first {
             onTap?(coordinate(SIMD3(hit.worldCoordinates.x,hit.worldCoordinates.y,hit.worldCoordinates.z)))
         } else if let hit=hitTest(gesture.location(in:self),options:[.categoryBitMask:4,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first {
-            model?.offerDownload(at:coordinate(SIMD3(hit.worldCoordinates.x,hit.worldCoordinates.y,hit.worldCoordinates.z)))
+            let point=coordinate(SIMD3(hit.worldCoordinates.x,hit.worldCoordinates.y,hit.worldCoordinates.z))
+            if model?.hasCoverage(point) == true { model?.browse(point) }
+            else { model?.offerDownload(at:point) }
         }
     }
 }

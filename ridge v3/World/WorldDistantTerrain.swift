@@ -11,6 +11,7 @@ struct WorldDistantTerrain: @unchecked Sendable {
     let center: GeoPoint
     let frame: GeoBounds
     let sources: [SCNGeometrySource]
+    let fullGeometry: SCNGeometry
     let cells: [Cell]
     let image: CGImage
     let positions: [SCNVector3]
@@ -70,6 +71,7 @@ struct WorldDistantTerrain: @unchecked Sendable {
         return indices.isEmpty ? nil : WorldGeometry.build(positions:p,uv:uv,indices:indices)
     }
     func geometry(excluding covered: Set<String>) -> SCNGeometry {
+        if covered.isEmpty { return fullGeometry.copy() as! SCNGeometry }
         let indices = cells.filter { !covered.contains($0.key) }.flatMap(\.indices)
         return SCNGeometry(sources:sources,elements:[SCNGeometryElement(indices:indices,primitiveType:.triangles)])
     }
@@ -143,6 +145,6 @@ actor WorldDistantTerrainStore {
             ctx.draw(image,in:CGRect(x:px,y:Double(size)-py-side,width:side,height:side))
         }
         guard let image=ctx.makeImage() else { throw RidgeError.message("Could not prepare distant map.") }
-        return WorldDistantTerrain(center:center,frame:frame,sources:surface.sources,cells:cells,image:image,positions:positions,left:left,top:top)
+        return WorldDistantTerrain(center:center,frame:frame,sources:surface.sources,fullGeometry:surface,cells:cells,image:image,positions:positions,left:left,top:top)
     }
 }
