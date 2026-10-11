@@ -18,6 +18,7 @@ struct WorldExploreView: View {
     @State private var exporting = false
     @State private var showWaypoints = false
     @State private var exploring = false
+    @State private var atlasGestureActive = false
     @State private var didFitRegions = false
     @State private var explorePoint:GeoPoint?
     @State private var regionMaps:[WorldRegionMapOverlay]=[]
@@ -118,7 +119,7 @@ struct WorldExploreView: View {
                     }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(380,mapSize.height*0.46))
                         .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                 }
-                if let phase=world.downloadPhase { preparationCard(phase) }
+                if let phase=world.downloadPhase, (visibleBounds?.depthMeters ?? 0)<WorldCameraTransition.entrySpanLimit { preparationCard(phase) }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { retryConnection() } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -282,7 +283,7 @@ struct WorldExploreView: View {
         query="";searchFocused=false
         guard world.hasCoverage(point) else { showRegion(at:point);return }
         if world.in3D { world.visit(point);return }
-        exploring=true;world.cancelDownload()
+        exploring=true;atlasGestureActive=false;world.cancelDownload()
         let bounds=WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))
         focus=AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
         viewportChanged(bounds)
@@ -297,7 +298,7 @@ struct WorldExploreView: View {
     }
     private func selectRegion(_ pack:WorldRegionPack) {
         guard !world.isSavingOffline else { return }
-        exploring=false;explorePoint=nil;world.cancelRegionLoad()
+        exploring=false;atlasGestureActive=false;explorePoint=nil;world.cancelRegionLoad()
         query="";searchFocused=false
         if world.downloadRegion?.id != pack.id { world.offerRegionDownload(pack) }
         let bounds=pack.bounds
@@ -359,13 +360,13 @@ struct WorldExploreView: View {
             if let bounds=visibleBounds { viewportChanged(bounds) }
         }
     }
-    private func userViewportChanged(_ bounds:GeoBounds) {
+    private func userViewportChanged(_ bounds:GeoBounds, gestureEnded:Bool) {
         visibleBounds=bounds
         guard !world.in3D,!world.isSavingOffline else { return }
-        exploring=true
+        exploring=true;atlasGestureActive = !gestureEnded
         // A selected region must not trap a pinch zoom behind its Explore button.
         // browse() still checks saved coverage before preparing any terrain.
-        if bounds.depthMeters < WorldCameraTransition.entrySpanLimit,world.downloadRegion != nil {
+        if bounds.depthMeters < WorldCameraTransition.preparationSpanLimit,world.downloadRegion != nil {
             world.cancelDownload();explorePoint=nil
         }
         viewportChanged(bounds)
@@ -373,7 +374,13 @@ struct WorldExploreView: View {
     private func viewportChanged(_ bounds:GeoBounds) {
         visibleBounds = bounds
         guard !world.in3D,exploring,!world.isSavingOffline,world.downloadRegion == nil else { return }
-        guard bounds.depthMeters < WorldCameraTransition.entrySpanLimit else { world.cancelRegionLoad(); world.coverageMessage = nil; return }
+        guard bounds.depthMeters < WorldCameraTransition.preparationSpanLimit else { world.cancelRegionLoad(); world.coverageMessage = nil; return }
+        // Warm saved terrain while the atlas is still zooming. Keep the active
+        // gesture on its original view; fly into the prepared scene on release.
+        if bounds.depthMeters >= WorldCameraTransition.entrySpanLimit || atlasGestureActive {
+            if world.hasCoverage(bounds.center) { world.browse(bounds.center) }
+            return
+        }
         guard world.browse(bounds.center), !world.streaming, let source = world.source, source.bounds.contains(bounds.center) else { return }
         world.center = bounds.center; world.cameraPose = nil; world.entrySpan = bounds.depthMeters
         world.distance = max(1800,bounds.depthMeters); atlasRequest = nil; world.in3D = true
@@ -382,7 +389,7 @@ struct WorldExploreView: View {
     private func leaveWorld(_ bounds:GeoBounds) {
         focus=AtlasFocus(point:bounds.center,scale:1,bounds:bounds,exactViewport:true)
         world.suspend();atlasRequest=nil;world.in3D=false
-        exploring=false
+        exploring=false;atlasGestureActive=false
         if let pack=world.downloadRegion { let point=explorePoint;selectRegion(pack);explorePoint=point }
     }
     private func tapped(_ point:GeoPoint) {

@@ -148,7 +148,7 @@ import CoreGraphics
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
         // Enter with the complete nearby window. Only grow the distant horizon
         // once the user is in 3D; atlas callbacks must not restart that wait.
-        let radius = in3D ? WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)+3000 : 8000
+        let radius = in3D ? WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)+3000 : WorldWindow.entryRadius
         guard WorldWindow.needsUpdate(center:point,radius:radius,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
             if ready { coverageMessage = nil }
             return ready
@@ -246,7 +246,8 @@ import CoreGraphics
     func pauseDownload() { cancelRegionLoad();cancelDownload() }
     private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore) {
         generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
-        refreshOfflineCoverage()
+        // Rendering uses already admitted, cache-only files. Rechecking every
+        // saved region here makes each camera window pay for the whole library.
         files = candidate; source = next; overview = elevation; backdrop = background
         tilesByID = Dictionary(uniqueKeysWithValues:next.tiles.map { ($0.id,$0) })
         changedTileIDs.removeAll(keepingCapacity:true)

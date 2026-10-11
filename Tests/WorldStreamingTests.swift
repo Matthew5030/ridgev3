@@ -23,8 +23,8 @@ import SceneKit
         try check(!WorldWindow.needsUpdate(center:point,radius:18000,loadedCenter:point,loadedRadius:21000),"Retention avoids repeated loads while stationary")
         try check(WorldWindow.radius(distance:12000,pitch:0.3)>WorldWindow.radius(distance:1500,pitch:1.4),"A wide low view gets more surroundings")
         var radius = WorldWindow.nextRadius(desired:23200,loaded:0)
-        try check(radius == 8000,"Entry stays small")
-        for _ in 0..<6 {
+        try check(radius == WorldWindow.entryRadius && radius<5000,"Entry stays small")
+        for _ in 0..<7 {
             let next = WorldWindow.nextRadius(desired:23200,loaded:radius)
             try check(next-radius <= 3000 && next >= radius,"Horizon publishes in bounded growth steps")
             radius = next

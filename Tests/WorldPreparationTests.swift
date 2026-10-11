@@ -18,6 +18,8 @@ import Foundation
         print("Transfer: \(plan.bytes) bytes, \(plan.bounds.count) tiles, \(Date().timeIntervalSince(transfer)) s")
         let model = WorldModel(cacheURL:cache)
         await model.configure(mode:"local",local:local)
+        let receipts=cache.appendingPathComponent("offline-coverage.json")
+        let receiptDate=try? receipts.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate
         model.distance = 3500
         let began = Date()
         model.browse(point)
@@ -30,7 +32,8 @@ import Foundation
         guard let source=model.source,model.message == nil else { throw RidgeError.message(model.message ?? "Missing terrain") }
         print("Ready: \(source.tiles.count) tiles, radius \(model.loadedRadius) m, \(Date().timeIntervalSince(began)) s, \(phases.count) progress updates")
         if env["RIDGE_PREPARATION_BASELINE"] != "1" {
-            guard model.loadedRadius == 8000 else { throw RidgeError.message("Entry waited for the extended horizon") }
+            guard model.loadedRadius == WorldWindow.entryRadius, source.tiles.count<plan.bounds.count/2 else { throw RidgeError.message("Entry waited for the extended horizon") }
+            guard (try? receipts.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate)==receiptDate else { throw RidgeError.message("Opening saved terrain rewrote download coverage") }
             guard model.browse(point),!model.streaming else { throw RidgeError.message("Ready atlas viewport restarted preparation") }
             guard phases.count>1 else { throw RidgeError.message("Preparation did not report progress") }
             guard source.tiles.allSatisfy({ model.preparedTile($0.id) != nil }) else { throw RidgeError.message("Entry contains untextured tiles") }

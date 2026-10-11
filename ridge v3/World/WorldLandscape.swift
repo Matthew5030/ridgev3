@@ -50,7 +50,7 @@ actor WorldLandscapeStore {
                 parts.append(old); continue
             }
             let files = WorldSourceStore(cacheURL:cacheURL,allowsNetwork:offlineBounds == nil)
-            let source = try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true)
+            let source = try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true,recoverCoverage:offlineBounds == nil)
             guard source.id == region.id, source.bounds == region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
             let (_,overview,graph) = try await files.contents(of:source,includeGraph:needsPaths)
             parts.append(Part(source:source,overview:overview,graph:graph,files:files,connected:region.routing != nil,routingLoaded:needsPaths))
@@ -240,8 +240,9 @@ enum WorldWindow {
     }
     // Publish nearby additions regularly instead of making the first visible
     // window wait for every tile out to the full horizon.
+    static let entryRadius = 4500.0
     static func nextRadius(desired: Double, loaded: Double) -> Double {
-        loaded == 0 ? 8000 : min(desired,loaded+3000)
+        loaded == 0 ? min(desired,entryRadius) : min(desired,loaded+3000)
     }
     static let backgroundBudget: Int64 = ProcessInfo.processInfo.physicalMemory >= 6*1024*1024*1024 ? 192*1024*1024 : 96*1024*1024
     static func radius(distance: Double, pitch: Float) -> Double {

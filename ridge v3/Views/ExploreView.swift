@@ -435,7 +435,8 @@ struct OfflineAtlasView: View {
     var route: [GeoPoint]
     var routeSegments: [[GeoPoint]]
     var onViewport: (GeoBounds) -> Void
-    var onUserViewport: ((GeoBounds) -> Void)? = nil
+    var onUserViewport: ((GeoBounds, Bool) -> Void)? = nil
+    @State private var lastUserViewportTime = 0.0
     var snapToTiles = false
     var worldCoverage: GeoBounds? = nil
     private var maximumScale: Double { onWorldTap != nil || worldCoverage != nil ? 16_000_000 : 4_000_000 }
@@ -560,6 +561,7 @@ struct OfflineAtlasView: View {
                             dragSelection(start: start, location: point, size: geometry.size)
                         } else {
                             center = CGPoint(x:min(1,max(0,center.x-translation.width/scale)),y:min(0.94,max(0.06,center.y-translation.height/scale)))
+                            if !ended { reportViewport(geometry.size, userInitiated: true, gestureEnded: false) }
                         }
                         if ended {
                             if selecting && !movingMap && !twoFingers,let selectedBounds { onSelectionFinished?(selectedBounds) }
@@ -571,7 +573,7 @@ struct OfflineAtlasView: View {
                         let before=CGPoint(x:center.x+offset.x/scale,y:center.y+offset.y/scale)
                         scale = min(maximumScale, max(350, scale * factor))
                         center=CGPoint(x:min(1,max(0,before.x-offset.x/scale)),y:min(0.94,max(0.06,before.y-offset.y/scale)))
-                        if ended { reportViewport(geometry.size, userInitiated: true) }
+                        reportViewport(geometry.size, userInitiated: true, gestureEnded: ended)
                     }, onTap: { location in
                         if let onRegionTap {
                             let labels=regionLabels(size:geometry.size)
@@ -675,11 +677,17 @@ struct OfflineAtlasView: View {
         }.clipped()
     }
 
-    private func reportViewport(_ size: CGSize, userInitiated: Bool = false) {
+    private func reportViewport(_ size: CGSize, userInitiated: Bool = false, gestureEnded: Bool = true) {
+        if userInitiated, !gestureEnded {
+            guard onUserViewport != nil else { return }
+            let now=ProcessInfo.processInfo.systemUptime
+            guard now-lastUserViewportTime>=0.12 else { return }
+            lastUserViewportTime=now
+        }
         guard let bounds = area(from: coordinate(at: .zero, size: size), to: coordinate(at: CGPoint(x: size.width, y: size.height), size: size)) else { return }
         // Layout, region focus and returning from 3D also report a viewport.
         // Only deliberate navigation should restart automatic terrain entry.
-        if userInitiated, let onUserViewport { onUserViewport(bounds) }
+        if userInitiated, let onUserViewport { onUserViewport(bounds, gestureEnded) }
         else { onViewport(bounds) }
     }
     private func area(from a: GeoPoint, to b: GeoPoint) -> GeoBounds? {
