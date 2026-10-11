@@ -30,6 +30,9 @@ struct WorldSource: Codable, Sendable {
     var places: [MapPlace]
     var sources: [SourceCredit]
     var backgroundToleranceMetres: Double?
+    // Runtime-only geographic frame; storage bounds still describe coverage.
+    var renderBounds: GeoBounds? = nil
+    var frame: GeoBounds { renderBounds ?? bounds }
     func validate() throws {
         guard schemaVersion == 1, id.hasPrefix("world-"), bounds.isValid,
               (1...64).contains(columns), (1...64).contains(rows), tiles.count <= min(256, columns * rows),
@@ -136,7 +139,7 @@ actor WorldSourceStore {
     private var pins: Set<String> = []
     private var bytesSincePrune = 0
     private var writesSincePrune = 0
-    private let diskLimit: Int64 = 256 * 1024 * 1024
+    private let diskLimit: Int64 = 2 * 1024 * 1024 * 1024
     init(bundledURL: URL? = nil, cacheURL: URL? = nil) {
         bundled = bundledURL ?? Bundle.main.url(forResource: "WorldData", withExtension: "bundle") ?? Bundle.main.bundleURL
         base = bundled
@@ -180,11 +183,14 @@ actor WorldSourceStore {
     func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
         try await contents(of: manifest(address:address,routing:routing))
     }
-    func contents(of source: WorldSource) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
+    func contents(of source: WorldSource, includeGraph: Bool = true) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
         let overview = try JSONDecoder().decode(WorldOverview.self, from: await read(source.overview))
         guard (2...2049).contains(overview.width), (2...2049).contains(overview.height), overview.heights.count == overview.width * overview.height, overview.heights.allSatisfy(\.isFinite) else { throw RidgeError.message("Invalid world overview.") }
-        let graph = try JSONDecoder().decode(WalkingGraph.self, from: await read(source.graph, maximumBytes: 64_000_000))
+        let graph = includeGraph ? try await walkingGraph(source) : WalkingGraph(nodes:[],edges:[])
         return (source, overview, graph)
+    }
+    func walkingGraph(_ source: WorldSource) async throws -> WalkingGraph {
+        try JSONDecoder().decode(WalkingGraph.self,from:await read(source.graph,maximumBytes:64_000_000))
     }
     func backdrop(source: WorldSource, overview: WorldOverview, frame: GeoBounds? = nil) async throws -> WorldBackdrop {
         try await prefetch(source.tiles.compactMap(\.background).map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) })
@@ -199,7 +205,7 @@ actor WorldSourceStore {
                 meshes[tile.id]=mesh
                 geometries[tile.id]=WorldGeometry.fine(mesh,sourceBounds:frame ?? source.bounds,pixels:256)
             } else {
-                geometries[tile.id]=WorldGeometry.coarse(tile:tile,source:source,overview:overview,maximumDivisions:maximumDivisions)
+                geometries[tile.id]=WorldGeometry.coarse(tile:tile,source:source,overview:overview,maximumDivisions:maximumDivisions,frame:frame)
             }
         }
         return WorldBackdrop(geometries:geometries,meshes:meshes)

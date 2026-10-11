@@ -19,7 +19,8 @@ enum WorldPreview {
         }
         let camera=SCNNode();camera.camera=SCNCamera();camera.camera!.usesOrthographicProjection=true
         camera.camera!.orthographicScale=source.bounds.depthMeters/2;camera.camera!.zNear=1;camera.camera!.zFar=20000
-        camera.simdPosition=SIMD3<Float>(0,10000,0);camera.eulerAngles=SCNVector3(-Float.pi/2,0,0);scene.rootNode.addChildNode(camera)
+        let uv = source.frame.uv(source.bounds.center)
+        camera.simdPosition=SIMD3<Float>(Float((uv.u-0.5)*source.frame.widthMeters),10000,Float((uv.v-0.5)*source.frame.depthMeters));camera.eulerAngles=SCNVector3(-Float.pi/2,0,0);scene.rootNode.addChildNode(camera)
         let renderer=SCNRenderer(device:nil,options:nil);renderer.scene=scene;renderer.pointOfView=camera
         let image=renderer.snapshot(atTime:0,with:CGSize(width:2048*source.bounds.widthMeters/source.bounds.depthMeters,height:2048),antialiasingMode:.multisampling4X)
         #if canImport(UIKit)

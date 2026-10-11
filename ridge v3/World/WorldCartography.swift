@@ -6,7 +6,7 @@ import CoreGraphics
 enum WorldCartography {
     static func draw(_ map: WorldVectorMap, pixels: Int) throws -> CGImage {
         guard map.width.isFinite, map.height.isFinite, map.width > 0, map.height > 0,
-              [64,128,256,512,1024].contains(pixels), map.paths.count <= 50_000 else { throw RidgeError.message("Invalid vector map.") }
+              [32,64,128,256,512,1024].contains(pixels), map.paths.count <= 50_000 else { throw RidgeError.message("Invalid vector map.") }
         let size = pixels + 8
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw RidgeError.message("Not enough memory to draw the map.") }

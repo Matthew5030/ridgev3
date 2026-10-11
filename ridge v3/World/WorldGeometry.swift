@@ -34,13 +34,14 @@ enum WorldGeometry {
         }
         return build(positions:p,uv:uv,indices:indices)
     }
-    static func coarse(tile: WorldTile, source: WorldSource, overview: WorldOverview, maximumDivisions: Int = 64) -> SCNGeometry {
+    static func coarse(tile: WorldTile, source: WorldSource, overview: WorldOverview, maximumDivisions: Int = 64, frame: GeoBounds? = nil) -> SCNGeometry {
+        let frame = frame ?? source.frame
         let divisions=max(1,min(maximumDivisions,(overview.width-1)/source.columns))
         let side=divisions+1
         var p:[SCNVector3]=[],uv:[CGPoint]=[],indices:[Int32]=[]
         for y in 0...divisions { for x in 0...divisions {
-            let point=tile.mesh.bounds.point(u:Double(x)/Double(divisions),v:Double(y)/Double(divisions)),s=source.bounds.uv(point)
-            p.append(SCNVector3(Float((s.u-0.5)*source.bounds.widthMeters),overview.elevation(point,bounds:source.bounds),Float((s.v-0.5)*source.bounds.depthMeters)))
+            let point=tile.mesh.bounds.point(u:Double(x)/Double(divisions),v:Double(y)/Double(divisions)),s=frame.uv(point)
+            p.append(SCNVector3(Float((s.u-0.5)*frame.widthMeters),overview.elevation(point,bounds:source.bounds),Float((s.v-0.5)*frame.depthMeters)))
             uv.append(CGPoint(x:Double(x)/Double(divisions),y:Double(y)/Double(divisions)))
         } }
         for y in 0..<divisions { for x in 0..<divisions {

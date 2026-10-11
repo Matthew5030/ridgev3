@@ -34,8 +34,8 @@ enum WorldRouteOverlay {
     }
     static func build(source: WorldSource, paths: [[GeoPoint]], waypoints: [GeoPoint]) -> [String:Tile] {
         func position(_ point: GeoPoint) -> SIMD2<Float> {
-            let uv=source.bounds.uv(point)
-            return SIMD2(Float((uv.u-0.5)*source.bounds.widthMeters),Float((uv.v-0.5)*source.bounds.depthMeters))
+            let uv=source.frame.uv(point)
+            return SIMD2(Float((uv.u-0.5)*source.frame.widthMeters),Float((uv.v-0.5)*source.frame.depthMeters))
         }
         let segments=paths.flatMap { path in zip(path,path.dropFirst()).compactMap { a,b -> SIMD4<Float>? in
             guard a.isValid,b.isValid else { return nil }

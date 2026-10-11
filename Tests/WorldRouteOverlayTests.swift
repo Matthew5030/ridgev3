@@ -18,6 +18,14 @@ import Metal
         }
         let segments=paths.flatMap { p in zip(p,p.dropFirst()).map { (position($0),position($1)) } }
         let tiles=WorldRouteOverlay.build(source:source,paths:paths,waypoints:[point(0.5,0.5)])
+        var shiftedCoverage = source
+        shiftedCoverage.renderBounds = source.bounds
+        shiftedCoverage.bounds = GeoBounds(minLatitude:source.bounds.minLatitude-0.1,minLongitude:source.bounds.minLongitude-0.1,maxLatitude:source.bounds.maxLatitude+0.1,maxLongitude:source.bounds.maxLongitude+0.1)
+        let retainedInk = WorldRouteOverlay.build(source:shiftedCoverage,paths:paths,waypoints:[point(0.5,0.5)])
+        try check(retainedInk.count == tiles.count,"Moving coverage retains the same route tiles")
+        for (id,tile) in tiles {
+            try check(retainedInk[id]?.origin == tile.origin && retainedInk[id]?.extent == tile.extent && retainedInk[id]?.records == tile.records,"Window shifts cannot move route ink away from the terrain")
+        }
         var tested=0
         for tile in tiles.values {
             try check(tile.records.count>=256,"Cell table exists")

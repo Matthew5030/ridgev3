@@ -77,11 +77,11 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     private func local(_ point: GeoPoint) -> SIMD3<Float> {
         guard let source else { return .zero }
-        let uv = source.bounds.uv(point)
-        return SIMD3(Float((uv.u - 0.5) * source.bounds.widthMeters), height(point), Float((uv.v - 0.5) * source.bounds.depthMeters))
+        let uv = source.frame.uv(point)
+        return SIMD3(Float((uv.u - 0.5) * source.frame.widthMeters), height(point), Float((uv.v - 0.5) * source.frame.depthMeters))
     }
     private func coordinate(_ p: SIMD3<Float>) -> GeoPoint {
-        source!.bounds.point(u: Double(p.x) / source!.bounds.widthMeters + 0.5, v: Double(p.z) / source!.bounds.depthMeters + 0.5)
+        source!.frame.point(u: Double(p.x) / source!.frame.widthMeters + 0.5, v: Double(p.z) / source!.frame.depthMeters + 0.5)
     }
     private func height(_ point: GeoPoint) -> Float {
         guard let source, let overview else { return 0 }
@@ -94,7 +94,10 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         guard let model, let next = model.source, let overview = model.overview else { return }
         let sourceChanged = source?.revision != next.revision || source?.id != next.id
         if sourceChanged {
-            source = next; self.overview = overview; buildScene(next, overview: overview)
+            let firstScene = source == nil || source?.frame != next.frame
+            source = next; self.overview = overview
+            if firstScene { buildScene(next, overview:overview) }
+            else { reconcileTerrain(next,overview:overview); updateCamera(notify:false) }
         }
         if revision != model.revision {
             revision = model.revision
@@ -150,20 +153,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         let ambient = SCNNode(); ambient.light = SCNLight(); ambient.light?.type = .ambient; ambient.light?.intensity = 400; scene.rootNode.addChildNode(ambient)
         let sun = SCNNode(); sun.light = SCNLight(); sun.light?.type = .directional; sun.light?.intensity = 600
         sun.eulerAngles = SCNVector3(-0.8,-0.7,0); scene.rootNode.addChildNode(sun)
-        for tile in source.tiles {
-            tileIDs[tile.row * source.columns + tile.column] = tile.id
-            let g = model?.backdrop?.geometries[tile.id] ?? WorldGeometry.coarse(tile: tile, source: source, overview: overview)
-            g.materials = [material(nil, tileID:tile.id)]; coarse[tile.id] = g
-            let node = SCNNode(geometry: g); node.categoryBitMask = 1; node.name = tile.id
-            nodes[tile.id] = node; scene.rootNode.addChildNode(node)
-        }
-        for (_, label) in labels { label.removeFromSuperview() }; labels = []
-        for place in source.places.filter({ $0.kind == "peak" }).prefix(80) {
-            let label = UILabel(); label.text = place.name; label.font = .systemFont(ofSize: 12, weight: .semibold)
-            label.textColor = UIColor(white: 0.16, alpha: 1); label.backgroundColor = UIColor(white: 1,alpha: 0.78)
-            label.layer.cornerRadius = 4; label.clipsToBounds = true; label.isUserInteractionEnabled = false
-            label.sizeToFit(); label.bounds.size.width += 12; label.bounds.size.height += 6; addSubview(label); labels.append((place,label))
-        }
+        reconcileTerrain(source,overview:overview)
         target = local(model?.center ?? source.bounds.center); distance = Float(model?.distance ?? 6000)
         if let pose = model?.cameraPose, source.bounds.contains(pose.target) {
             target = local(pose.target); target.y = Float(pose.targetElevationMeters)
@@ -174,25 +164,45 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             beginEntry(span:span)
         } else { updateCamera() }
     }
+    private func reconcileTerrain(_ source: WorldSource, overview: WorldOverview) {
+        guard let scene else { return }
+        let keep = Set(source.tiles.map(\.id))
+        for id in Array(nodes.keys) where !keep.contains(id) {
+            nodes.removeValue(forKey:id)?.removeFromParentNode()
+            coarse.removeValue(forKey:id); applied.removeValue(forKey:id); routeOverlays.removeValue(forKey:id)
+        }
+        for tile in source.tiles {
+            guard let g = model?.backdrop?.geometries[tile.id] else { continue }
+            if nodes[tile.id] != nil {
+                if coarse[tile.id] !== g { coarse[tile.id] = g; applied.removeValue(forKey:tile.id) }
+                continue
+            }
+            g.materials = [material(model?.preparedTile(tile.id)?.image,tileID:tile.id)]
+            coarse[tile.id] = g
+            let node = SCNNode(geometry:g); node.categoryBitMask = 1; node.name = tile.id
+            nodes[tile.id] = node; scene.rootNode.addChildNode(node)
+        }
+        for (_, label) in labels { label.removeFromSuperview() }; labels = []
+        for place in source.places.filter({ $0.kind == "peak" }).prefix(80) {
+            let label = UILabel(); label.text = place.name; label.font = .systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = UIColor(white: 0.16, alpha: 1); label.backgroundColor = UIColor(white: 1,alpha: 0.78)
+            label.layer.cornerRadius = 4; label.clipsToBounds = true; label.isUserInteractionEnabled = false
+            label.sizeToFit(); label.bounds.size.width += 12; label.bounds.size.height += 6; addSubview(label); labels.append((place,label))
+        }
+    }
     override func layoutSubviews() { super.layoutSubviews(); updateLabels() }
     private func updateCamera(notify: Bool = true) {
         guard let source else { return }
-        let proposed = coordinate(target)
-        if model?.hasCoverage(proposed) != true {
-            model?.browse(proposed)
-            if source.bounds.contains(proposed), let previous = model?.cameraPose, model?.hasCoverage(previous.target) == true {
-                target = local(previous.target)
-            } else {
-                target.x = min(Float(source.bounds.widthMeters * 0.4999), max(-Float(source.bounds.widthMeters * 0.4999), target.x))
-                target.z = min(Float(source.bounds.depthMeters * 0.4999), max(-Float(source.bounds.depthMeters * 0.4999), target.z))
-            }
-        }
+        // The camera is independent of residency. Moving toward missing data
+        // requests it; it never snaps back to a storage rectangle.
         distance = min(flightLink == nil ? 26000 : 300000,max(170,distance))
         cameraNode.camera?.zFar=max(60000,Double(distance)*2)
         // A narrow-FOV overhead camera is far away even when its footprint is small.
         // Keep atmospheric fade beyond the ground during that projection change.
-        scene?.fogStartDistance = flightLink == nil ? 9000 : max(9000,Double(distance))
-        scene?.fogEndDistance = flightLink == nil ? 26000 : max(26000,Double(distance)+26000)
+        let remaining = max(2000,(model?.loadedRadius ?? 8000) - (model?.windowDisplacement(from:coordinate(target)) ?? 0))
+        let horizon = min(24000,remaining*0.9)
+        scene?.fogStartDistance = flightLink == nil ? horizon*0.65 : max(horizon*0.65,Double(distance))
+        scene?.fogEndDistance = flightLink == nil ? horizon : max(horizon,Double(distance)+horizon)
         var eye = target + distance * SIMD3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
         let point = coordinate(eye)
         if source.bounds.contains(point) { eye.y = max(eye.y,height(point)+25) }
@@ -265,7 +275,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         DispatchQueue.main.async { [weak self] in self?.updateLabels() }
     }
     private func updateLabels() {
-        guard scene != nil, let source else { return }
+        guard scene != nil, source != nil else { return }
         var occupied: [CGRect] = []
         for (place,label) in labels.sorted(by: { $0.0.coordinate.distance(to: coordinate(target)) < $1.0.coordinate.distance(to: coordinate(target)) }) {
             var p = local(place.coordinate); p.y += 15

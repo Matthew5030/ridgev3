@@ -48,7 +48,7 @@ struct SettingsView: View {
                         Text("Tap Save to apply this source.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     }
                     if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
-                    Text("Choose a place on Explore, then download the surrounding map before entering 3D. Saved maps work offline.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Text("Explore loads maps as you move. Use Save area offline from the terrain menu to keep a landscape without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 worldGestureSection
                 offlineSection
@@ -121,7 +121,7 @@ struct SettingsView: View {
     private var offlineSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Offline maps").font(RidgeTheme.sectionTitle)
-            Text("Before opening a new landscape in 3D, Ridge downloads its terrain, maps and walking paths. Once saved, the landscape works without a connection.")
+            Text("Maps load automatically from your selected source and are cached on this device. Choose Save area offline in the terrain menu to keep its terrain, maps and walking paths.")
                 .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
             if store.activeTerrain == nil {
             VStack(spacing: 0) {

@@ -35,7 +35,7 @@ struct WorldExploreView: View {
             } else {
                 OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: false,
                     selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: false,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.source?.bounds, worldPreview:world.preview, onWorldTap: visit)
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.previewBounds, worldPreview:world.preview, onWorldTap: visit)
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
@@ -59,7 +59,7 @@ struct WorldExploreView: View {
                     if world.in3D {
                         VStack(alignment:.leading,spacing:4) {
                             Text("Terrain").font(.subheadline.weight(.semibold))
-                            if world.downloadPhase == "Preparing terrain" { ProgressView("Preparing nearby terrain").font(.caption) }
+                            if world.streaming { ProgressView("Loading surroundings").font(.caption) }
                             if world.pending > 0 { Label("Adding detail",systemImage:"arrow.down.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
                         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                         Spacer()
@@ -68,7 +68,7 @@ struct WorldExploreView: View {
                             control("minus", "Zoom out") { store.camera = TerrainCameraCommand(action:.zoomOut) }
                             control("square.3.layers.3d.top.filled", "Look straight down") { store.camera = TerrainCameraCommand(action:.overhead) }
                             Menu {
-                                Button("Saved on this device",systemImage:"checkmark.circle") { world.keepOffline() }
+                                Button("Save area offline",systemImage:"arrow.down.circle") { world.keepOffline() }
                                 Button("Import GPX",systemImage:"square.and.arrow.down") { store.showGPXImporter = true }
                                 Button("Saved areas",systemImage:"folder") { store.tab = .areas }
                             } label: { Image(systemName:"ellipsis").frame(width:42,height:42).background(.regularMaterial,in:Circle()) }
@@ -76,7 +76,7 @@ struct WorldExploreView: View {
                     } else {
                         VStack(alignment:.leading,spacing:10) {
                             Text("Explore the mountains").font(.headline)
-                            Text("Choose a place. Save the surrounding map, then explore in 3D.").font(.subheadline)
+                            Text("Zoom into a place to explore in 3D. Maps load as you move.").font(.subheadline)
                             Text(mapMode == "cloud" ? "Cloud · Snowdon pilot coverage" : "Local network")
                                 .font(.caption.weight(.semibold)).foregroundStyle(RidgeTheme.muted)
                             if mapMode == "local", let host = world.libraryRoot?.host {
@@ -150,29 +150,12 @@ struct WorldExploreView: View {
         }
     }
     private var downloadCard: some View {
-        VStack(alignment:.leading,spacing:12) {
-            HStack {
-                Text(world.downloadPhase ?? "Maps").font(.headline)
-                Spacer()
-                Button("Cancel") { world.pauseDownload() }
-            }
-            if let summary = world.downloadSummary {
-                Text(String(format:"%.0f × %.0f km · terrain, maps and walking paths",summary.bounds.widthMeters/1000,summary.bounds.depthMeters/1000))
-                    .font(.subheadline)
-                if world.downloadPhase == "Download this area" {
-                    Text("Save the surrounding landscape before entering 3D. It will also work offline.").font(.subheadline).foregroundStyle(RidgeTheme.muted)
-                    Button("Download \(ByteCountFormatter.string(fromByteCount:summary.remainingBytes,countStyle:.file)) & explore") { world.downloadArea() }
-                        .buttonStyle(.borderedProminent).foregroundStyle(.white)
-                } else if world.downloadPhase == "Downloading maps" {
-                    ProgressView(value:Double(world.downloadCompleted),total:Double(max(1,summary.totalBytes)))
-                    Text("\(ByteCountFormatter.string(fromByteCount:world.downloadCompleted,countStyle:.file)) of \(ByteCountFormatter.string(fromByteCount:summary.totalBytes,countStyle:.file)) saved")
-                        .font(.caption).monospacedDigit()
-                } else {
-                    ProgressView()
-                    Text("Your map is saved. Preparing the landscape before you enter.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                }
-            } else { ProgressView("Checking the surrounding area") }
-        }.padding(16).frame(maxWidth:500,alignment:.leading).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
+        HStack(spacing:12) {
+            ProgressView()
+            Text("Loading nearby terrain").font(.subheadline)
+            Spacer()
+            Button("Cancel") { world.pauseDownload() }
+        }.padding(16).frame(maxWidth:500).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }
     private var routeBar: some View {
         VStack(spacing:10) {
@@ -206,7 +189,7 @@ struct WorldExploreView: View {
                         if store.activeRoute == nil {store.startRoute()} else {store.editing=true}
                     }.buttonStyle(.borderedProminent).foregroundStyle(.white)
                     Spacer()
-                    Label("Saved offline",systemImage:"checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Label("Route saved",systemImage:"checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }.disabled(store.isRouting)
         }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:14))
