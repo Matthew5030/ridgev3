@@ -11,7 +11,7 @@ import hashlib
 import json
 import math
 import re
-from collections import defaultdict, Counter
+from collections import defaultdict
 from pathlib import Path
 from shapely.geometry import box, shape, Polygon, Point
 from shapely.ops import unary_union
@@ -33,8 +33,6 @@ PARKS = [
     ('new-forest', 'New Forest', 'NEW\nFOREST', 'new-forest', 'south-east'),
     ('broads', 'The Broads', 'BROADS', 'the-broads', 'east-anglia'),
 ]
-DIRECTIONS = [('nw', 'North West', 'NW'), ('ne', 'North East', 'NE'),
-              ('sw', 'South West', 'SW'), ('se', 'South East', 'SE')]
 
 
 def centre(cell):
@@ -47,33 +45,13 @@ def rectangle(cell):
     return box(b['minLongitude'], b['minLatitude'], b['maxLongitude'], b['maxLatitude'])
 
 
-def split(cells):
-    """Four stable compass areas, without cutting any downloadable section."""
-    west = min(c['bounds']['minLongitude'] for c in cells)
-    east = max(c['bounds']['maxLongitude'] for c in cells)
-    south = min(c['bounds']['minLatitude'] for c in cells)
-    north = max(c['bounds']['maxLatitude'] for c in cells)
-    result = {d[0]: [] for d in DIRECTIONS}
-    for cell in cells:
-        x, y = centre(cell)
-        result[('n' if y >= (north+south)/2 else 's')+('w' if x < (west+east)/2 else 'e')].append(cell)
-    return result
-
-
 def build(grid, source_root):
     divisions = json.loads(Path(__file__).with_name('surrounding-areas.json').read_text())
     groups = {g['id']: g['cells'] for g in grid['regions']}
-    cells, surroundings = {}, {}
-    area_names = {}
+    cells = {}
     # Publication cells contain a 48 x 48 tile grid, served in 16 x 16 sections.
     for division in divisions:
-        for ident, name in division['names']:
-            area_names[ident] = name
-            surroundings[ident] = []
         for parent in groups[division['group']]:
-            x, y = centre(parent)
-            band = sum((y if division['latitude'] else x) >= cut for cut in division['cuts'])
-            owner = division['names'][band][0]
             b = parent['bounds']
             dx = (b['maxLongitude']-b['minLongitude'])/3
             dy = (b['maxLatitude']-b['minLatitude'])/3
@@ -84,7 +62,6 @@ def build(grid, source_root):
                         maxLongitude=b['minLongitude']+(col+1)*dx,
                         minLatitude=b['maxLatitude']-(row+1)*dy, maxLatitude=b['maxLatitude']-row*dy))
                     cells[ident] = cell
-                    surroundings[owner].append(cell)
     catalog = json.loads((source_root/'world-v1-2026-10-04/catalog.json').read_text())
     for source in catalog['sources']:
         assert source['id'] in cells, source['id']
@@ -109,75 +86,86 @@ def build(grid, source_root):
             subtitle='National park · includes map sections along the boundary',
             cells=sorted(members,key=lambda c:c['id'])))
     land = unary_union([Polygon(r).buffer(0) for r in json.loads(Path('ridge v3/Resources/RidgeData.bundle/atlas.json').read_text())['land']])
-    groups = defaultdict(list)
+    # Use published walking-map sheet footprints as anchors. Each existing
+    # source section has exactly one owner, including sections in sheet overlaps.
+    reference_path=Path(__file__).with_name('sheet-reference.json')
+    reference=json.loads(reference_path.read_text())
+    sheets=[s for s in reference['sheets'] if not shape(s['geometry']).buffer(0).is_empty]
+    shapes=[shape(sheet['geometry']).buffer(0) for sheet in sheets]
+    bounds=[g.bounds for g in shapes]
+    groups=defaultdict(list)
     for cell in cells.values():
-        x,y,col,row = map(int,re.search(r'x(\d+)-y(\d+)-c(\d+)-r(\d+)',cell['id']).groups())
-        groups[((x*3+col//16)//5, (y*3+row//16)//5)].append(cell)
-    footprints = {key:unary_union([rectangle(c) for c in group]).intersection(land) for key,group in groups.items()}
-    # A tiny coastal remnant belongs with a neighbour instead of becoming an
-    # awkward standalone sliver. Large inland areas retain straight boundaries.
-    for key in sorted(list(groups)):
-        if key not in groups or not 0 < footprints[key].area < 0.008:
-            continue
-        neighbours = [k for k in groups if abs(k[0]-key[0])+abs(k[1]-key[1])==1 and footprints[k].area>=0.008]
-        if not neighbours:
-            continue
-        neighbour = min(neighbours,key=lambda k:(footprints[key].distance(footprints[k]),len(groups[k]),k))
-        groups[neighbour] += groups.pop(key)
-        footprints[neighbour] = footprints[neighbour].union(footprints.pop(key))
-    owners = {cell['id']:ident for ident,members in surroundings.items() for cell in members}
-    aliases = {
-        'eryri-anglesey':'N WALES', 'clwyd-berwyn':'CLWYD', 'south-lakes':'S CUMBRIA', 'north-lakes':'N CUMBRIA',
-        'peak-district':'DERBYSHIRE', 'bannau-mid-wales':'MID WALES', 'pembrokeshire-ceredigion':'W WALES',
-        'skye-wester-ross':'SKYE & ROSS', 'outer-hebrides':'HEBRIDES', 'caithness-moray':'CAITHNESS',
-        'argyll-islay':'ARGYLL', 'mull-small-isles':'MULL', 'lomond-trossachs':'LOMOND', 'fife-lothians':'LOTHIANS',
-        'scottish-borders':'BORDERS', 'fermanagh-sperrins':'SPERRINS', 'antrim-down':'ANTRIM',
-        'tyne-wear-durham':'DURHAM', 'north-pennines':'PENNINES', 'yorkshire-dales':'DALES',
-        'yorkshire-wolds':'WOLDS', 'north-york-moors':'MOORS', 'central-midlands':'MIDLANDS',
-        'trent-valley':'TRENT', 'fens-cambridgeshire':'FENS', 'suffolk-west-norfolk':'SUFFOLK',
-        'broads-east-coast':'E COAST', 'severn-cotswolds':'COTSWOLDS', 'shropshire-marches':'MARCHES',
-        'surrey-south-downs':'SURREY', 'london-weald':'LONDON', 'kent-east-sussex':'KENT',
-        'somerset-west-dorset':'SOMERSET', 'cornwall-scilly':'CORNWALL'}
-    zones = []
-    for (x,y),members in sorted(groups.items()):
-        footprint = footprints[(x,y)]
-        regional = Counter(owners[c['id']] for c in members).most_common(1)[0][0]
-        overlaps = [g.intersection(footprint).area for g in geometries]
-        park = max(range(len(PARKS)),key=lambda i:overlaps[i]) if max(overlaps)>0 else None
-        # Name an area for a park only when the park occupies a substantial part.
-        if park is not None and overlaps[park] >= footprint.area*0.2:
-            ident,name,label,folder,art = PARKS[park]
-            family='park-'+ident; reference=geometries[park].bounds
-            metadata=dict(parkID=family,parkName=name,artwork=art)
-        else:
-            family=regional;name=area_names[regional];label=aliases.get(regional,name.upper())
-            reference=unary_union([rectangle(c) for c in surroundings[regional]]).bounds
-            metadata=dict(artwork='countryside')
-            # Still offer the relevant whole park from an area touching its edge.
-            if park is not None:
-                metadata.update(parkID='park-'+PARKS[park][0],parkName=PARKS[park][1])
-        area = unary_union([rectangle(c) for c in members])
-        cx,cy = area.centroid.x,area.centroid.y
-        west,south,east,north = reference
-        horizontal = 'W' if cx<west+(east-west)*0.38 else 'E' if cx>west+(east-west)*0.62 else ''
-        vertical = 'S' if cy<south+(north-south)*0.38 else 'N' if cy>south+(north-south)*0.62 else ''
-        direction=vertical+horizontal or 'CENTRAL'
-        zones.append(dict(id=f'area-{x}-{y}',name=name,mapLabel=label.replace('\n',' '),
-            cells=sorted(members,key=lambda c:c['id']),subtitle='Map area · clipped at the coast',
-            family=family,direction=direction,**metadata))
-    # Compass names stay short and unique within a familiar geographic family.
-    names = Counter((z['name'],z['direction']) for z in zones)
-    seen = Counter()
-    long_directions={'NW':'North West','NE':'North East','SW':'South West','SE':'South East','N':'North','S':'South','E':'East','W':'West','CENTRAL':'Central'}
-    for zone in zones:
-        zone.pop('family')
-        key=(zone['name'],zone['direction']); seen[key]+=1
-        number=f' {seen[key]}' if names[key]>1 else ''
-        zone['name']+=' · '+long_directions[zone['direction']]+number
-        zone['mapLabel']+='\n'+zone.pop('direction')+number
+        rect=rectangle(cell);cx,cy=centre(cell)
+        candidates=[i for i,(w,s,e,n) in enumerate(bounds)
+                    if w<rect.bounds[2] and e>rect.bounds[0] and s<rect.bounds[3] and n>rect.bounds[1]]
+        footprint=rect.intersection(land)
+        if footprint.is_empty: footprint=rect
+        def score(i):
+            w,s,e,n=bounds[i]
+            dx=(cx-(w+e)/2)/max(0.01,(e-w)/2)
+            dy=(cy-(s+n)/2)/max(0.01,(n-s)/2)
+            # Prefer a sheet containing the land in this section; within the
+            # overlap use proximity to its centre for a compact shared boundary.
+            overlap=shapes[i].intersection(footprint).area/footprint.area
+            return (3*(1-overlap)+math.hypot(dx,dy),sheets[i]['id'])
+        if not candidates:
+            # Offshore bins still retain ownership for catalogue completeness.
+            candidates=sorted(range(len(sheets)),key=lambda i:
+                ((cx-shapes[i].centroid.x)*math.cos(math.radians(cy)))**2+
+                (cy-shapes[i].centroid.y)**2)[:4]
+        owner=min(candidates,key=score)
+        groups[owner].append(cell)
+    zones=[]
+    short_names={
+        'explorer-ol1':('Dark Peak','DARK\nPEAK'),
+        'explorer-ol24':('White Peak','WHITE\nPEAK'),
+        'explorer-ol4':('North Western Lakes','NW\nLAKES'),
+        'explorer-ol5':('North Eastern Lakes','NE\nLAKES'),
+        'explorer-ol6':('South Western Lakes','SW\nLAKES'),
+        'explorer-ol7':('South Eastern Lakes','SE\nLAKES'),
+        'explorer-ol17':('Snowdon & Conwy Valley','SNOWDON &\nCONWY'),
+        'explorer-ol18':('Harlech, Porthmadog & Bala','HARLECH &\nBALA'),
+    }
+    map_labels={
+        '262':'ANGLESEY\nWEST','263':'ANGLESEY\nEAST',
+        '253':'LLŶN\nWEST','254':'LLŶN\nEAST',
+        '359':'OBAN &\nKERRERA','376':'NORTH LORN',
+        '407':'DUNVEGAN','408':'TROTTERNISH','410':'PORTREE',
+        '411':'CUILLIN','412':'SLEAT','461':'EAST\nMAINLAND',
+        '462':'HOY','463':'WEST\nMAINLAND','464':'WESTRAY','465':'SANDAY',
+        '466':'SHETLAND\nSOUTH','467':'SHETLAND\nCENTRAL',
+        '468':'SHETLAND\nNE','469':'SHETLAND\nNW','470':'UNST & YELL',
+        'ol2':'SOUTHERN\nDALES','ol30':'NORTHERN\nDALES',
+        'ol26':'WESTERN\nMOORS','ol27':'EASTERN\nMOORS'}
+    for owner,members in sorted(groups.items()):
+        sheet=sheets[owner]
+        name=re.sub(r'\s*National Park\s*',' ',sheet['name'],flags=re.I).strip()
+        name=re.sub(r'\s+',' ',name)
+        # Keep the full geographic title in the inspector, with its leading
+        # locality on the map. Never expose stock numbers or generic N/NE bins.
+        label=re.split(r',| & | - | / ',name)[0].strip()
+        label=label.removeprefix('The ') if hasattr(label,'removeprefix') else label
+        words=label.upper().split()
+        if len(label)>10 and len(words)>1:
+            cut=min(range(1,len(words)),key=lambda i:abs(len(' '.join(words[:i]))-len(' '.join(words[i:]))))
+            label=' '.join(words[:cut])+'\n'+' '.join(words[cut:])
+        else: label=label.upper()
+        name,label=short_names.get(sheet['id'],(name,label))
+        label=map_labels.get(sheet['id'].removeprefix('explorer-'),label)
+        footprint=unary_union([rectangle(c) for c in members]).intersection(land)
+        overlaps=[g.intersection(footprint).area for g in geometries]
+        park=max(range(len(PARKS)),key=lambda i:overlaps[i]) if max(overlaps)>0 else None
+        metadata=dict(artwork='countryside')
+        if park is not None:
+            metadata=dict(parkID='park-'+PARKS[park][0],parkName=PARKS[park][1],artwork=PARKS[park][4])
+        zones.append(dict(id='sheet-'+sheet['id'],name=name,mapLabel=label,
+            cells=sorted(members,key=lambda c:c['id']),subtitle='Walking area · clipped at the coast',**metadata))
+    assert len({z['name'] for z in zones})==len(zones)
+    assert len({z['mapLabel'] for z in zones})==len(zones)
     assigned=[c['id'] for z in zones for c in z['cells']]
     assert len(set(assigned))==len(assigned)==len(cells)
-    return dict(schemaVersion=3,description='Compact coastal map areas with separate national park downloads.',
+    return dict(schemaVersion=3,description='Non-overlapping walking areas based on published map-sheet coverage.',
+                sheetReference=dict(source=reference['source'],sha256=hashlib.sha256(reference_path.read_bytes()).hexdigest()),
                 boundarySources=provenance,regions=zones,parks=parks)
 
 

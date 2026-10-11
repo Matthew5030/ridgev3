@@ -49,7 +49,7 @@ actor RegionTransferAudit {
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
         let library=try WorldRegionPack.loadLibrary(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
         let packs=library.areas
-        try check((200...350).contains(packs.count),"Compact map areas, including empty offshore bins hidden by the view")
+        try check((300...450).contains(packs.count),"Walking-map areas cover the country")
         let wholeParks=library.parks
         try check(wholeParks.count==15,"All fifteen national parks remain grouped downloads")
         for whole in wholeParks {
@@ -100,8 +100,8 @@ actor RegionTransferAudit {
         })
         try check(Set(cells)==expectedCells,"Subdivision retains all source sections, including unpublished areas")
         try check(Set(packs.map(\.id)).count==packs.count,"Every smaller pack has a stable unique ID")
-        try check(packs.filter { $0.name.hasPrefix("Fermanagh") || $0.name.hasPrefix("Antrim") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
-        let northern=packs.filter { $0.name.hasPrefix("Aberdeenshire") }
+        try check(packs.filter { $0.id.hasPrefix("sheet-discoverer-") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
+        let northern=packs.filter { $0.bounds.center.latitude>56 && !$0.sources(in:catalog).isEmpty }
         try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Partial Scotland coverage is distinguishable from a full region")
         let regions=[catalog.sources[0],catalog.sources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })

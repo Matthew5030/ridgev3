@@ -58,23 +58,30 @@ class DownloadZonesTests(unittest.TestCase):
             self.assertEqual(source['source'], 'OpenStreetMap')
             self.assertEqual(len(source['sha256']), 64)
         areas = self.index['regions']
+        self.assertTrue(300 < len(areas) < 450)
         self.assertEqual(len({z['name'] for z in areas}),len(areas))
+        self.assertEqual(len({z['mapLabel'] for z in areas}),len(areas))
         for zone in areas:
             self.assertLessEqual(len(zone['mapLabel'].split('\n')),2)
-            b = unary_union([box(c['bounds']['minLongitude'], c['bounds']['minLatitude'], c['bounds']['maxLongitude'], c['bounds']['maxLatitude']) for c in zone['cells']])
-            # Full inland blocks remain rectangular. Coastal remnants may join
-            # an adjacent block, but are never cut into park-shaped leftovers.
-            bins=set()
-            for c in zone['cells']:
-                x,y,col,row=map(int,re.search(r'x(\d+)-y(\d+)-c(\d+)-r(\d+)',c['id']).groups())
-                bins.add(((x*3+col//16)//5,(y*3+row//16)//5))
-            if len(zone['cells'])==25 and len(bins)==1:
-                self.assertAlmostEqual(b.area,b.envelope.area,places=10)
+            self.assertTrue(zone['id'].startswith('sheet-'))
+        self.assertTrue(self.index['sheetReference']['source'].startswith('https://'))
         ids = {c['id'] for z in areas for c in z['cells']}
         for park in self.index['parks']:
             self.assertEqual(park['id'],park['parkID'])
             self.assertTrue(set(c['id'] for c in park['cells']).issubset(ids))
             self.assertEqual(len(park['cells']),len({c['id'] for c in park['cells']}))
+
+    def test_recognisable_walking_areas_keep_key_mountains_together(self):
+        from shapely.geometry import Point
+        def area_at(lon,lat):
+            for z in self.index['regions']:
+                if any(Polygon(s['rings'][0],s['rings'][1:]).covers(Point(lon,lat)) for s in z['mapShapes']):
+                    return z
+        snowdon=area_at(-4.0763,53.0685)
+        self.assertEqual(snowdon['id'],area_at(-3.9966,53.1143)['id']) # Tryfan
+        self.assertIn('Snowdon',snowdon['name'])
+        self.assertIn('Dark Peak',area_at(-1.873,53.384)['name']) # Kinder Scout
+        self.assertNotEqual(area_at(-4.35,53.30)['id'],snowdon['id']) # Anglesey
 
 
 if __name__ == '__main__':

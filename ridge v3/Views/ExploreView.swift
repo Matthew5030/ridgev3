@@ -843,10 +843,20 @@ struct OfflineAtlasView: View {
             var appearance=region.labelAppearance(at:Double(scale))
             if region.id==selectedWorldRegion { appearance=(max(18,appearance.size),1) }
             guard appearance.opacity>0 else { return nil }
-            let anchor=screen(region.labelPoint,size:size),fontSize=CGFloat(appearance.size)
+            let anchor=screen(region.labelPoint,size:size)
             let lines=region.label.split(separator:"\n")
-            let width=(CGFloat(lines.map(\.count).max() ?? 1)*0.72+0.5)*fontSize
-            let height=(CGFloat(lines.count)*1.2+0.4)*fontSize
+            let textWidth=CGFloat(lines.map(\.count).max() ?? 1)*0.72+0.5
+            let textHeight=CGFloat(lines.count)*1.2+0.4
+            let footprint=rectangle(region.pack.labelBounds ?? region.pack.bounds,size:size)
+            let fitted=min(footprint.width/textWidth,footprint.height/textHeight)*0.9
+            let fontSize=min(CGFloat(appearance.size),max(12,fitted))
+            if region.id != selectedWorldRegion {
+                let t=min(1,max(0,(fitted-7)/6))
+                appearance.opacity *= Double(t*t*(3-2*t))
+                guard appearance.opacity>0.01 else { return nil }
+            }
+            let width=textWidth*fontSize
+            let height=textHeight*fontSize
             let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
             // Clip naturally at screen edges rather than hiding the whole name.
             guard viewport.intersects(rect) else { return nil }
@@ -946,13 +956,17 @@ struct OfflineAtlasView: View {
         let southEast=coordinate(at:CGPoint(x:viewport.maxX,y:viewport.maxY),size:size)
         let detailPlaces=entries.filter { cellsAreVisible($0,size:size) }.flatMap { $0.manifest.places }
         var seen=Set<String>()
+        var placedPoints:[CGPoint]=[]
+        var visibleCount=0
+        let labelLimit=max(5,min(12,Int(size.width*size.height/65000)+2))
+        let visible=CGRect(origin:.zero,size:size)
         // The bundled list is ordered by city/town/village, then population.
         for place in [atlas.places,detailPlaces].joined() {
             let start:Double,fontSize:CGFloat,weight:Font.Weight
             switch place.kind {
             case "city": (start,fontSize,weight)=(4000,14,.semibold)
-            case "town", "settlement": (start,fontSize,weight)=(20000,13,.medium)
-            case "village": (start,fontSize,weight)=(80000,12,.regular)
+            case "town", "settlement": (start,fontSize,weight)=(55000,13,.medium)
+            case "village": (start,fontSize,weight)=(240000,12,.regular)
             case "peak": (start,fontSize,weight)=(150000,12,.medium)
             default: continue
             }
@@ -962,7 +976,9 @@ struct OfflineAtlasView: View {
                   place.coordinate.longitude>=northWest.longitude,
                   place.coordinate.longitude<=southEast.longitude else { continue }
             let p=screen(place.coordinate,size:size)
-            guard viewport.contains(p),seen.insert(place.searchIdentity).inserted else { continue }
+            guard viewport.contains(p),seen.insert(place.searchIdentity).inserted,
+                  !placedPoints.contains(where: { hypot($0.x-p.x,$0.y-p.y)<85 }),
+                  !visible.contains(p) || visibleCount<labelLimit else { continue }
             let label=Text(place.name).font(.system(size:fontSize,weight:weight))
             let text=context.resolve(label.foregroundStyle(RidgeTheme.ink))
             let measured=text.measure(in:CGSize(width:240,height:24))
@@ -973,7 +989,9 @@ struct OfflineAtlasView: View {
             guard let rect=origins.map({ CGRect(origin:$0,size:measured) }).first(where: { rect in
                 !occupied.contains { $0.intersects(rect.insetBy(dx:-5,dy:-4)) }
             }) else { continue }
-            occupied.append(rect.insetBy(dx:-5,dy:-4))
+            occupied.append(rect.insetBy(dx:-18,dy:-10))
+            placedPoints.append(p)
+            if visible.contains(p) { visibleCount+=1 }
             var lettering=context
             lettering.opacity *= t*t*(3-2*t)
             // A small paper halo stays legible over relief and download fills.

@@ -8,11 +8,24 @@ underlying area layout.
 
 ## Area geometry
 
-Each original publication cell contains 3 × 3 source sections. Sections are
-collected into blocks of 5 × 5, typically around 35–40 km across. Tiny coastal
-remnants join a neighbouring block instead of becoming standalone slivers.
-There are 279 area definitions, of which 244 have land footprints. Empty offshore
-areas are hidden. Every published source remains in exactly one map area.
+The starting point is published OS Explorer sheet coverage, plus Discoverer
+coverage in Northern Ireland, from the public [map browser](https://interactive-map.dash4it.co.uk/).
+The checked-in `sheet-reference.json` keeps only geographic titles and geometry;
+no map imagery, branding, stock information or app code is reused. The official
+[OS sheet finder](https://shop.osmaps.com/map-selector/) is the product reference.
+
+Ridge adapts those footprints into **420 non-overlapping walking areas**. Each
+original publication cell contains 3 × 3 source sections. Every section belongs
+to exactly one area: prefer the reference sheet containing most of its land,
+then proximity to the sheet centre. Where references do not cover offshore bins,
+the nearest sheet takes ownership. An empty reference geometry is excluded.
+The final outlines therefore differ from the printed sheets: borders snap to
+our existing download sections and paper-sheet overlaps are removed.
+
+Names now describe places such as Snowdon & Conwy Valley, Harlech & Bala, Dark
+Peak, and White Peak. Snowdon and Tryfan remain in the same area. Northern
+Ireland is labelled geographically but remains unavailable until published
+terrain exists. This change does not claim additional coverage.
 
 Map shapes use the bundled Natural Earth coastline. Individual missing terrain
 tiles do not carve holes into the selection map: these are geographic download
@@ -30,12 +43,16 @@ groups. Coverage, routes and cached downloads are not rebuilt or invalidated.
 
 ## Labels
 
-Area names use a geographic name and a compass suffix, at most two lines. Full
-names remain in the inspector. Label anchors are computed on land, but visibility
-is based on the area's screen size rather than trying to fit the entire text in
-a thin coastline fragment. Labels scale smoothly from 15 to 24 points; the selected
-area's name is always shown. At country scale, labels fade to avoid a wall of text.
-Thin single borders remain; there is no white border casing.
+Map captions use short geographic names on at most two lines; full names remain
+in the inspector. Labels fit an interior land rectangle and fade in smoothly as
+there is space, avoiding overlapping captions on small coastal areas. Selected
+names stay visible. Thin single borders remain, with no white border casing.
+
+Town and city labels use the bundled OSM settlement index, independently of map
+downloads. Cities appear first; towns start at a closer zoom, villages much
+closer again. A screen-area budget of 5–12 visible place names plus 85-point
+minimum marker separation prevents dense fields of labels. Settlement names
+avoid area captions and have a subtle halo for legibility over relief.
 
 ## Reproduce
 
@@ -47,7 +64,6 @@ python3 -m unittest discover -s Tools/region_zones -p 'test_*.py'
 sh Tools/test_world_region_packs.sh
 ```
 
-Inputs: the original `uk-pack-regions.json` grid, `surrounding-areas.json` naming
-bands, 15 existing `*-adaptive-0p5/boundary.geojson` files, the published world
+Inputs: the original `uk-pack-regions.json` grid, `surrounding-areas.json` grid groups, `sheet-reference.json`, 15 existing `*-adaptive-0p5/boundary.geojson` files, the published world
 catalogue, and the bundled atlas. Boundary provenance and file SHA-256s are
 included in the output. No server publication or cloud enablement is required.
