@@ -906,17 +906,17 @@ struct OfflineAtlasView: View {
         let viewport=CGRect(origin:.zero,size:size)
         for region in worldRegions {
             let selected=region.id==selectedWorldRegion,available = !region.available.isEmpty
-            let color:Color=region.downloadState == .saved ? RidgeTheme.forest
+            let color:Color=region.isBlocked ? Color(red:0.70,green:0.19,blue:0.16) : region.downloadState == .saved ? RidgeTheme.forest
                 : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
             guard rectangle(region.pack.bounds,size:size).intersects(viewport) else { continue }
             let fill=regionPath(region,size:size)
-            context.fill(fill,with:.color(color.opacity(region.downloadState == .saved ? 0.24 : region.downloadState == .partial ? 0.16 : selected ? 0.12 : 0.025)),style:FillStyle(eoFill:true))
+            context.fill(fill,with:.color(color.opacity(region.isBlocked ? (selected ? 0.30 : 0.18) : region.downloadState == .saved ? 0.24 : region.downloadState == .partial ? 0.16 : selected ? 0.12 : 0.025)),style:FillStyle(eoFill:true))
             var outline=fill
             if region.pack.mapShapes == nil {
                 outline=Path()
                 for edge in region.edges { outline.move(to:screen(edge.start,size:size));outline.addLine(to:screen(edge.end,size:size)) }
             }
-            context.stroke(outline,with:.color(color.opacity(selected ? 0.9 : 0.42)),style:StrokeStyle(lineWidth:selected ? 1.5 : 0.6,lineJoin:.round,dash:available ? [] : [3,4]))
+            context.stroke(outline,with:.color(color.opacity(selected ? 0.9 : 0.42)),style:StrokeStyle(lineWidth:selected ? 1.5 : 0.6,lineJoin:.round,dash:available && !region.isBlocked ? [] : [3,4]))
         }
         for item in regionLabels(size:size) {
             var lettering=context
@@ -932,7 +932,7 @@ struct OfflineAtlasView: View {
                 for offset in [CGPoint(x:-1,y:0),CGPoint(x:1,y:0),CGPoint(x:0,y:-1),CGPoint(x:0,y:1)] {
                     lettering.draw(text.foregroundStyle(RidgeTheme.paper.opacity(0.95)),at:CGPoint(x:point.x+offset.x,y:point.y+offset.y))
                 }
-                lettering.draw(text.foregroundStyle(RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
+                lettering.draw(text.foregroundStyle(item.region.isBlocked ? Color(red:0.62,green:0.16,blue:0.14) : RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
             }
         }
     }

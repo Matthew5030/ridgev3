@@ -64,6 +64,9 @@ struct WorldCatalog: Decodable, Sendable {
         let tileCount: Int
         var downloadBytes: Int64? = nil
         var routing: WorldMapAsset? = nil
+        /// Actual holes within the source rectangle; an empty list certifies
+        /// complete coverage. Older sparse catalogues cannot certify this.
+        var missingTerrain: [GeoBounds]? = nil
     }
     let schemaVersion: Int
     let revision: String
@@ -72,6 +75,13 @@ struct WorldCatalog: Decodable, Sendable {
         guard schemaVersion == 1, !revision.isEmpty, sources.count <= 20_000,
               Set(sources.map(\.id)).count == sources.count else { throw RidgeError.message("Unsupported map catalogue.") }
         for region in sources {
+            if let gaps=region.missingTerrain {
+                guard gaps.count<=256,gaps.allSatisfy({ $0.isValid &&
+                    $0.minLongitude>=region.bounds.minLongitude-1e-8 && $0.maxLongitude<=region.bounds.maxLongitude+1e-8 &&
+                    $0.minLatitude>=region.bounds.minLatitude-1e-8 && $0.maxLatitude<=region.bounds.maxLatitude+1e-8 }) else {
+                    throw RidgeError.message("The map catalogue contains invalid terrain coverage.")
+                }
+            }
             let pieces = region.path.split(separator: "/", omittingEmptySubsequences: false)
             guard region.bounds.isValid, (1...256).contains(region.tileCount), region.id.hasPrefix("world-"),
                   region.downloadBytes.map({ (1...64_000_000_000).contains($0) }) ?? true,
@@ -101,7 +111,10 @@ actor WorldCatalogStore {
             guard data.count < 16_000_000 else { throw RidgeError.message("The map catalogue is too large.") }
             let value = try JSONDecoder().decode(WorldCatalog.self, from: data); try value.validate(); return value
         }
-        if preferCached, let data=try? Data(contentsOf:saved),let value=try? decode(data) { return value }
+        // Upgrade cached catalogues that predate explicit coverage holes. If
+        // offline, the fallback below still opens them conservatively.
+        if preferCached, let data=try? Data(contentsOf:saved),let value=try? decode(data),
+           value.sources.allSatisfy({ $0.missingTerrain != nil || $0.tileCount==256 }) { return value }
         do {
             var request = URLRequest(url: url); request.timeoutInterval = 10
             let (file, response) = try await URLSession.shared.download(for: request)

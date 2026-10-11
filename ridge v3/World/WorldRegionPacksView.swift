@@ -9,6 +9,10 @@ struct WorldRegionDownloadCard: View {
     let explore:() -> Void
     var selectWholePark:(() -> Void)? = nil
     var retryConnection:(() -> Void)? = nil
+    private var blocked:Bool {
+        let availability=saved?.terrainAvailability ?? pack.terrainAvailability(in:world.catalog)
+        return availability == .incomplete || availability == .unavailable
+    }
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:12) {
@@ -25,7 +29,7 @@ struct WorldRegionDownloadCard: View {
                 Button("Select whole park",systemImage:"map",action:selectWholePark).font(.subheadline)
             }
             if let saved,saved.savedTileCount>0,!world.isSavingOffline {
-                Button("Explore in 3D",systemImage:"mountain.2") { explore() }
+                Button(blocked ? "Explore saved part" : "Explore in 3D",systemImage:"mountain.2") { explore() }
                     .buttonStyle(.borderedProminent).controlSize(.large)
                 if saved.downloadState == .partial {
                     Text("Opens the saved part. Download the rest to explore the whole available region.").font(.caption).foregroundStyle(RidgeTheme.muted)
@@ -37,8 +41,13 @@ struct WorldRegionDownloadCard: View {
                         Button("Retry connection",systemImage:"arrow.clockwise",action:retryConnection)
                             .buttonStyle(.borderedProminent).controlSize(.large)
                     }
+                } else if blocked {
+                    Label("Terrain unavailable",systemImage:"exclamationmark.triangle.fill")
+                        .font(.headline).foregroundStyle(Color(red:0.70,green:0.19,blue:0.16))
+                    Text("Detailed terrain is missing in this region. You can browse the overview, but this region can’t be downloaded yet.")
+                        .font(.subheadline)
                 } else if world.regionComplete {
-                    Label("Available maps saved",systemImage:"checkmark.circle.fill").font(.headline)
+                    Label("Maps saved",systemImage:"checkmark.circle.fill").font(.headline)
                     Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
                     if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent) }
                 } else if world.checkingDownload {
@@ -76,7 +85,7 @@ struct WorldRegionDownloadCard: View {
                     }
                     Text("Saves to storage. It won’t load the whole region into 3D.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
-                if let error=world.downloadError {
+                if let error=world.downloadError,!blocked {
                     Text(error).font(.subheadline)
                     if world.regionTotal>0 && !world.isSavingOffline && !world.checkingDownload {
                         Button("Check remaining download") { world.offerRegionDownload(pack) }.buttonStyle(.bordered)

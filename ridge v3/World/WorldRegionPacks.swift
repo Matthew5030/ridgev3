@@ -35,6 +35,40 @@ struct WorldRegionPack: Identifiable, Sendable {
             }
             return inside
         }
+        /// Clip each coast ring to the rectangle and measure its land area.
+        /// Testing the centre alone misses islands and narrow coastal strips.
+        func overlapsLand(_ rect:GeoBounds)->Bool {
+            guard bounds.maxLongitude>rect.minLongitude,bounds.minLongitude<rect.maxLongitude,
+                  bounds.maxLatitude>rect.minLatitude,bounds.minLatitude<rect.maxLatitude else { return false }
+            var area=0.0
+            for (index,ring) in rings.enumerated() {
+                var polygon=ring
+                for (axis,edge,greater) in [(0,rect.minLongitude,true),(0,rect.maxLongitude,false),
+                                             (1,rect.minLatitude,true),(1,rect.maxLatitude,false)] {
+                    guard let last=polygon.last else { break }
+                    var clipped:[[Double]]=[],previous=last
+                    for current in polygon {
+                        let a=greater ? previous[axis]>=edge : previous[axis]<=edge
+                        let b=greater ? current[axis]>=edge : current[axis]<=edge
+                        if a != b {
+                            let t=(edge-previous[axis])/(current[axis]-previous[axis])
+                            clipped.append([previous[0]+t*(current[0]-previous[0]),previous[1]+t*(current[1]-previous[1])])
+                        }
+                        if b { clipped.append(current) }
+                        previous=current
+                    }
+                    polygon=clipped
+                }
+                guard let origin=polygon.first else { continue }
+                var signed=0.0,previous=polygon.last!
+                for point in polygon {
+                    signed+=(previous[0]-origin[0])*(point[1]-origin[1])-(point[0]-origin[0])*(previous[1]-origin[1])
+                    previous=point
+                }
+                area+=(index==0 ? 1 : -1)*abs(signed)/2
+            }
+            return area>1e-12
+        }
     }
     let id: String
     let name: String
@@ -89,6 +123,30 @@ struct WorldRegionPack: Identifiable, Sendable {
         let sources=sources(in:catalog)
         return Set(cells.filter { cell in sources.contains { cell.bounds.contains($0.bounds.center) } }.map(\.id))
     }
+    enum TerrainAvailability { case unknown, unavailable, incomplete, complete }
+    static let incompleteMessage="Detailed terrain has gaps in this region. Downloads are unavailable until coverage is complete."
+    func terrainAvailability(in catalog:WorldCatalog?)->TerrainAvailability {
+        guard let catalog else { return .unknown }
+        let sources=sources(in:catalog)
+        guard !sources.isEmpty else { return .unavailable }
+        func hasLand(_ bounds:GeoBounds)->Bool {
+            mapShapes.map { $0.contains { $0.overlapsLand(bounds) } } ?? true
+        }
+        let ids=Set(sources.map(\.id))
+        for cell in cells where !ids.contains(cell.id) && hasLand(cell.bounds) {
+            if !sources.contains(where:{ cell.bounds.contains($0.bounds.center) }) { return .incomplete }
+        }
+        for source in sources {
+            if let gaps=source.missingTerrain {
+                if gaps.contains(where:hasLand) { return .incomplete }
+            } else if source.tileCount<256 {
+                // Fail closed for older sparse catalogues; their bounding box
+                // cannot prove where the missing terrain lies.
+                return .incomplete
+            }
+        }
+        return .complete
+    }
     struct Library { let areas:[WorldRegionPack];let parks:[WorldRegionPack] }
     static func load(url:URL? = nil) throws -> [WorldRegionPack] { try loadLibrary(url:url).areas }
     static func loadLibrary(url: URL? = nil) throws -> Library {
@@ -132,6 +190,7 @@ struct WorldRegionDownloadPlan: Sendable {
 
     /// Catalogue-only offer: no section requests, disk scans or asset hashing.
     static func estimate(pack:WorldRegionPack,catalog:WorldCatalog,root:URL)->Self? {
+        guard pack.terrainAvailability(in:catalog) == .complete else { return nil }
         let regions=pack.sources(in:catalog)
         guard !regions.isEmpty,regions.allSatisfy({ ($0.downloadBytes ?? 0)>0 }) else { return nil }
         let parts=regions.map { region in
@@ -197,6 +256,7 @@ actor WorldRegionDownloadStore {
         return (files,source)
     }
     func plan(pack:WorldRegionPack,catalog:WorldCatalog,root:URL,progress:@Sendable (Int,Int) async -> Void = { _,_ in }) async throws -> WorldRegionDownloadPlan {
+        guard pack.terrainAvailability(in:catalog) == .complete else { throw RidgeError.message(WorldRegionPack.incompleteMessage) }
         let regions=pack.sources(in:catalog)
         guard !regions.isEmpty else { throw RidgeError.message("Maps for this region are not available from this source yet.") }
         var parts:[WorldRegionDownloadPlan.Part]=[],seen=Set<String>(),total:Int64=0,tiles=0
@@ -217,6 +277,8 @@ actor WorldRegionDownloadStore {
         return .init(pack:pack,root:root,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },totalBytes:total,tileCount:tiles)
     }
     func download(_ plan:WorldRegionDownloadPlan,tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void = { _ in },progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
+        let catalog=WorldCatalog(schemaVersion:1,revision:"download-plan",sources:plan.parts.map(\.region))
+        guard plan.pack.terrainAvailability(in:catalog) == .complete else { throw RidgeError.message(WorldRegionPack.incompleteMessage) }
         // Reserve headroom for temporary files. A large offline save is a disk
         // operation; it must never allocate or prepare the whole region in RAM.
         if !plan.isEstimate,plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
@@ -258,6 +320,8 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let fills:[GeoBounds]
     let edges:[WorldOfflineCoverage.Edge]
     let available:[GeoBounds]
+    let terrainAvailability:WorldRegionPack.TerrainAvailability
+    var isBlocked:Bool { terrainAvailability == .unavailable || terrainAvailability == .incomplete }
     private(set) var labelPoint:GeoPoint
     private(set) var labelFontScale:Double=0
     enum DownloadState { case unavailable,notSaved,partial,saved }
@@ -265,16 +329,19 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     var totalTileCount=0
     var savedPoint:GeoPoint?
     var downloadState:DownloadState {
+        if isBlocked { return .unavailable }
         if totalTileCount==0 { return .unavailable }
         if savedTileCount==0 { return .notSaved }
         return savedTileCount>=totalTileCount ? .saved : .partial
     }
     var statusText:String {
+        if terrainAvailability == .unknown { return "Coverage not checked" }
+        if terrainAvailability == .incomplete { return "Incomplete terrain · unavailable" }
         switch downloadState {
         case .unavailable: return "Unavailable from this source"
         case .notSaved: return "Not downloaded"
         case .partial: return "Partly downloaded"
-        case .saved: return "Available maps downloaded"
+        case .saved: return "Downloaded"
         }
     }
     var id:String { pack.id }
@@ -319,6 +386,7 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     }
     init(pack:WorldRegionPack,catalog:WorldCatalog?) {
         self.pack=pack
+        terrainAvailability=pack.terrainAvailability(in:catalog)
         let cells=pack.cells.map(\.bounds)
         fills=WorldOfflineCoverage.displayBounds(cells)
         edges=WorldOfflineCoverage.outline(cells)

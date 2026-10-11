@@ -47,6 +47,17 @@ actor RegionTransferAudit {
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("ridge-region-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
+        let upgradeCache=cache.appendingPathComponent("legacy-catalogue")
+        try FileManager.default.createDirectory(at:upgradeCache,withIntermediateDirectories:true)
+        let oldSource=catalog.sources.first { $0.tileCount<256 }!
+        let legacy:[String:Any]=["schemaVersion":1,"revision":"legacy", "sources":[[
+            "id":oldSource.id,"path":oldSource.path,"tileCount":oldSource.tileCount,
+            "bounds":["minLatitude":oldSource.bounds.minLatitude,"minLongitude":oldSource.bounds.minLongitude,
+                      "maxLatitude":oldSource.bounds.maxLatitude,"maxLongitude":oldSource.bounds.maxLongitude]]]]
+        let cacheName=AdaptiveTerrainCodec.hash(Data(root.appendingPathComponent("catalog.json").absoluteString.utf8))+".catalog"
+        try JSONSerialization.data(withJSONObject:legacy).write(to:upgradeCache.appendingPathComponent(cacheName))
+        let upgraded=try await WorldCatalogStore(cacheURL:upgradeCache).open(root:root,preferCached:true)
+        try check(upgraded.revision==catalog.revision && upgraded.sources.count==catalog.sources.count,"Legacy cached coverage refreshes instead of remaining permanently unavailable")
         let library=try WorldRegionPack.loadLibrary(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
         let packs=library.areas
         try check((300...450).contains(packs.count),"Walking-map areas cover the country")
@@ -103,23 +114,62 @@ actor RegionTransferAudit {
         try check(packs.filter { $0.id.hasPrefix("sheet-discoverer-") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
         let northern=packs.filter { $0.bounds.center.latitude>56 && !$0.sources(in:catalog).isEmpty }
         try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Partial Scotland coverage is distinguishable from a full region")
-        let regions=[catalog.sources[0],catalog.sources.last!]
+        let completeSources=catalog.sources.filter { $0.tileCount==256 }
+        let regions=[completeSources[0],completeSources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })
         try check(fixture.bounds.widthMeters>24_000,"Region fixture exceeds the custom-area size limit")
         let started=Date()
         let eryri=packs.first { $0.contains(.init(latitude:53.0685,longitude: -4.0763)) }!
         let allEryri=wholeParks.first { $0.id=="park-eryri" }!
-        let eryriSize=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)!
-        let wholeSize=WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root)!
-        try check(eryriSize.bytes<wholeSize.bytes && eryriSize.parts.count<=25,"A compact Eryri map area is smaller than the whole park")
+        try check(WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root)==nil,"Incomplete whole-park downloads are blocked")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.0685,longitude: -4.0763),in:overlays)?.pack.parkID=="park-eryri","Yr Wyddfa selects an Eryri park area")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.30,longitude: -4.35),in:overlays)?.id != eryri.id,"Anglesey is a separate map area")
-        let quick=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)
+        let quick=WorldRegionDownloadPlan.estimate(pack:fixture,catalog:catalog,root:root)
         let offerSeconds=Date().timeIntervalSince(started)
-        try check(quick?.isEstimate==true && quick?.parts.isEmpty==false,"Real Eryri region offers catalogue size immediately")
+        try check(quick?.isEstimate==true && quick?.parts.isEmpty==false,"Complete region offers catalogue size immediately")
         try check(try FileManager.default.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil).allSatisfy { !$0.pathExtension.contains("index") },"Quick offer fetches no section indexes")
-        print("Catalogue-only Eryri offer: \(offerSeconds) s, \(quick!.parts.count) sections, upper estimate \(quick!.bytes) bytes")
+        print("Catalogue-only complete region offer: \(offerSeconds) s, \(quick!.parts.count) sections, upper estimate \(quick!.bytes) bytes")
         let store=WorldRegionDownloadStore(cacheURL:cache)
+        let cairngorms=wholeParks.first { $0.id=="park-cairngorms" }!
+        try check(cairngorms.terrainAvailability(in:catalog) == .incomplete,"Real Cairngorms is incomplete")
+        try check(WorldRegionDownloadPlan.estimate(pack:cairngorms,catalog:catalog,root:root)==nil,"Cairngorms cannot offer a partial park download")
+        let missingCell=WorldRegionPack.Cell(id:"world-missing",bounds:GeoBounds(minLatitude:40,minLongitude:0,maxLatitude:41,maxLongitude:1))
+        let incomplete=WorldRegionPack(id:"incomplete",name:"Incomplete",subtitle:"",landmark:"",cells:fixture.cells+[missingCell])
+        let blocked=WorldRegionMapOverlay.make(packs:[incomplete],catalog:catalog,offline:[])[0]
+        try check(blocked.isBlocked && blocked.downloadState == .unavailable,"One missing section blocks an otherwise available region")
+        var falselySaved=blocked;falselySaved.savedTileCount=falselySaved.totalTileCount
+        try check(falselySaved.downloadState == .unavailable && falselySaved.statusText.contains("Incomplete"),"Saving every published tile cannot conceal missing terrain")
+        let noCatalog=WorldRegionMapOverlay(pack:incomplete,catalog:nil)
+        try check(!noCatalog.isBlocked && noCatalog.terrainAvailability == .unknown,"Disconnected coverage stays unknown rather than red")
+        let coastData=Data(#"{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}"#.utf8)
+        let coast=try JSONDecoder().decode(WorldRegionPack.MapShape.self,from:coastData)
+        let land=GeoBounds(minLatitude:0,minLongitude:0,maxLatitude:1,maxLongitude:1)
+        let sea=GeoBounds(minLatitude:0,minLongitude:1,maxLatitude:1,maxLongitude:2)
+        try check(coast.overlapsLand(land) && !coast.overlapsLand(sea),"Coast clipping excludes ocean and shared edges")
+        let lakeShape=try JSONDecoder().decode(WorldRegionPack.MapShape.self,from:Data(#"{"rings":[[[0,0],[3,0],[3,3],[0,3],[0,0]],[[1,1],[2,1],[2,2],[1,2],[1,1]]]}"#.utf8))
+        try check(!lakeShape.overlapsLand(.init(minLatitude:1.1,minLongitude:1.1,maxLatitude:1.9,maxLongitude:1.9)),"Water holes do not count as missing land")
+        var coastalSource=WorldCatalog.Region(id:"world-coast",path:"sources/world-coast/world.json",bounds:.init(minLatitude:0,minLongitude:0,maxLatitude:1,maxLongitude:2),tileCount:128,downloadBytes:1024,missingTerrain:[sea])
+        let coastal=WorldRegionPack(id:"coast",name:"Coast",subtitle:"",landmark:"",cells:[.init(id:coastalSource.id,bounds:coastalSource.bounds)],mapShapes:[coast])
+        func coastalCatalog()->WorldCatalog { WorldCatalog(schemaVersion:1,revision:"coast",sources:[coastalSource]) }
+        try check(coastal.terrainAvailability(in:coastalCatalog()) == .complete,"Sparse coastal source with only ocean gaps remains downloadable")
+        coastalSource.missingTerrain=[land]
+        try check(coastal.terrainAvailability(in:coastalCatalog()) == .incomplete,"Internal land gaps block downloads even when every source section exists")
+        coastalSource.missingTerrain=nil
+        try check(coastal.terrainAvailability(in:coastalCatalog()) == .incomplete,"Legacy sparse source does not pretend coverage is complete")
+        do {
+            _=try await store.plan(pack:incomplete,catalog:catalog,root:root)
+            throw RidgeError.message("Incomplete plan was allowed")
+        } catch { try check(error.localizedDescription==WorldRegionPack.incompleteMessage,"Store rejects incomplete pack before fetching metadata") }
+        let blockedModel=WorldModel(cacheURL:cache)
+        await blockedModel.configure(mode:"local",local:root.absoluteString)
+        blockedModel.offerRegionDownload(incomplete)
+        blockedModel.downloadRegionPack()
+        try check(blockedModel.regionPlan==nil && !blockedModel.isSavingOffline && !blockedModel.checkingDownload,"Blocked selection cannot start a download or checking spinner")
+        let forged=WorldRegionDownloadPlan(pack:incomplete,root:root,parts:regions.map { .init(region:$0,missingBytes:1) },bytes:2,totalBytes:2,tileCount:512)
+        do {
+            try await store.download(forged,progress:{ _,_ in })
+            throw RidgeError.message("Incomplete download was allowed")
+        } catch { try check(error.localizedDescription==WorldRegionPack.incompleteMessage,"Download executor independently rejects incomplete plans") }
         let plan=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(plan.parts.count==2 && plan.tileCount==regions.reduce(0) { $0+$1.tileCount },"Region plan includes every tile, beyond custom-area radius rules")
         try check(plan.bytes>0 && plan.bytes==plan.totalBytes,"Fresh download estimates actual unique assets")

@@ -450,6 +450,10 @@ import CoreGraphics
             downloadError=isLoading ? nil : "The map catalogue isn’t connected. Retry the connection or check the map source in Settings."
             return
         }
+        guard pack.terrainAvailability(in:catalog) == .complete else {
+            downloadError=WorldRegionPack.incompleteMessage
+            return
+        }
         regionTotal=pack.sources(in:catalog).count
         if let estimate=WorldRegionDownloadPlan.estimate(pack:pack,catalog:catalog,root:root) {
             regionPlan=estimate
@@ -486,6 +490,10 @@ import CoreGraphics
     }
     func downloadRegionPack() {
         guard let plan=regionPlan,!isSavingOffline else { return }
+        guard plan.pack.terrainAvailability(in:catalog) == .complete else {
+            regionPlan=nil;downloadError=WorldRegionPack.incompleteMessage
+            return
+        }
         downloadGeneration+=1;let ticket=downloadGeneration
         isSavingOffline=true;isConnectingDownload=plan.bytes>0;downloadedBytes=0;downloadError=nil;regionSaved=0
         regionTileProgress=WorldRegionTileProgress()

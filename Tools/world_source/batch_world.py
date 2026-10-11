@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Resume-safe conversion of audited fine chunks into immutable world-v1 sources.
-Only complete, validated sources enter catalog.json. Existing terrain is read-only.
+Only validated sources enter catalog.json; missing terrain is recorded separately.
+Existing terrain is read-only.
 """
 import argparse, concurrent.futures, fcntl, hashlib, io, json, math, os, re
 import shutil, subprocess, sys, tempfile, time, zipfile, zlib, multiprocessing, signal
@@ -11,6 +12,7 @@ import contourpy
 from shapely.geometry import shape, box, LineString
 from shapely.ops import transform
 from shapely.strtree import STRtree
+from terrain_coverage import missing_terrain
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'adaptive_terrain'))
 from compact_codec import CompactCodec
@@ -220,7 +222,7 @@ def validate(folder,binaries):
     if memory>256*1024*1024:raise ValueError('Background exceeds app budget: rerun with --source-cells 8 in a new output')
     for key in ('overview','graph'):
         q=m[key];read_verified(folder/q['file'],q['sha256'],q['byteCount'])
-    return dict(id=m['id'],path='sources/'+m['id']+'/world.json',bounds=m['bounds'],tileCount=len(tiles),downloadBytes=sum(p.stat().st_size for p in folder.iterdir() if p.is_file() and not p.name.endswith('.checkpoint.json')),backgroundResidentBytes=memory)
+    return dict(id=m['id'],path='sources/'+m['id']+'/world.json',bounds=m['bounds'],tileCount=len(tiles),missingTerrain=missing_terrain(m),downloadBytes=sum(p.stat().st_size for p in folder.iterdir() if p.is_file() and not p.name.endswith('.checkpoint.json')),backgroundResidentBytes=memory)
 
 # Each forked region owns separate staging files. Only the coordinator publishes
 # the catalogue. The retained section JSON is shared copy-on-write across workers.

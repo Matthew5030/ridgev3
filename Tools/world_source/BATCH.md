@@ -106,3 +106,26 @@ sh Tools/test_world_batch.sh '/Volumes/MLB_EXT_4TB/Ridge Global/v1/output/switze
 ```
 
 Dataset documentation: [Copernicus DEM public registry](https://registry.opendata.aws/copernicus-dem/), [COG layout](https://copernicus-dem-30m.s3.amazonaws.com/readme.html), [Geofabrik](https://download.geofabrik.de/), [OpenStreetMap licence](https://www.openstreetmap.org/copyright). Attribution is included in every source manifest. Review redistribution requirements before publishing these new packs.
+
+## Download coverage
+
+Catalogue entries now include `missingTerrain`: merged rectangles for absent
+native tiles inside each source. An empty list means the source grid is complete.
+This describes geographic coverage, independently of file validation or whether
+the user has downloaded the available files.
+
+The app clips gaps against the selected region's land footprint. Any missing land
+section or internal terrain gap makes the region red and blocks its download;
+offshore gaps do not. Existing saved pieces remain usable. Legacy sparse sources
+without coverage metadata are blocked conservatively until their catalogue is
+refreshed. A disconnected catalogue is unknown rather than proof of missing data.
+
+To add coverage metadata to an existing local publication without rebuilding any
+terrain or maps:
+
+```sh
+python3 Tools/world_source/terrain_coverage.py /path/to/world-root
+```
+
+This reads manifests, retains a `catalog.before-coverage.json` backup and atomically
+replaces only `catalog.json`. Future batch validation publishes the same metadata.

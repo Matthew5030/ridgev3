@@ -260,6 +260,7 @@ struct WorldExploreView: View {
                     Image(systemName:"globe.europe.africa")
                 }.accessibilityLabel("Show all regions")
             }
+            statusKey("Unavailable terrain",color:Color(red:0.70,green:0.19,blue:0.16),symbol:"exclamationmark.triangle.fill")
             if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps").font(.caption) }
             else { Text("Zoom into saved terrain · tap a region to download").font(.caption).foregroundStyle(RidgeTheme.muted) }
             if let regionMapError { Text(regionMapError).font(.caption) }
