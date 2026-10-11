@@ -27,6 +27,15 @@ import Foundation
         try check(packs.count==44,"Forty-four smaller named regions")
         let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
         for overlay in overlays {
+            try check(overlay.labelFontScale>0,"Each label has a stable geographic fit")
+            var previous=overlay.labelAppearance(at:0)
+            for step in 1...400 {
+                let current=overlay.labelAppearance(at:Double(step)*0.12/overlay.labelFontScale)
+                try check(current.size>=previous.size && current.opacity>=previous.opacity,"Zoom label size and opacity are monotonic")
+                try check(current.size-previous.size<0.121 && current.opacity-previous.opacity<0.023,"No discrete fitting or visibility jumps")
+                previous=current
+            }
+            try check(previous.size==40 && previous.opacity==1,"Large labels settle at their maximum size")
             try check(WorldRegionMapOverlay.at(overlay.labelPoint,in:overlays)?.id==overlay.id,"Region labels are anchored inside their region")
             for cell in overlay.pack.cells {
                 try check(WorldRegionMapOverlay.at(cell.bounds.center,in:overlays)?.id==overlay.id,"Map taps use the same grid partition as the download")

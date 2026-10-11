@@ -561,7 +561,7 @@ struct OfflineAtlasView: View {
                     }, onTap: { location in
                         if let onRegionTap {
                             let labels=regionLabels(size:geometry.size)
-                            if let hit=labels.reversed().first(where: { $0.rect.contains(location) }) { onRegionTap(hit.region.pack) }
+                            if let hit=labels.reversed().first(where: { $0.opacity>=0.5 && $0.rect.contains(location) }) { onRegionTap(hit.region.pack) }
                             else if let hit=WorldRegionMapOverlay.at(coordinate(at:location,size:geometry.size),in:worldRegions) { onRegionTap(hit.pack) }
                             return
                         }
@@ -821,34 +821,20 @@ struct OfflineAtlasView: View {
             context.stroke(Path(rect), with: .color(RidgeTheme.muted.opacity(0.3)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
         }
     }
-    private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat)] {
-        let viewport=CGRect(origin:.zero,size:size).insetBy(dx:12,dy:12)
-        var result:[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat)]=[]
-        // Type grows with its geographic region. Never squeeze it below a
-        // readable size, displace it, or spill into a neighbouring region.
-        for region in worldRegions.sorted(by: { ($0.id==selectedWorldRegion ? 0 : 1,$0.id) < ($1.id==selectedWorldRegion ? 0 : 1,$1.id) }) {
-            let anchor=screen(region.labelPoint,size:size)
-            guard viewport.contains(anchor) else { continue }
+    private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat,opacity:Double)] {
+        let viewport=CGRect(origin:.zero,size:size)
+        return worldRegions.compactMap { region in
+            let appearance=region.labelAppearance(at:Double(scale))
+            guard appearance.opacity>0 else { return nil }
+            let anchor=screen(region.labelPoint,size:size),fontSize=CGFloat(appearance.size)
             let lines=region.label.split(separator:"\n")
-            let longest=CGFloat(lines.map(\.count).max() ?? 1)
-            let extent=rectangle(region.pack.bounds,size:size)
-            let parts=region.fills.map { rectangle($0,size:size) }
-            var fontSize=min(40,extent.width*0.85/(longest*0.72),extent.height*0.7/(CGFloat(lines.count)*1.2))
-            while fontSize>=18 {
-                let width=longest*fontSize*0.72+8,height=CGFloat(lines.count)*fontSize*1.2+6
-                let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
-                let covered=parts.reduce(CGFloat(0)) { sum,part in
-                    let intersection=part.intersection(rect)
-                    return sum+(intersection.isNull ? 0 : intersection.width*intersection.height)
-                }
-                if viewport.contains(rect),covered>=rect.width*rect.height*0.995,
-                   !result.contains(where: { $0.rect.insetBy(dx:-8,dy:-8).intersects(rect) }) {
-                    result.append((region,rect,fontSize));break
-                }
-                fontSize-=2
-            }
+            let width=(CGFloat(lines.map(\.count).max() ?? 1)*0.72+0.5)*fontSize
+            let height=(CGFloat(lines.count)*1.2+0.4)*fontSize
+            let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
+            // Clip naturally at screen edges rather than hiding the whole name.
+            guard viewport.intersects(rect) else { return nil }
+            return (region,rect,fontSize,appearance.opacity)
         }
-        return result
     }
     private func drawWorldRegions(context:inout GraphicsContext,size:CGSize) {
         guard !worldRegions.isEmpty else { return }
@@ -868,17 +854,20 @@ struct OfflineAtlasView: View {
             context.stroke(outline,with:.color(color.opacity(selected ? 1 : 0.65)),style:StrokeStyle(lineWidth:selected ? 3 : 1.3,dash:available ? [] : [4,3]))
         }
         for item in regionLabels(size:size) {
-            let selected=item.region.id==selectedWorldRegion
+            var lettering=context
+            lettering.opacity*=item.opacity
+            lettering.translateBy(x:item.rect.midX,y:item.rect.midY)
+            lettering.scaleBy(x:item.fontSize/40,y:item.fontSize/40)
             let lines=item.region.label.split(separator:"\n")
             for (index,line) in lines.enumerated() {
-                let point=CGPoint(x:item.rect.midX,y:item.rect.midY+(CGFloat(index)-CGFloat(lines.count-1)/2)*item.fontSize*1.2)
-                let text=Text(String(line)).font(.system(size:item.fontSize,weight:selected ? .semibold : .medium)).tracking(0.5)
-                // A fine paper halo keeps lettering legible over terrain,
-                // without turning place names into cards or floating controls.
+                let point=CGPoint(x:0,y:(CGFloat(index)-CGFloat(lines.count-1)/2)*48)
+                // Keep glyph layout constant and scale the drawing transform;
+                // fractional font relayout used to shimmer during pinching.
+                let text=Text(String(line)).font(.system(size:40,weight:.medium)).tracking(0.5)
                 for offset in [CGPoint(x:-1,y:0),CGPoint(x:1,y:0),CGPoint(x:0,y:-1),CGPoint(x:0,y:1)] {
-                    context.draw(text.foregroundStyle(RidgeTheme.paper.opacity(0.95)),at:CGPoint(x:point.x+offset.x,y:point.y+offset.y))
+                    lettering.draw(text.foregroundStyle(RidgeTheme.paper.opacity(0.95)),at:CGPoint(x:point.x+offset.x,y:point.y+offset.y))
                 }
-                context.draw(text.foregroundStyle(RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
+                lettering.draw(text.foregroundStyle(RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
             }
         }
     }

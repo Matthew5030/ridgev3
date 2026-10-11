@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Named groups of the existing UK grid. Each published source belongs to one
 /// group; regional downloads use exactly the same assets as custom-area saves.
@@ -166,6 +167,7 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let edges:[WorldOfflineCoverage.Edge]
     let available:[GeoBounds]
     let labelPoint:GeoPoint
+    private(set) var labelFontScale:Double=0
     enum DownloadState { case unavailable,notSaved,partial,saved }
     var savedTileCount=0
     var totalTileCount=0
@@ -231,6 +233,41 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         available=WorldOfflineCoverage.displayBounds(sources.map(\.bounds))
         totalTileCount=sources.reduce(0) { $0+$1.tileCount }
         labelPoint=cells.min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }!.center
+        labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:fills)
+    }
+    /// Fit once in projected map coordinates, independent of camera/selection.
+    /// Every zoom then uses the same footprint, so adjacent labels cannot swap
+    /// priority or change size in discrete fitting steps during a gesture.
+    private static func fittedLabelScale(_ label:String,anchor:GeoPoint,fills:[GeoBounds])->Double {
+        func projected(_ p:GeoPoint)->CGPoint {
+            let latitude=min(85,max(-85,p.latitude)) * .pi/180
+            return CGPoint(x:(p.longitude+180)/360,y:(1-log(tan(latitude)+1/cos(latitude)) / .pi)/2)
+        }
+        let origin=projected(anchor)
+        let rectangles=fills.map { bounds -> CGRect in
+            let a=projected(.init(latitude:bounds.maxLatitude,longitude:bounds.minLongitude))
+            let b=projected(.init(latitude:bounds.minLatitude,longitude:bounds.maxLongitude))
+            return CGRect(x:a.x-origin.x,y:a.y-origin.y,width:b.x-a.x,height:b.y-a.y)
+        }
+        let lines=label.split(separator:"\n")
+        let width=Double(lines.map(\.count).max() ?? 1)*0.72+0.5,height=Double(lines.count)*1.2+0.4
+        let extent=rectangles.reduce(CGRect.null) { $0.union($1) }
+        var low=0.0,high=min(extent.width/width,extent.height/height)
+        for _ in 0..<28 {
+            let font=(low+high)/2
+            let rect=CGRect(x:-width*font/2,y:-height*font/2,width:width*font,height:height*font)
+            let covered=rectangles.reduce(0.0) { total,part in
+                let intersection=part.intersection(rect)
+                return total+(intersection.isNull ? 0 : intersection.width*intersection.height)
+            }
+            if covered>=rect.width*rect.height*(1-1e-8) { low=font } else { high=font }
+        }
+        return low*0.92
+    }
+    func labelAppearance(at scale:Double)->(size:Double,opacity:Double) {
+        let size=min(40,max(0,scale*labelFontScale))
+        let t=min(1,max(0,(size-16)/8))
+        return (size,t*t*(3-2*t))
     }
     /// Receipt bounds are already verified against local pinned files. Index
     /// source rectangles in degree buckets so refreshing a large saved library
