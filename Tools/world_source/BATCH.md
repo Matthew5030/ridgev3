@@ -114,11 +114,14 @@ native tiles inside each source. An empty list means the source grid is complete
 This describes geographic coverage, independently of file validation or whether
 the user has downloaded the available files.
 
-The app clips gaps against the selected region's land footprint. Any missing land
-section or internal terrain gap makes the region red and blocks its download;
-offshore gaps do not. Existing saved pieces remain usable. Legacy sparse sources
-without coverage metadata are blocked conservatively until their catalogue is
-refreshed. A disconnected catalogue is unknown rather than proof of missing data.
+The app clips red gap shading against the selected region's land footprint.
+Partially covered regions can download their published terrain, with a clear
+partial-coverage notice before and after saving. Missing patches remain red and
+never become usable terrain merely because every published file has been saved.
+Only regions without any available land terrain are blocked. Offshore gaps do
+not count as missing land. Legacy sparse sources without coverage metadata are
+labelled partial; their unknown holes are not invented on the map. A disconnected
+catalogue is unknown rather than proof of missing data.
 
 To add coverage metadata to an existing local publication without rebuilding any
 terrain or maps:

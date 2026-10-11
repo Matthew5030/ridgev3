@@ -38,8 +38,11 @@ struct WorldRegionPack: Identifiable, Sendable {
         /// Clip each coast ring to the rectangle and measure its land area.
         /// Testing the centre alone misses islands and narrow coastal strips.
         func overlapsLand(_ rect:GeoBounds)->Bool {
+            landArea(in:rect)>1e-12
+        }
+        func landArea(in rect:GeoBounds)->Double {
             guard bounds.maxLongitude>rect.minLongitude,bounds.minLongitude<rect.maxLongitude,
-                  bounds.maxLatitude>rect.minLatitude,bounds.minLatitude<rect.maxLatitude else { return false }
+                  bounds.maxLatitude>rect.minLatitude,bounds.minLatitude<rect.maxLatitude else { return 0 }
             var area=0.0
             for (index,ring) in rings.enumerated() {
                 var polygon=ring
@@ -67,7 +70,7 @@ struct WorldRegionPack: Identifiable, Sendable {
                 }
                 area+=(index==0 ? 1 : -1)*abs(signed)/2
             }
-            return area>1e-12
+            return max(0,area)
         }
     }
     let id: String
@@ -123,27 +126,35 @@ struct WorldRegionPack: Identifiable, Sendable {
         let sources=sources(in:catalog)
         return Set(cells.filter { cell in sources.contains { cell.bounds.contains($0.bounds.center) } }.map(\.id))
     }
-    enum TerrainAvailability { case unknown, unavailable, incomplete, complete }
-    static let incompleteMessage="Detailed terrain has gaps in this region. Downloads are unavailable until coverage is complete."
+    enum TerrainAvailability {
+        case unknown, unavailable, incomplete, complete
+        var canDownload:Bool { self == .complete || self == .incomplete }
+    }
+    static let unavailableMessage="Detailed terrain is not available in this region yet. You can still browse the overview."
+    /// Missing rectangles are only a drawing mask. Clip them to mapShapes at
+    /// render time so coastlines and water holes retain their exact footprint.
+    func missingTerrain(in catalog:WorldCatalog?)->[GeoBounds] {
+        guard let catalog else { return [] }
+        let sources=sources(in:catalog),ids=Set(sources.map(\.id))
+        var gaps=cells.filter { cell in
+            !ids.contains(cell.id) && !sources.contains { cell.bounds.contains($0.bounds.center) }
+        }.map(\.bounds)
+        gaps += sources.flatMap { $0.missingTerrain ?? [] }
+        if let mapShapes { gaps=gaps.filter { gap in mapShapes.contains { $0.overlapsLand(gap) } } }
+        return WorldOfflineCoverage.displayBounds(gaps)
+    }
     func terrainAvailability(in catalog:WorldCatalog?)->TerrainAvailability {
         guard let catalog else { return .unknown }
         let sources=sources(in:catalog)
         guard !sources.isEmpty else { return .unavailable }
-        func hasLand(_ bounds:GeoBounds)->Bool {
-            mapShapes.map { $0.contains { $0.overlapsLand(bounds) } } ?? true
+        let gaps=missingTerrain(in:catalog)
+        if !gaps.isEmpty,let shapes=mapShapes {
+            let land=shapes.reduce(0) { $0+$1.landArea(in:$1.bounds) }
+            let missing=shapes.reduce(0) { sum,shape in sum+gaps.reduce(0) { $0+shape.landArea(in:$1) } }
+            if land>0,missing>=land-1e-12 { return .unavailable }
         }
-        let ids=Set(sources.map(\.id))
-        for cell in cells where !ids.contains(cell.id) && hasLand(cell.bounds) {
-            if !sources.contains(where:{ cell.bounds.contains($0.bounds.center) }) { return .incomplete }
-        }
-        for source in sources {
-            if let gaps=source.missingTerrain {
-                if gaps.contains(where:hasLand) { return .incomplete }
-            } else if source.tileCount<256 {
-                // Fail closed for older sparse catalogues; their bounding box
-                // cannot prove where the missing terrain lies.
-                return .incomplete
-            }
+        if !gaps.isEmpty || sources.contains(where:{ $0.missingTerrain == nil && $0.tileCount<256 }) {
+            return .incomplete
         }
         return .complete
     }
@@ -190,7 +201,7 @@ struct WorldRegionDownloadPlan: Sendable {
 
     /// Catalogue-only offer: no section requests, disk scans or asset hashing.
     static func estimate(pack:WorldRegionPack,catalog:WorldCatalog,root:URL)->Self? {
-        guard pack.terrainAvailability(in:catalog) == .complete else { return nil }
+        guard pack.terrainAvailability(in:catalog).canDownload else { return nil }
         let regions=pack.sources(in:catalog)
         guard !regions.isEmpty,regions.allSatisfy({ ($0.downloadBytes ?? 0)>0 }) else { return nil }
         let parts=regions.map { region in
@@ -256,7 +267,7 @@ actor WorldRegionDownloadStore {
         return (files,source)
     }
     func plan(pack:WorldRegionPack,catalog:WorldCatalog,root:URL,progress:@Sendable (Int,Int) async -> Void = { _,_ in }) async throws -> WorldRegionDownloadPlan {
-        guard pack.terrainAvailability(in:catalog) == .complete else { throw RidgeError.message(WorldRegionPack.incompleteMessage) }
+        guard pack.terrainAvailability(in:catalog).canDownload else { throw RidgeError.message(WorldRegionPack.unavailableMessage) }
         let regions=pack.sources(in:catalog)
         guard !regions.isEmpty else { throw RidgeError.message("Maps for this region are not available from this source yet.") }
         var parts:[WorldRegionDownloadPlan.Part]=[],seen=Set<String>(),total:Int64=0,tiles=0
@@ -278,7 +289,7 @@ actor WorldRegionDownloadStore {
     }
     func download(_ plan:WorldRegionDownloadPlan,tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void = { _ in },progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
         let catalog=WorldCatalog(schemaVersion:1,revision:"download-plan",sources:plan.parts.map(\.region))
-        guard plan.pack.terrainAvailability(in:catalog) == .complete else { throw RidgeError.message(WorldRegionPack.incompleteMessage) }
+        guard plan.pack.terrainAvailability(in:catalog).canDownload else { throw RidgeError.message(WorldRegionPack.unavailableMessage) }
         // Reserve headroom for temporary files. A large offline save is a disk
         // operation; it must never allocate or prepare the whole region in RAM.
         if !plan.isEstimate,plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
@@ -321,7 +332,8 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let edges:[WorldOfflineCoverage.Edge]
     let available:[GeoBounds]
     let terrainAvailability:WorldRegionPack.TerrainAvailability
-    var isBlocked:Bool { terrainAvailability == .unavailable || terrainAvailability == .incomplete }
+    let missingTerrain:[GeoBounds]
+    var isBlocked:Bool { terrainAvailability == .unavailable }
     private(set) var labelPoint:GeoPoint
     private(set) var labelFontScale:Double=0
     enum DownloadState { case unavailable,notSaved,partial,saved }
@@ -336,7 +348,13 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     }
     var statusText:String {
         if terrainAvailability == .unknown { return "Coverage not checked" }
-        if terrainAvailability == .incomplete { return "Incomplete terrain · unavailable" }
+        if terrainAvailability == .incomplete {
+            switch downloadState {
+            case .saved: return "Available terrain downloaded · gaps remain"
+            case .partial: return "Partly downloaded · partial coverage"
+            default: return "Partial terrain coverage"
+            }
+        }
         switch downloadState {
         case .unavailable: return "Unavailable from this source"
         case .notSaved: return "Not downloaded"
@@ -387,6 +405,7 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     init(pack:WorldRegionPack,catalog:WorldCatalog?) {
         self.pack=pack
         terrainAvailability=pack.terrainAvailability(in:catalog)
+        missingTerrain=pack.missingTerrain(in:catalog)
         let cells=pack.cells.map(\.bounds)
         fills=WorldOfflineCoverage.displayBounds(cells)
         edges=WorldOfflineCoverage.outline(cells)

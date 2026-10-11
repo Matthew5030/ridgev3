@@ -9,10 +9,11 @@ struct WorldRegionDownloadCard: View {
     let explore:() -> Void
     var selectWholePark:(() -> Void)? = nil
     var retryConnection:(() -> Void)? = nil
-    private var blocked:Bool {
-        let availability=saved?.terrainAvailability ?? pack.terrainAvailability(in:world.catalog)
-        return availability == .incomplete || availability == .unavailable
+    private var availability:WorldRegionPack.TerrainAvailability {
+        saved?.terrainAvailability ?? pack.terrainAvailability(in:world.catalog)
     }
+    private var blocked:Bool { availability == .unavailable }
+    private var partialCoverage:Bool { availability == .incomplete }
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:12) {
@@ -25,11 +26,17 @@ struct WorldRegionDownloadCard: View {
             if pack.parkID != nil {
                 Text(pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
             }
+            if partialCoverage {
+                Label("Partial terrain coverage",systemImage:"exclamationmark.triangle")
+                    .font(.subheadline.weight(.medium))
+                Text("Red patches have no detailed terrain and aren’t included in the download. You can explore the available terrain around them.")
+                    .font(.caption).foregroundStyle(RidgeTheme.muted)
+            }
             if let selectWholePark,!world.isSavingOffline,!world.checkingDownload {
                 Button("Select whole park",systemImage:"map",action:selectWholePark).font(.subheadline)
             }
             if let saved,saved.savedTileCount>0,!world.isSavingOffline {
-                Button(blocked ? "Explore saved part" : "Explore in 3D",systemImage:"mountain.2") { explore() }
+                Button(blocked || partialCoverage ? "Explore saved terrain" : "Explore in 3D",systemImage:"mountain.2") { explore() }
                     .buttonStyle(.borderedProminent).controlSize(.large)
                 if saved.downloadState == .partial {
                     Text("Opens the saved part. Download the rest to explore the whole available region.").font(.caption).foregroundStyle(RidgeTheme.muted)
@@ -47,7 +54,7 @@ struct WorldRegionDownloadCard: View {
                     Text("Detailed terrain is missing in this region. You can browse the overview, but this region can’t be downloaded yet.")
                         .font(.subheadline)
                 } else if world.regionComplete {
-                    Label("Maps saved",systemImage:"checkmark.circle.fill").font(.headline)
+                    Label(partialCoverage ? "Available terrain saved" : "Maps saved",systemImage:"checkmark.circle.fill").font(.headline)
                     Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
                     if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent) }
                 } else if world.checkingDownload {
@@ -78,7 +85,7 @@ struct WorldRegionDownloadCard: View {
                         }
                     }
                     if plan.bytes>0 {
-                        Button("Download region") { world.downloadRegionPack() }
+                        Button(partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
                             .buttonStyle(.borderedProminent).controlSize(.large)
                     } else if saved?.savedTileCount ?? 0 == 0 {
                         Button("Use saved maps") { world.downloadRegionPack() }.buttonStyle(.borderedProminent)

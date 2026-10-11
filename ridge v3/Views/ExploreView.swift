@@ -910,7 +910,19 @@ struct OfflineAtlasView: View {
                 : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
             guard rectangle(region.pack.bounds,size:size).intersects(viewport) else { continue }
             let fill=regionPath(region,size:size)
-            context.fill(fill,with:.color(color.opacity(region.isBlocked ? (selected ? 0.30 : 0.18) : region.downloadState == .saved ? 0.24 : region.downloadState == .partial ? 0.16 : selected ? 0.12 : 0.025)),style:FillStyle(eoFill:true))
+            var gaps=Path()
+            for bounds in region.missingTerrain {
+                let rect=rectangle(bounds,size:size)
+                if rect.intersects(viewport) { gaps.addRect(rect) }
+            }
+            // Download shading never covers holes, even when every available
+            // file is saved. Red follows only the real gaps, clipped to land.
+            var savedContext=context
+            savedContext.clip(to:gaps,options:.inverse)
+            savedContext.fill(fill,with:.color(color.opacity(region.downloadState == .saved ? 0.24 : region.downloadState == .partial ? 0.16 : selected ? 0.12 : 0.025)),style:FillStyle(eoFill:true))
+            var missingContext=context
+            missingContext.clip(to:fill,style:FillStyle(eoFill:true))
+            missingContext.fill(gaps,with:.color(Color(red:0.70,green:0.19,blue:0.16).opacity(selected ? 0.30 : 0.22)))
             var outline=fill
             if region.pack.mapShapes == nil {
                 outline=Path()

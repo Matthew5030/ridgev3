@@ -121,7 +121,7 @@ actor RegionTransferAudit {
         let started=Date()
         let eryri=packs.first { $0.contains(.init(latitude:53.0685,longitude: -4.0763)) }!
         let allEryri=wholeParks.first { $0.id=="park-eryri" }!
-        try check(WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root)==nil,"Incomplete whole-park downloads are blocked")
+        try check(WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root) != nil,"Eryri remains downloadable despite small coverage gaps")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.0685,longitude: -4.0763),in:overlays)?.pack.parkID=="park-eryri","Yr Wyddfa selects an Eryri park area")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.30,longitude: -4.35),in:overlays)?.id != eryri.id,"Anglesey is a separate map area")
         let quick=WorldRegionDownloadPlan.estimate(pack:fixture,catalog:catalog,root:root)
@@ -132,13 +132,13 @@ actor RegionTransferAudit {
         let store=WorldRegionDownloadStore(cacheURL:cache)
         let cairngorms=wholeParks.first { $0.id=="park-cairngorms" }!
         try check(cairngorms.terrainAvailability(in:catalog) == .incomplete,"Real Cairngorms is incomplete")
-        try check(WorldRegionDownloadPlan.estimate(pack:cairngorms,catalog:catalog,root:root)==nil,"Cairngorms cannot offer a partial park download")
+        try check(WorldRegionDownloadPlan.estimate(pack:cairngorms,catalog:catalog,root:root) != nil,"Cairngorms can download its available terrain")
         let missingCell=WorldRegionPack.Cell(id:"world-missing",bounds:GeoBounds(minLatitude:40,minLongitude:0,maxLatitude:41,maxLongitude:1))
         let incomplete=WorldRegionPack(id:"incomplete",name:"Incomplete",subtitle:"",landmark:"",cells:fixture.cells+[missingCell])
         let blocked=WorldRegionMapOverlay.make(packs:[incomplete],catalog:catalog,offline:[])[0]
-        try check(blocked.isBlocked && blocked.downloadState == .unavailable,"One missing section blocks an otherwise available region")
+        try check(!blocked.isBlocked && blocked.downloadState == .notSaved,"One missing section does not block available terrain")
         var falselySaved=blocked;falselySaved.savedTileCount=falselySaved.totalTileCount
-        try check(falselySaved.downloadState == .unavailable && falselySaved.statusText.contains("Incomplete"),"Saving every published tile cannot conceal missing terrain")
+        try check(falselySaved.downloadState == .saved && falselySaved.statusText.contains("gaps remain"),"Saving every published tile still explains that gaps remain")
         let noCatalog=WorldRegionMapOverlay(pack:incomplete,catalog:nil)
         try check(!noCatalog.isBlocked && noCatalog.terrainAvailability == .unknown,"Disconnected coverage stays unknown rather than red")
         let coastData=Data(#"{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}"#.utf8)
@@ -153,23 +153,38 @@ actor RegionTransferAudit {
         func coastalCatalog()->WorldCatalog { WorldCatalog(schemaVersion:1,revision:"coast",sources:[coastalSource]) }
         try check(coastal.terrainAvailability(in:coastalCatalog()) == .complete,"Sparse coastal source with only ocean gaps remains downloadable")
         coastalSource.missingTerrain=[land]
-        try check(coastal.terrainAvailability(in:coastalCatalog()) == .incomplete,"Internal land gaps block downloads even when every source section exists")
+        try check(coastal.terrainAvailability(in:coastalCatalog()) == .unavailable,"A source with only offshore tiles does not make land downloadable")
+        coastalSource.missingTerrain=[.init(minLatitude:0.2,minLongitude:0.2,maxLatitude:0.4,maxLongitude:0.4),sea]
+        let innerGap=WorldRegionMapOverlay(pack:coastal,catalog:coastalCatalog())
+        try check(!innerGap.isBlocked && innerGap.terrainAvailability == .incomplete,"An internal hole permits downloading surrounding terrain")
+        try check(innerGap.missingTerrain.count==1 && innerGap.missingTerrain[0].contains(.init(latitude:0.3,longitude:0.3)),"Red mask retains the internal hole and omits offshore gaps")
         coastalSource.missingTerrain=nil
         try check(coastal.terrainAvailability(in:coastalCatalog()) == .incomplete,"Legacy sparse source does not pretend coverage is complete")
+        let missingOnly=WorldRegionPack(id:"missing-only",name:"Missing",subtitle:"",landmark:"",cells:[missingCell])
+        try check(WorldRegionMapOverlay(pack:missingOnly,catalog:catalog).isBlocked,"Wholly absent terrain remains unavailable")
+        try check(WorldRegionDownloadPlan.estimate(pack:missingOnly,catalog:catalog,root:root)==nil,"Wholly absent terrain has no download offer")
+        try check(blocked.missingTerrain.contains { $0.contains(missingCell.bounds.center) },"Absent section is included in the red mask")
+        try check(!blocked.missingTerrain.contains { $0.contains(regions[0].bounds.center) },"Available section stays out of the red mask")
+        let cairngormGaps=cairngorms.missingTerrain(in:catalog)
+        try check(cairngormGaps.contains { $0.contains(.init(latitude:57.1167,longitude:-3.6446)) },"Actual missing Cairn Gorm summit is red")
+        let eryriGaps=allEryri.missingTerrain(in:catalog)
+        try check(!eryriGaps.contains { $0.contains(.init(latitude:53.0685,longitude:-4.0763)) },"Available Yr Wyddfa terrain is not red")
         do {
-            _=try await store.plan(pack:incomplete,catalog:catalog,root:root)
-            throw RidgeError.message("Incomplete plan was allowed")
-        } catch { try check(error.localizedDescription==WorldRegionPack.incompleteMessage,"Store rejects incomplete pack before fetching metadata") }
+            _=try await store.plan(pack:missingOnly,catalog:catalog,root:root)
+            throw RidgeError.message("Missing-only plan was allowed")
+        } catch { try check(error.localizedDescription==WorldRegionPack.unavailableMessage,"Store rejects wholly missing pack before fetching metadata") }
         let blockedModel=WorldModel(cacheURL:cache)
         await blockedModel.configure(mode:"local",local:root.absoluteString)
-        blockedModel.offerRegionDownload(incomplete)
+        blockedModel.offerRegionDownload(missingOnly)
         blockedModel.downloadRegionPack()
-        try check(blockedModel.regionPlan==nil && !blockedModel.isSavingOffline && !blockedModel.checkingDownload,"Blocked selection cannot start a download or checking spinner")
-        let forged=WorldRegionDownloadPlan(pack:incomplete,root:root,parts:regions.map { .init(region:$0,missingBytes:1) },bytes:2,totalBytes:2,tileCount:512)
+        try check(blockedModel.regionPlan==nil && !blockedModel.isSavingOffline && !blockedModel.checkingDownload,"Unavailable selection cannot start a download or checking spinner")
+        let emptyPlan=WorldRegionDownloadPlan(pack:missingOnly,root:root,parts:[],bytes:0,totalBytes:0,tileCount:0)
         do {
-            try await store.download(forged,progress:{ _,_ in })
-            throw RidgeError.message("Incomplete download was allowed")
-        } catch { try check(error.localizedDescription==WorldRegionPack.incompleteMessage,"Download executor independently rejects incomplete plans") }
+            try await store.download(emptyPlan,progress:{ _,_ in })
+            throw RidgeError.message("Missing-only download was allowed")
+        } catch { try check(error.localizedDescription==WorldRegionPack.unavailableMessage,"Executor rejects wholly missing downloads") }
+        let availablePlan=try await store.plan(pack:incomplete,catalog:catalog,root:root)
+        try check(availablePlan.parts.count==2 && availablePlan.tileCount==512,"Partial pack plan contains only published tiles")
         let plan=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(plan.parts.count==2 && plan.tileCount==regions.reduce(0) { $0+$1.tileCount },"Region plan includes every tile, beyond custom-area radius rules")
         try check(plan.bytes>0 && plan.bytes==plan.totalBytes,"Fresh download estimates actual unique assets")
@@ -187,7 +202,7 @@ actor RegionTransferAudit {
         // country-sized scene or automatically fly to the centre of the pack.
         let model=WorldModel(cacheURL:cache)
         await model.configure(mode:"local",local:root.absoluteString)
-        model.offerRegionDownload(fixture)
+        model.offerRegionDownload(incomplete)
         try await wait { model.checkingDownload }
         try check(model.regionPlan?.isEstimate==true && !model.checkingDownload && model.source==nil,"Model presents the download immediately without rendering or preflight")
         model.downloadRegionPack()
@@ -197,6 +212,9 @@ actor RegionTransferAudit {
         try check(model.downloadedBytes==remaining.bytes,"Estimated offer still transfers only missing bytes")
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
         try check(model.offlineBounds.count==plan.tileCount,"All regional tiles become usable in normal exploration")
+        try check(!model.hasCoverage(missingCell.bounds.center),"Downloading available terrain never grants access to a gap")
+        let downloadedPartial=WorldRegionMapOverlay.make(packs:[incomplete],catalog:catalog,offline:model.offlineBounds)[0]
+        try check(downloadedPartial.downloadState == .saved && downloadedPartial.statusText.contains("gaps remain") && !downloadedPartial.missingTerrain.isEmpty,"Finished partial download preserves gap shading and explanation")
         let receipts=WorldOfflineCoverage.savedBounds(at:cache)
         let overlapping=WorldRegionPack(id:"overlapping-park",name:"Overlapping park",subtitle:"",landmark:"",cells:fixture.cells)
         let overlappingStates=WorldRegionMapOverlay.make(packs:[fixture,overlapping],catalog:catalog,offline:receipts)
