@@ -16,7 +16,15 @@ import CoreGraphics
     var loadedRadius = 0.0
     @ObservationIgnored private var loadedCenter: GeoPoint?
     @ObservationIgnored private var retryAfter = Date.distantPast
-    @ObservationIgnored private var savingOffline: Task<Void,Never>?
+    @ObservationIgnored private var downloadTask: Task<Void,Never>?
+    @ObservationIgnored private var downloadGeneration = 0
+    var downloadCenter: GeoPoint?
+    var downloadRadius = 8000.0
+    var downloadPlan: WorldDownloadPlan?
+    var checkingDownload = false
+    var downloadedBytes: Int64 = 0
+    var downloadError: String?
+    var downloadedDestination: GeoPoint?
     @ObservationIgnored var entrySpan: Double?
     @ObservationIgnored private var previewPages: [String:WorldPreparedTile] = [:]
     var routeTerrain: LoadedTerrain?
@@ -37,17 +45,16 @@ import CoreGraphics
     @ObservationIgnored private var offlineRefresh = 0
     var nearOfflineBoundary: Bool { offlineEdges.contains { $0.distance(to:center)<1500 } }
     var insideOfflineArea: Bool { offlineBounds.contains { $0.contains(center) } }
-    private func refreshOfflineCoverage() {
+    private func refreshOfflineCoverage() { Task { [weak self] in await self?.reloadOfflineCoverage() } }
+    private func reloadOfflineCoverage() async {
         offlineRefresh += 1; let ticket=offlineRefresh
         let cache=WorldOfflineCoverage.cache(cacheURL)
-        Task { [weak self] in
-            let value=await Task.detached(priority:.utility) {
-                let bounds=WorldOfflineCoverage.savedBounds(at:cache)
-                return (bounds,WorldOfflineCoverage.outline(bounds))
-            }.value
-            guard let self,ticket==offlineRefresh else { return }
-            offlineBounds=value.0;offlineEdges=value.1
-        }
+        let value=await Task.detached(priority:.utility) {
+            let bounds=WorldOfflineCoverage.savedBounds(at:cache)
+            return (bounds,WorldOfflineCoverage.outline(bounds))
+        }.value
+        guard ticket==offlineRefresh else { return }
+        offlineBounds=value.0;offlineEdges=value.1
     }
     var requestFocus: GeoPoint?
     var catalog: WorldCatalog?
@@ -82,8 +89,10 @@ import CoreGraphics
         tilesByID = [:]; changedTileIDs = []
         source = nil; overview = nil; backdrop = nil; preview = nil; previewBounds = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
-        savingOffline?.cancel(); savingOffline = nil; isSavingOffline=false; offlineMessage = nil
-        offlineBounds=[];offlineEdges=[];refreshOfflineCoverage()
+        cancelDownload(); offlineMessage=nil;downloadedDestination=nil
+        offlineBounds=[];offlineEdges=[]
+        await reloadOfflineCoverage()
+        guard generation==token else { return }
         files = WorldLandscapeStore(cacheURL:cacheURL); navigationDestination = nil
         catalog = nil; libraryRoot = nil; cameraPose = nil; in3D = false; message = nil; coverageMessage = nil
         retryPoint = nil; requestFocus = nil
@@ -91,7 +100,7 @@ import CoreGraphics
         defer { if generation == token { isLoading = false } }
         do {
             let root = try WorldLibrary.root(mode: mode, local: local)
-            let value = try await catalogs.open(root: root)
+            let value = try await catalogs.open(root: root,preferCached:true)
             guard generation == token, !Task.isCancelled else { return }
             libraryRoot = root; catalog = value
         } catch {
@@ -101,11 +110,10 @@ import CoreGraphics
     }
     func windowDisplacement(from point: GeoPoint) -> Double { loadedCenter?.distance(to:point) ?? 0 }
     func hasCoverage(_ point: GeoPoint) -> Bool {
-        if let source, source.bounds.contains(point) { return source.tiles.contains { $0.mesh.bounds.contains(point) } }
-        return catalog?.region(at: point) != nil
+        offlineBounds.contains { $0.contains(point) }
     }
-    /// The camera asks for geography, never for a storage region. Keep one
-    /// candidate in flight and coalesce motion rather than restarting every pan.
+    /// Navigation only opens completed downloads. All stores used to render
+    /// this window are cache-only, including later fine geometry and textures.
     @discardableResult func browse(_ point: GeoPoint) -> Bool {
         requestedPoint = point
         guard let catalog, let region = catalog.region(at:point), let root = libraryRoot else {
@@ -113,6 +121,11 @@ import CoreGraphics
             return false
         }
         loadDistantTerrain(around:point,frame:source?.frame ?? region.bounds)
+        guard hasCoverage(point) else {
+            coverageMessage="This area isn’t downloaded. Download it to explore and plan routes here."
+            if !in3D && downloadCenter == nil { offerDownload(at:point) }
+            return false
+        }
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
         let radius = WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)
         guard WorldWindow.needsUpdate(center:point,radius:radius+3000,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
@@ -132,16 +145,17 @@ import CoreGraphics
         let frame = source?.frame ?? region.bounds
         let sessionID = source?.id ?? region.id
         let priority = WorldWindow.leadingPoint(from:loadedCenter,to:point)
+        let savedBounds=offlineBounds
         let candidate = WorldLandscapeStore(cacheURL:cacheURL)
         selectionGeneration += 1; let ticket = selectionGeneration
         loadingRegionID = region.id; windowCenter = point; windowRadius = requestedRadius
         isLoading = initial; streaming = true; message = nil
-        downloadPhase = initial ? "Loading nearby terrain" : nil
+        downloadPhase = !in3D ? "Preparing downloaded terrain" : nil
         regionLoad = Task { [weak self] in
             guard let self else { return }
             do {
                 let previous = initial ? nil : await oldFiles.snapshot()
-                var (next,elevation,graph,background,pages) = try await candidate.window(center:point,radius:requestedRadius,frame:frame,catalog:catalog,root:root,previous:previous,priority:priority) { [weak self] metadata,elevation,background,pages in
+                var (next,elevation,graph,background,pages) = try await candidate.window(center:point,radius:requestedRadius,frame:frame,catalog:catalog,root:root,previous:previous,priority:priority,offlineBounds:savedBounds) { [weak self] metadata,elevation,background,pages in
                     await self?.receiveAddition(metadata,elevation:elevation,background:background,pages:pages,files:candidate,ticket:ticket)
                 }
                 next.id = sessionID
@@ -167,7 +181,7 @@ import CoreGraphics
                 guard ticket == selectionGeneration, !Task.isCancelled else { return }
                 NSLog("Ridge terrain window: %@",error.localizedDescription)
                 retryPoint = requestedPoint; retryAfter = Date().addingTimeInterval(15)
-                message = source == nil ? "Couldn’t load terrain. Check your map source and connection, then retry." : "Couldn’t load more terrain. Check your connection and retry. The map already loaded is still available."
+                message = "Couldn’t open the downloaded terrain. Retry, or download this area again to repair missing files."
                 loadingRegionID = nil; regionLoad = nil; windowCenter = nil
                 isLoading = false; streaming = false; downloadPhase = nil
             }
@@ -203,7 +217,7 @@ import CoreGraphics
     }
     @ObservationIgnored private var windowCenter: GeoPoint?
     @ObservationIgnored private var windowRadius = 0.0
-    func pauseDownload() { cancelRegionLoad() }
+    func pauseDownload() { cancelRegionLoad();cancelDownload() }
     private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, image: CGImage?, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore) {
         generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
         refreshOfflineCoverage()
@@ -232,6 +246,7 @@ import CoreGraphics
     /// Search within 3D waits for the destination landscape before flying there.
     func visit(_ point: GeoPoint) {
         navigationDestination = nil
+        if !hasCoverage(point) { offerDownload(at:point);return }
         if browse(point) { requestFocus = point }
         else if loadingRegionID != nil { navigationDestination = point }
     }
@@ -279,7 +294,7 @@ import CoreGraphics
                     if wanted.contains(request) { tiles[request.id] = prepared; changedTileIDs.insert(request.id); revision += 1 }
                 } catch {
                     guard token == generation, !Task.isCancelled else { return }
-                    failed.insert(request.id); message = "Some detail is unavailable. The overview is still usable."
+                    failed.insert(request.id); message = "Some downloaded detail is missing. Download this area again to repair it."
                 }
             }
         }
@@ -302,20 +317,67 @@ import CoreGraphics
         tiles = [:]; wanted = wanted.prefix(12).map { WorldTileRequest(id: $0.id, pixels: 256, fine: false) }; revision += 1
         message = "Detail reduced to free memory."; pump()
     }
-    func keepOffline() {
-        guard let source, savingOffline == nil else { return }
-        let store = files
-        isSavingOffline=true
-        offlineMessage = "Saving terrain, maps and walking paths for offline use…"
-        savingOffline = Task { [weak self] in
-            do {
-                try await store.pin(source.tiles,source:source)
-                try Task.checkCancellation()
-                self?.offlineMessage = "This area is saved for offline use. You can continue exploring beyond it while connected."
-            } catch {
-                if !Task.isCancelled { self?.offlineMessage = "Couldn’t finish saving this area. Check your connection and try again." }
-            }
-            if !Task.isCancelled { self?.savingOffline = nil; self?.isSavingOffline=false; self?.refreshOfflineCoverage() }
+    /// Metadata inspection is allowed here; the transfer waits for confirmation.
+    func offerDownload(at point: GeoPoint, radius: Double? = nil) {
+        guard !isSavingOffline else { return }
+        cancelRegionLoad();downloadGeneration+=1;let ticket=downloadGeneration
+        downloadTask?.cancel();downloadPlan=nil;downloadError=nil;downloadedBytes=0
+        downloadCenter=point;downloadRadius=radius ?? downloadRadius
+        guard let catalog,let root=libraryRoot else {
+            downloadError="Connect to your map source in Settings to check this area.";checkingDownload=false;return
         }
+        checkingDownload=true
+        let store=WorldDownloadStore(cacheURL:cacheURL),radius=downloadRadius
+        downloadTask=Task { [weak self] in
+            do {
+                let plan=try await store.plan(center:point,radius:radius,catalog:catalog,root:root)
+                try Task.checkCancellation()
+                guard let self,ticket==downloadGeneration else { return }
+                downloadPlan=plan;checkingDownload=false;downloadTask=nil
+            } catch {
+                guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
+                checkingDownload=false;downloadError=error.localizedDescription;downloadTask=nil
+            }
+        }
+    }
+    func downloadAndOpen() {
+        guard let plan=downloadPlan,!isSavingOffline else { return }
+        downloadGeneration+=1;let ticket=downloadGeneration
+        isSavingOffline=true;downloadedBytes=0;downloadError=nil
+        let store=WorldDownloadStore(cacheURL:cacheURL)
+        downloadTask=Task { [weak self] in
+            do {
+                try await store.download(plan) { [weak self] bytes in
+                    await self?.receiveDownloadProgress(bytes,ticket:ticket)
+                }
+                try Task.checkCancellation()
+                guard let self,ticket==downloadGeneration else { return }
+                await reloadOfflineCoverage()
+                guard ticket==downloadGeneration,!Task.isCancelled else { return }
+                downloadTask=nil;isSavingOffline=false;downloadCenter=nil;downloadPlan=nil;coverageMessage=nil
+                downloadedDestination=plan.center
+                visit(plan.center)
+            } catch {
+                guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
+                isSavingOffline=false;downloadTask=nil
+                downloadError="The download didn’t finish. Check your connection and resume; completed files are kept."
+                await reloadOfflineCoverage()
+                guard ticket==downloadGeneration,let catalog,let root=libraryRoot else { return }
+                checkingDownload=true
+                let remaining=try? await store.plan(center:plan.center,radius:plan.radius,catalog:catalog,root:root)
+                guard ticket==downloadGeneration,!Task.isCancelled else { return }
+                downloadPlan=remaining;checkingDownload=false;downloadedBytes=0
+            }
+        }
+    }
+    private func receiveDownloadProgress(_ bytes: Int64,ticket:Int) {
+        guard ticket==downloadGeneration else { return }
+        downloadedBytes=bytes
+    }
+    func cancelDownload() {
+        let wasSaving=isSavingOffline
+        downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
+        checkingDownload=false;isSavingOffline=false;downloadCenter=nil;downloadPlan=nil;downloadError=nil;downloadedBytes=0
+        if wasSaving { refreshOfflineCoverage() }
     }
 }

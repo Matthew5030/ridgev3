@@ -137,6 +137,7 @@ enum WorldWorkingSet {
 }
 
 actor WorldSourceStore {
+    nonisolated let allowsNetwork: Bool
     private let bundled: URL
     private let cache: URL
     private var base: URL
@@ -144,7 +145,8 @@ actor WorldSourceStore {
     private var bytesSincePrune = 0
     private var writesSincePrune = 0
     private let diskLimit: Int64 = 2 * 1024 * 1024 * 1024
-    init(bundledURL: URL? = nil, cacheURL: URL? = nil) {
+    init(bundledURL: URL? = nil, cacheURL: URL? = nil, allowsNetwork: Bool = true) {
+        self.allowsNetwork = allowsNetwork
         bundled = bundledURL ?? Bundle.main.url(forResource: "WorldData", withExtension: "bundle") ?? Bundle.main.bundleURL
         base = bundled
         cache = cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("WorldCache", isDirectory: true)
@@ -160,10 +162,11 @@ actor WorldSourceStore {
             guard let url = URL(string: address), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { throw RidgeError.message("Enter the full address of a world.json file.") }
             base = url.deletingLastPathComponent()
             let cached = cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8)) + ".index")
-            if preferCached, let raw = try? Data(contentsOf:cached),
+            if (preferCached || !allowsNetwork), let raw = try? Data(contentsOf:cached),
                let saved = try? JSONDecoder().decode(WorldSource.self,from:raw), (try? saved.validate()) != nil {
                 manifest = raw
             } else {
+                guard allowsNetwork else { throw RidgeError.message("This map index is missing. Download the area again while connected.") }
                 do {
                     var request = URLRequest(url: url); request.timeoutInterval = 15
                     let (temporary, response) = try await URLSession.shared.download(for: request)
@@ -357,6 +360,7 @@ actor WorldSourceStore {
         if let data = try? Data(contentsOf: saved), checked(data) {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: saved.path); return data
         }
+        guard allowsNetwork else { throw RidgeError.message("A downloaded map file is missing. Download this area again while connected.") }
         var request = URLRequest(url: base.appendingPathComponent(asset.file)); request.timeoutInterval = 20
         let (temporary, response) = try await URLSession.shared.download(for: request)
         defer { try? FileManager.default.removeItem(at: temporary) }

@@ -33,9 +33,12 @@ actor WorldLandscapeStore {
     /// Build only newly exposed pieces. A candidate owns its state until the
     /// model commits it, so cancellation cannot invalidate the visible window.
     func window(center: GeoPoint, radius: Double, frame: GeoBounds, catalog: WorldCatalog, root: URL,
-                previous: Snapshot?, priority: GeoPoint? = nil, progress: @escaping @Sendable (WorldSource,WorldOverview,WorldBackdrop,[String:WorldPreparedTile]) async -> Void = { _,_,_,_ in }) async throws -> (WorldSource,WorldOverview,WalkingGraph,WorldBackdrop,[String:WorldPreparedTile]) {
+                previous: Snapshot?, priority: GeoPoint? = nil, offlineBounds: [GeoBounds]? = nil, progress: @escaping @Sendable (WorldSource,WorldOverview,WorldBackdrop,[String:WorldPreparedTile]) async -> Void = { _,_,_,_ in }) async throws -> (WorldSource,WorldOverview,WalkingGraph,WorldBackdrop,[String:WorldPreparedTile]) {
         let priority = priority ?? center
-        let regions = catalog.sources.filter { WorldWindow.distance(center,to:$0.bounds) <= radius }
+        let saved = offlineBounds.map { Set($0) }
+        let regions = catalog.sources.filter { region in
+            WorldWindow.distance(center,to:region.bounds) <= radius && (offlineBounds == nil || offlineBounds!.contains { region.bounds.contains($0.center) })
+        }
             .sorted { WorldWindow.distance(priority,to:$0.bounds) < WorldWindow.distance(priority,to:$1.bounds) }
         guard !regions.isEmpty else { throw RidgeError.message("No terrain is available here.") }
         let oldParts = Dictionary(uniqueKeysWithValues:(previous?.parts ?? []).map { ($0.source.id,$0) })
@@ -43,13 +46,13 @@ actor WorldLandscapeStore {
         for region in regions {
             try Task.checkCancellation()
             let needsPaths = WorldWindow.distance(center,to:region.bounds) <= WorldWindow.routingRadius
-            if var old = oldParts[region.id] {
+            if var old = oldParts[region.id], offlineBounds == nil || !old.files.allowsNetwork {
                 if needsPaths && !old.routingLoaded { old.graph = try await old.files.walkingGraph(old.source) }
                 if !needsPaths { old.graph = WalkingGraph(nodes:[],edges:[]) }
                 old.routingLoaded = needsPaths
                 parts.append(old); continue
             }
-            let files = WorldSourceStore(cacheURL:cacheURL)
+            let files = WorldSourceStore(cacheURL:cacheURL,allowsNetwork:offlineBounds == nil)
             let source = try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true)
             guard source.id == region.id, source.bounds == region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
             let (_,overview,graph) = try await files.contents(of:source,includeGraph:needsPaths)
@@ -61,7 +64,7 @@ actor WorldLandscapeStore {
         combined.revision = UUID().uuidString
         combined.tiles = []; combined.places = []; combined.sources = []
         for (index,part) in parts.enumerated() {
-            for original in part.source.tiles where WorldWindow.distance(center,to:original.mesh.bounds) <= radius {
+            for original in part.source.tiles where WorldWindow.distance(center,to:original.mesh.bounds) <= radius && (saved == nil || saved!.contains(original.mesh.bounds)) {
                 var tile = original; tile.id = part.source.id + "__" + original.id
                 owners[tile.id] = (index,original); combined.tiles.append(tile)
             }
@@ -70,7 +73,12 @@ actor WorldLandscapeStore {
         guard !combined.tiles.isEmpty else { throw RidgeError.message("Detailed terrain is missing here.") }
         combined.sources = Array(Set(combined.sources))
         var names = Set<String>(); combined.places = combined.places.filter { names.insert($0.id).inserted }
-        let graph = try Self.joinGraphs(parts,center:center,radius:WorldWindow.routingRadius)
+        let routingParts=parts.map { part in
+            var selected=part
+            if let saved { selected.source.tiles=part.source.tiles.filter { saved.contains($0.mesh.bounds) } }
+            return selected
+        }
+        let graph = try Self.joinGraphs(routingParts,center:center,radius:WorldWindow.routingRadius)
         // Route/camera fallback only; the visible surface uses the stored meshes.
         let size = 513
         var heights = [Float](repeating:0,count:size*size)
@@ -248,5 +256,58 @@ enum WorldWindow {
     static func needsUpdate(center: GeoPoint, radius: Double, loadedCenter: GeoPoint?, loadedRadius: Double) -> Bool {
         guard let loadedCenter else { return true }
         return center.distance(to:loadedCenter) >= movementThreshold || radius > loadedRadius+1000
+    }
+}
+
+/// A transfer plan holds metadata only. No terrain decoding or image rendering
+/// takes place before the user has accepted the download size.
+struct WorldDownloadPlan: Sendable {
+    struct Part: Sendable {
+        let source: WorldSource
+        let files: WorldSourceStore
+        let missingBytes: Int64
+    }
+    let center: GeoPoint
+    let radius: Double
+    let parts: [Part]
+    let bytes: Int64
+    let bounds: [GeoBounds]
+    let edges: [WorldOfflineCoverage.Edge]
+}
+
+actor WorldDownloadStore {
+    private let cache: URL
+    init(cacheURL: URL? = nil) { cache=WorldOfflineCoverage.cache(cacheURL) }
+    func plan(center: GeoPoint, radius: Double, catalog: WorldCatalog, root: URL) async throws -> WorldDownloadPlan {
+        guard (400...12000).contains(radius),catalog.region(at:center) != nil else { throw RidgeError.message("Detailed terrain is not available here.") }
+        var parts: [WorldDownloadPlan.Part] = [], bounds: [GeoBounds] = [], seen=Set<String>()
+        for region in catalog.sources.filter({ WorldWindow.distance(center,to:$0.bounds)<=radius }) {
+            try Task.checkCancellation()
+            let files=WorldSourceStore(cacheURL:cache)
+            var source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true)
+            guard source.id==region.id, source.bounds==region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
+            source.tiles=source.tiles.filter { WorldWindow.distance(center,to:$0.mesh.bounds)<=radius }
+            guard !source.tiles.isEmpty else { continue }
+            let assets=WorldSourceStore.assets(tiles:source.tiles,source:source).filter { seen.insert($0.sha256).inserted }
+            let cached=try await files.cachedBytes(for:assets)
+            let missing=max(0,assets.reduce(Int64(0)) { $0+Int64($1.byteCount) }-cached)
+            parts.append(.init(source:source,files:files,missingBytes:missing))
+            bounds += source.tiles.map { $0.mesh.bounds }
+        }
+        guard bounds.contains(where:{$0.contains(center)}) else { throw RidgeError.message("Detailed terrain is missing at this location. Choose a nearby area.") }
+        return WorldDownloadPlan(center:center,radius:radius,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },bounds:bounds,edges:WorldOfflineCoverage.outline(bounds))
+    }
+    func download(_ plan: WorldDownloadPlan, progress: @escaping @Sendable (Int64) async -> Void) async throws {
+        var completed: Int64=0
+        for part in plan.parts {
+            try Task.checkCancellation()
+            let base=completed
+            try await part.files.pin(part.source.tiles,source:part.source,countCachedInProgress:false) { value in
+                await progress(min(plan.bytes,base+value))
+            }
+            completed += part.missingBytes
+            await progress(min(plan.bytes,completed))
+        }
+        try Task.checkCancellation()
     }
 }

@@ -53,13 +53,14 @@ actor WorldCatalogStore {
         cache = cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("WorldCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
     }
-    func open(root: URL) async throws -> WorldCatalog {
+    func open(root: URL, preferCached: Bool = false) async throws -> WorldCatalog {
         let url = root.appendingPathComponent("catalog.json")
         let saved = cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(url.absoluteString.utf8)) + ".catalog")
         func decode(_ data: Data) throws -> WorldCatalog {
             guard data.count < 16_000_000 else { throw RidgeError.message("The map catalogue is too large.") }
             let value = try JSONDecoder().decode(WorldCatalog.self, from: data); try value.validate(); return value
         }
+        if preferCached, let data=try? Data(contentsOf:saved),let value=try? decode(data) { return value }
         do {
             var request = URLRequest(url: url); request.timeoutInterval = 10
             let (file, response) = try await URLSession.shared.download(for: request)

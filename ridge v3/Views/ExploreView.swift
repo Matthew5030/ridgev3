@@ -442,6 +442,7 @@ struct OfflineAtlasView: View {
     var onWorldTap: ((GeoPoint) -> Void)? = nil
     var worldOfflineBounds: [GeoBounds] = []
     var worldOfflineEdges: [WorldOfflineCoverage.Edge] = []
+    var worldDownloadEdges: [WorldOfflineCoverage.Edge] = []
     // The callback identifies the world flow even before its terrain source opens.
     private var usesWorldStyle: Bool { onWorldTap != nil || worldCoverage != nil }
     private let verticalOffset: CGFloat = 0
@@ -491,6 +492,12 @@ struct OfflineAtlasView: View {
                 }
                 drawAreas(context: &context, size: size)
                 drawWorldOfflineCoverage(context: &context, size: size)
+                var downloadOutline=Path()
+                for edge in worldDownloadEdges {
+                    downloadOutline.move(to:screen(edge.start,size:size));downloadOutline.addLine(to:screen(edge.end,size:size))
+                }
+                context.stroke(downloadOutline,with:.color(RidgeTheme.paper),lineWidth:5)
+                context.stroke(downloadOutline,with:.color(RidgeTheme.forest),style:StrokeStyle(lineWidth:2.5,dash:[8,5]))
                 if let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawSelection(context: &context, size: size)
                 }

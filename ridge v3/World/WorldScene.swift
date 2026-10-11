@@ -472,6 +472,8 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     @objc private func tap(_ gesture: UITapGestureRecognizer) {
         if let hit = hitTest(gesture.location(in:self),options:[.categoryBitMask:1,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first {
             onTap?(coordinate(SIMD3(hit.worldCoordinates.x,hit.worldCoordinates.y,hit.worldCoordinates.z)))
+        } else if let hit=hitTest(gesture.location(in:self),options:[.categoryBitMask:4,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first {
+            model?.offerDownload(at:coordinate(SIMD3(hit.worldCoordinates.x,hit.worldCoordinates.y,hit.worldCoordinates.z)))
         }
     }
 }
