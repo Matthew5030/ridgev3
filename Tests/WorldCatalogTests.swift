@@ -98,7 +98,10 @@ actor TileProgressAudit {
         let reopened=WorldModel(cacheURL:cache)
         await reopened.configure(mode:"local",local:local.absoluteString)
         try check(reopened.hasCoverage(origin),"Saved coverage survives relaunch")
+        reopened.browse(GeoPoint(latitude:0,longitude:0))
+        try check(reopened.coverageMessage != nil,"Outside published coverage is explained")
         reopened.browse(origin)
+        try check(reopened.streaming && reopened.coverageMessage==nil,"Old unavailable warning clears immediately while saved terrain prepares")
         try await wait { reopened.streaming || reopened.isLoading }
         try check(reopened.source != nil && reopened.downloadCenter==nil,"Downloaded area reopens directly from disk")
         reopened.suspend()

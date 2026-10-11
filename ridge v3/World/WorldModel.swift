@@ -153,6 +153,10 @@ import CoreGraphics
             if !in3D { requestedDownloadPoint=point }
             return false
         }
+        // The previous focus may have been outside published or saved coverage.
+        // Clear that warning as soon as this destination is valid, including
+        // while its overview/detail is still preparing.
+        coverageMessage=nil
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
         // Finish the nearby detail window before extending it. The textured
         // overview can begin the flight while that first window is preparing.
