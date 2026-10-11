@@ -21,6 +21,7 @@ struct WorldExploreView: View {
     @State private var didFitRegions = false
     @State private var explorePoint:GeoPoint?
     @State private var regionMaps:[WorldRegionMapOverlay]=[]
+    @State private var parkMaps:[WorldRegionMapOverlay]=[]
     @State private var regionMapError:String?
     @State private var editWaypoint: RouteWaypoint?
     @State private var renaming = false
@@ -30,6 +31,11 @@ struct WorldExploreView: View {
         var names = Set<String>()
         let term = "snowdon".hasPrefix(query.lowercased()) && !query.isEmpty ? "Yr Wyddfa" : query
         return places.filter { $0.name.localizedCaseInsensitiveContains(term) && names.insert($0.name).inserted }.prefix(8).map { $0 }
+    }
+    private var regionCandidates:[WorldRegionMapOverlay] {
+        guard !world.in3D,!query.trimmingCharacters(in:.whitespaces).isEmpty else { return [] }
+        let areas=parkMaps+regionMaps.filter { $0.pack.parkID == nil || $0.id == $0.pack.parkID }
+        return Array(areas.filter { $0.pack.name.localizedCaseInsensitiveContains(query) }.prefix(3))
     }
     var body: some View {
         ZStack(alignment: .top) {
@@ -61,7 +67,17 @@ struct WorldExploreView: View {
                 if !world.in3D { regionMapBar }
                 if !query.isEmpty {
                     VStack(alignment:.leading,spacing:0) {
-                        ForEach(candidates) { place in Button { visit(place.coordinate) } label: {
+                        ForEach(regionCandidates) { area in Button { selectRegion(area.pack) } label: {
+                            HStack {
+                                Image(systemName:"map")
+                                VStack(alignment:.leading,spacing:2) {
+                                    Text(area.pack.name)
+                                    Text(area.statusText).font(.caption).foregroundStyle(RidgeTheme.muted)
+                                }
+                                Spacer();Image(systemName:"arrow.up.right")
+                            }.padding(12)
+                        }.buttonStyle(.plain) }
+                        ForEach(candidates.prefix(regionCandidates.isEmpty ? 8 : 4)) { place in Button { visit(place.coordinate) } label: {
                             HStack { Text(place.name);Spacer();Image(systemName:"arrow.up.right") }.padding(12)
                         }.buttonStyle(.plain) }
                     }.background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
@@ -94,7 +110,10 @@ struct WorldExploreView: View {
                                 Image(systemName:"xmark").padding(12)
                             }.accessibilityLabel("Close region").disabled(world.isSavingOffline)
                             WorldRegionDownloadCard(world:world,pack:pack,
-                                saved:regionMaps.first { $0.id==pack.id },explore: { openRegion(pack) })
+                                saved:(regionMaps+parkMaps).first { $0.id==pack.id },explore: { openRegion(pack) },
+                                selectWholePark:parkMaps.first { $0.id==pack.parkID && $0.id != pack.id }.map { whole in
+                                    { selectRegion(whole.pack) }
+                                })
                         }
                     }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(380,mapSize.height*0.46))
                         .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
@@ -125,9 +144,12 @@ struct WorldExploreView: View {
         .task(id:"\(connectionID)|\(world.catalog?.revision ?? "")|\(world.offlineCoverageRevision)") {
             do {
                 let packs=try WorldRegionPack.load(),catalog=world.catalog,saved=world.offlineBounds
-                let overlays=await Task.detached(priority:.userInitiated) { WorldRegionMapOverlay.make(packs:packs,catalog:catalog,offline:saved) }.value
+                let (overlays,parks)=await Task.detached(priority:.userInitiated) {
+                    (WorldRegionMapOverlay.make(packs:packs,catalog:catalog,offline:saved),
+                     WorldRegionMapOverlay.make(packs:WorldRegionPack.wholeParks(in:packs),catalog:catalog,offline:saved))
+                }.value
                 guard !Task.isCancelled else { return }
-                regionMaps=overlays;regionMapError=nil
+                regionMaps=overlays;parkMaps=parks;regionMapError=nil
                 if !didFitRegions,!world.in3D,!exploring { didFitRegions=true;focusAllRegions() }
                 if world.catalog != nil,let point=store.worldRouteFocus { openPlace(point);store.worldRouteFocus=nil }
             } catch { regionMapError=error.localizedDescription }
@@ -247,7 +269,7 @@ struct WorldExploreView: View {
         if world.in3D { atlasRequest=UUID() }
     }
     private func openRegion(_ pack:WorldRegionPack) {
-        let overlay=regionMaps.first { $0.id==pack.id }
+        let overlay=(regionMaps+parkMaps).first { $0.id==pack.id }
         let point=explorePoint.flatMap { world.hasCoverage($0) ? $0 : nil } ?? overlay?.savedPoint
             ?? world.offlineBounds.filter { tile in pack.cells.contains { $0.bounds.contains(tile.center) } }
                 .min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }?.center

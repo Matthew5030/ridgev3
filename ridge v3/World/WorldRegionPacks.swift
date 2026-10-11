@@ -10,7 +10,12 @@ struct WorldRegionPack: Identifiable, Sendable {
     let subtitle: String
     let landmark: String
     let cells: [Cell]
+    var mapLabel: String? = nil
+    var parkID: String? = nil
+    var parkName: String? = nil
+    var artwork: String? = nil
     var artworkID:String {
+        if let artwork { return artwork }
         switch id {
         case "skye-wester-ross": return "north-scotland"
         case "lochaber", "cairngorms", "sutherland": return "west-highlands"
@@ -31,66 +36,49 @@ struct WorldRegionPack: Identifiable, Sendable {
                   maxLatitude:cells.map { $0.bounds.maxLatitude }.max()!,maxLongitude:cells.map { $0.bounds.maxLongitude }.max()!)
     }
     func sources(in catalog: WorldCatalog) -> [WorldCatalog.Region] {
-        catalog.sources.filter { source in cells.contains { $0.bounds.contains(source.bounds.center) } }.sorted { $0.id < $1.id }
+        let ids=Set(cells.map(\.id))
+        // Published zones follow source sections exactly. Older/custom callers
+        // may still supply broad cells, so retain their geographic matching.
+        let sourceCells=cells.allSatisfy { $0.id.hasPrefix("world-") }
+        return catalog.sources.filter { source in
+            sourceCells ? ids.contains(source.id) : cells.contains { $0.bounds.contains(source.bounds.center) }
+        }.sorted { $0.id < $1.id }
     }
     func coveredCells(in catalog: WorldCatalog) -> Set<String> {
         let sources=sources(in:catalog)
         return Set(cells.filter { cell in sources.contains { cell.bounds.contains($0.bounds.center) } }.map(\.id))
     }
+    /// Larger parks have small selectable areas, plus an optional whole-park
+    /// selection using the exact same files and saved-state accounting.
+    static func wholeParks(in packs:[Self])->[Self] {
+        Dictionary(grouping:packs.filter { $0.parkID != nil },by: { $0.parkID! }).compactMap { id,parts in
+            guard parts.count>1,let first=parts.first else { return nil }
+            return Self(id:id,name:first.parkName ?? first.name,subtitle:first.subtitle,
+                        landmark:first.parkName ?? first.name,cells:parts.flatMap(\.cells).sorted { $0.id<$1.id },
+                        parkID:id,parkName:first.parkName,artwork:first.artwork)
+        }.sorted { $0.id<$1.id }
+    }
     static func load(url: URL? = nil) throws -> [WorldRegionPack] {
-        struct Group: Decodable { let id:String; let cells:[Cell] }
-        struct Index: Decodable { let schemaVersion:Int; let regions:[Group] }
-        guard let url = url ?? Bundle.main.url(forResource:"uk-pack-regions",withExtension:"json")
-            ?? Bundle.main.url(forResource:"uk-pack-regions",withExtension:"json",subdirectory:"Resources") else {
+        struct Zone: Decodable {
+            let id:String;let name:String;let subtitle:String;let mapLabel:String
+            let parkID:String?;let parkName:String?;let artwork:String?;let cells:[Cell]
+        }
+        struct Index: Decodable { let schemaVersion:Int;let regions:[Zone] }
+        guard let url = url ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json")
+            ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json",subdirectory:"Resources") else {
             throw RidgeError.message("The region list is missing from this build.")
         }
         let index=try JSONDecoder().decode(Index.self,from:Data(contentsOf:url))
-        guard index.schemaVersion == 1 else { throw RidgeError.message("Unsupported region list.") }
-        // Geographic bands split the original publication grid into smaller
-        // presets. Split on cell centres, never through a source or asset.
-        struct Division {
-            let group:String
-            let latitude:Bool
-            let cuts:[Double]
-            let names:[(String,String)]
-        }
-        let divisions:[Division] = [
-            .init(group:"northern-isles",latitude:true,cuts:[59.6],names:[("orkney","Orkney"),("shetland","Shetland")]),
-            .init(group:"north-west-scotland",latitude:false,cuts:[-6.1, -4.9],names:[("outer-hebrides","Outer Hebrides"),("skye-wester-ross","Skye & Wester Ross"),("sutherland","Sutherland")]),
-            .init(group:"north-east-scotland",latitude:true,cuts:[57.5],names:[("aberdeenshire","Aberdeenshire"),("caithness-moray","Caithness & Moray")]),
-            .init(group:"central-highlands",latitude:false,cuts:[-4.1],names:[("lochaber","Lochaber"),("cairngorms","Cairngorms")]),
-            .init(group:"argyll-western-isles",latitude:true,cuts:[56.2],names:[("argyll-islay","Argyll & Islay"),("mull-small-isles","Mull & Small Isles")]),
-            .init(group:"central-scotland",latitude:false,cuts:[-3.7],names:[("lomond-trossachs","Lomond & Trossachs"),("fife-lothians","Fife & Lothians")]),
-            .init(group:"southern-scotland",latitude:false,cuts:[-3.7],names:[("galloway","Galloway"),("scottish-borders","Scottish Borders")]),
-            .init(group:"northern-ireland",latitude:false,cuts:[-6.7],names:[("fermanagh-sperrins","Fermanagh & Sperrins"),("antrim-down","Antrim & Down")]),
-            .init(group:"north-east-england",latitude:true,cuts:[55.1],names:[("tyne-wear-durham","Tyne, Wear & Durham"),("northumberland","Northumberland")]),
-            .init(group:"cumbria",latitude:true,cuts:[54.5],names:[("south-lakes","South Lakes"),("north-lakes","North Lakes")]),
-            .init(group:"dales-north-pennines",latitude:true,cuts:[54.0],names:[("yorkshire-dales","Yorkshire Dales"),("north-pennines","North Pennines")]),
-            .init(group:"north-east-yorkshire",latitude:true,cuts:[53.8],names:[("yorkshire-wolds","Yorkshire Wolds"),("north-york-moors","North York Moors")]),
-            .init(group:"peak-district-midlands",latitude:true,cuts:[52.55, 53.0],names:[("central-midlands","Central Midlands"),("trent-valley","Trent Valley"),("peak-district","Peak District")]),
-            .init(group:"north-wales",latitude:false,cuts:[-3.7],names:[("eryri-anglesey","Eryri & Anglesey"),("clwyd-berwyn","Clwyd & Berwyn")]),
-            .init(group:"mid-south-wales",latitude:false,cuts:[-4.2],names:[("pembrokeshire-ceredigion","Pembrokeshire & Ceredigion"),("bannau-mid-wales","Bannau & Mid Wales")]),
-            .init(group:"east-anglia",latitude:false,cuts:[0.0, 0.8],names:[("fens-cambridgeshire","Fens & Cambridgeshire"),("suffolk-west-norfolk","Suffolk & West Norfolk"),("broads-east-coast","Broads & East Coast")]),
-            .init(group:"marches-cotswolds",latitude:true,cuts:[52.05],names:[("severn-cotswolds","Severn & Cotswolds"),("shropshire-marches","Shropshire & Marches")]),
-            .init(group:"south-east",latitude:false,cuts:[-0.4, 0.65],names:[("surrey-south-downs","Surrey & South Downs"),("london-weald","London & Weald"),("kent-east-sussex","Kent & East Sussex")]),
-            .init(group:"central-south",latitude:false,cuts:[-2.3],names:[("somerset-west-dorset","Somerset & West Dorset"),("wessex","Wessex")]),
-            .init(group:"devon-cornwall",latitude:false,cuts:[-4.5],names:[("cornwall-scilly","Cornwall & Scilly"),("devon","Devon")]),
-        ]
-        guard Set(divisions.map(\.group)) == Set(index.regions.map(\.id)),
-              divisions.count == index.regions.count else { throw RidgeError.message("The region groups do not match the map grid.") }
-        return try divisions.flatMap { division -> [WorldRegionPack] in
-            let cells=index.regions.first { $0.id==division.group }!.cells
-            var bands=Array(repeating:[Cell](),count:division.names.count)
-            for cell in cells {
-                let center=cell.bounds.center
-                let coordinate=division.latitude ? center.latitude : center.longitude
-                bands[division.cuts.filter { coordinate >= $0 }.count].append(cell)
+        let cells=index.regions.flatMap(\.cells)
+        guard index.schemaVersion==2,!index.regions.isEmpty,
+              Set(index.regions.map(\.id)).count==index.regions.count,
+              Set(cells.map(\.id)).count==cells.count else { throw RidgeError.message("Invalid download zones.") }
+        return try index.regions.map { zone in
+            guard !zone.cells.isEmpty,zone.cells.allSatisfy({ $0.bounds.isValid }) else {
+                throw RidgeError.message("A region has an invalid map boundary.")
             }
-            return try division.names.enumerated().map { offset,definition in
-                let (id,name)=definition,cells=bands[offset]
-                guard !cells.isEmpty,cells.allSatisfy({ $0.bounds.isValid }) else { throw RidgeError.message("A region has an invalid map boundary.") }
-                return WorldRegionPack(id:id,name:name,subtitle:"Approximate map area · follows the tile grid",landmark:name,cells:cells)
-            }
+            return Self(id:zone.id,name:zone.name,subtitle:zone.subtitle,landmark:zone.parkName ?? zone.name,
+                        cells:zone.cells,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
         }
     }
 }
@@ -235,7 +223,7 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let fills:[GeoBounds]
     let edges:[WorldOfflineCoverage.Edge]
     let available:[GeoBounds]
-    let labelPoint:GeoPoint
+    private(set) var labelPoint:GeoPoint
     private(set) var labelFontScale:Double=0
     enum DownloadState { case unavailable,notSaved,partial,saved }
     var savedTileCount=0
@@ -257,6 +245,7 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     var id:String { pack.id }
     /// Short atlas lettering; the inspector retains the full pack name.
     var label:String {
+        if let label=pack.mapLabel { return label }
         switch id {
         case "outer-hebrides": return "HEBRIDES"
         case "skye-wester-ross": return "SKYE &\nWESTER ROSS"
@@ -303,6 +292,18 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         totalTileCount=sources.reduce(0) { $0+$1.tileCount }
         labelPoint=cells.min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }!.center
         labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:fills)
+        // Irregular park fringes can have a narrow neck at their centre. Fit
+        // lettering in a spacious interior rectangle, once, rather than hiding
+        // the name or moving it while the user zooms.
+        var anchors:[GeoPoint]=fills.map { $0.center }
+        anchors.sort { a,b in
+            if a.latitude == b.latitude { return a.longitude<b.longitude }
+            return a.latitude<b.latitude
+        }
+        for anchor in anchors {
+            let fit=Self.fittedLabelScale(label,anchor:anchor,fills:fills)
+            if fit>labelFontScale*1.001 { labelPoint=anchor;labelFontScale=fit }
+        }
     }
     /// Fit once in projected map coordinates, independent of camera/selection.
     /// Every zoom then uses the same footprint, so adjacent labels cannot swap

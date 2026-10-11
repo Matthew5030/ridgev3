@@ -47,8 +47,15 @@ actor RegionTransferAudit {
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("ridge-region-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
-        let packs=try WorldRegionPack.load(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-pack-regions.json"))
-        try check(packs.count==44,"Forty-four smaller named regions")
+        let packs=try WorldRegionPack.load(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
+        try check(packs.count==216,"Park areas and smaller surrounding regions")
+        try check(Set(packs.compactMap(\.parkID)).count==15,"All fifteen prepared park boundaries have selectable areas")
+        let wholeParks=WorldRegionPack.wholeParks(in:packs)
+        for whole in wholeParks {
+            let parts=packs.filter { $0.parkID==whole.id }
+            try check(parts.count>1 && Set(whole.cells.map(\.id))==Set(parts.flatMap(\.cells).map(\.id)),"Whole park is exactly the union of its smaller areas")
+            try check(Set(whole.sources(in:catalog).map(\.id))==Set(parts.flatMap { $0.sources(in:catalog) }.map(\.id)),"Whole park uses the same source files without extra surrounding regions")
+        }
         let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
         for overlay in overlays {
             try check(overlay.labelFontScale>0,"Each label has a stable geographic fit")
@@ -75,16 +82,27 @@ actor RegionTransferAudit {
         struct OriginalGrid:Decodable { struct Region:Decodable { let cells:[WorldRegionPack.Cell] };let regions:[Region] }
         let gridURL=URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-pack-regions.json")
         let original=try JSONDecoder().decode(OriginalGrid.self,from:Data(contentsOf:gridURL))
-        try check(Set(cells)==Set(original.regions.flatMap(\.cells).map(\.id)),"Subdivision retains every original cell, including unpublished areas")
-        try check(Set(packs.map(\.id)).count==44,"Every smaller pack has a stable unique ID")
-        try check(packs.filter { ["fermanagh-sperrins","antrim-down"].contains($0.id) }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
-        let northern=packs.first { $0.id=="aberdeenshire" }!
-        try check(northern.coveredCells(in:catalog).count<northern.cells.count,"Partial Scotland coverage is distinguishable from a full region")
+        let expectedCells=Set(original.regions.flatMap(\.cells).flatMap { parent in
+            [0,16,32].flatMap { row in [0,16,32].map { column in
+                "world-"+parent.id+String(format:"-c%02d-r%02d",column,row)
+            } }
+        })
+        try check(Set(cells)==expectedCells,"Subdivision retains all source sections, including unpublished areas")
+        try check(Set(packs.map(\.id)).count==packs.count,"Every smaller pack has a stable unique ID")
+        try check(packs.filter { $0.id.hasPrefix("area-fermanagh-sperrins") || $0.id.hasPrefix("area-antrim-down") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
+        let northern=packs.filter { $0.id.hasPrefix("area-aberdeenshire") }
+        try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Partial Scotland coverage is distinguishable from a full region")
         let regions=[catalog.sources[0],catalog.sources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })
         try check(fixture.bounds.widthMeters>24_000,"Region fixture exceeds the custom-area size limit")
         let started=Date()
-        let eryri=packs.first { $0.id=="eryri-anglesey" }!
+        let eryri=packs.first { $0.id=="park-eryri-nw" }!
+        let allEryri=wholeParks.first { $0.id=="park-eryri" }!
+        let eryriSize=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)!
+        let wholeSize=WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root)!
+        try check(eryriSize.bytes<wholeSize.bytes/2 && eryriSize.parts.count<20,"North-west Eryri is a much smaller download than the whole park")
+        try check(WorldRegionMapOverlay.at(.init(latitude:53.0685,longitude: -4.0763),in:overlays)?.pack.parkID=="park-eryri","Yr Wyddfa selects an Eryri park area")
+        try check(WorldRegionMapOverlay.at(.init(latitude:53.30,longitude: -4.35),in:overlays)?.pack.parkID==nil,"Anglesey is separate from the Eryri download")
         let quick=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)
         let offerSeconds=Date().timeIntervalSince(started)
         try check(quick?.isEstimate==true && quick?.parts.isEmpty==false,"Real Eryri region offers catalogue size immediately")

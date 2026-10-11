@@ -7,6 +7,7 @@ struct WorldRegionDownloadCard: View {
     let pack:WorldRegionPack
     var saved:WorldRegionMapOverlay? = nil
     let explore:() -> Void
+    var selectWholePark:(() -> Void)? = nil
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:12) {
@@ -15,6 +16,12 @@ struct WorldRegionDownloadCard: View {
                     Text(pack.name).font(.headline)
                     Text(saved?.statusText ?? pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
+            }
+            if pack.parkID != nil {
+                Text(pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
+            }
+            if let selectWholePark,!world.isSavingOffline,!world.checkingDownload {
+                Button("Select whole park",systemImage:"map",action:selectWholePark).font(.subheadline)
             }
             if let saved,saved.savedTileCount>0,!world.isSavingOffline {
                 Button("Explore in 3D",systemImage:"mountain.2") { explore() }

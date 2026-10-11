@@ -847,7 +847,7 @@ struct OfflineAtlasView: View {
         guard !worldRegions.isEmpty else { return }
         let viewport=CGRect(origin:.zero,size:size)
         for region in worldRegions {
-            let selected=region.id==selectedWorldRegion,available = !region.available.isEmpty
+            let selected=region.id==selectedWorldRegion || (selectedWorldRegion != nil && region.pack.parkID==selectedWorldRegion),available = !region.available.isEmpty
             let color:Color=region.downloadState == .saved ? RidgeTheme.forest
                 : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
             var fill=Path(),outline=Path()
