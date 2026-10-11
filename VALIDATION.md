@@ -222,3 +222,5 @@ Validation:
 - Simulator entered Snowdon and retained routes/controls; latest simulator and signed iOS Debug builds pass. The UK context index is present in the built application bundle.
 
 Still requires physical-device fast-pan/rotate and memory/frame-time measurement. A coarse surface is available without network access; detailed terrain and walkable routing still require the appropriate data. No Cloudflare changes or national detailed-pack regeneration were performed.
+
+The physical iPad reconnected during installation. The final signed build was installed and successfully launched on Matthew's M1 iPad Pro (`00008103-00120919018A001E`) using `http://Matthews-MacBook-Pro.local:8787`; app data was preserved. This confirms deployment, not a manual fast-pan performance pass.
