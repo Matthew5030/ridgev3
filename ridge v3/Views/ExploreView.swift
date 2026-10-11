@@ -508,7 +508,6 @@ struct OfflineAtlasView: View {
                 }
                 context.stroke(downloadOutline,with:.color(RidgeTheme.paper),lineWidth:5)
                 context.stroke(downloadOutline,with:.color(RidgeTheme.forest),style:StrokeStyle(lineWidth:2.5,dash:[8,5]))
-                if worldRegions.isEmpty,let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawWorldRegions(context:&context,size:size)
                 drawSelection(context: &context, size: size)
                 var savedContext=context
@@ -542,6 +541,9 @@ struct OfflineAtlasView: View {
                             }
                         }
                     }
+                }.allowsHitTesting(false)
+                Canvas { context,size in
+                    if let atlas { drawPlaces(atlas,context:&context,size:size) }
                 }.allowsHitTesting(false)
             }.contentShape(Rectangle())
                 .accessibilityChildren {
@@ -933,22 +935,55 @@ struct OfflineAtlasView: View {
         context.stroke(outline,with:.color(RidgeTheme.offlineBoundary),style:StrokeStyle(lineWidth:2.5,lineCap:.round,lineJoin:.round))
     }
     private func drawPlaces(_ atlas: AtlasData, context: inout GraphicsContext, size: CGSize) {
-        guard scale > 1200 else { return }
-        var occupied = clusters(size: size).map { clusterLabelRect($0, size: size).insetBy(dx: -5, dy: -5) }
-        let detailPlaces = entries.filter { cellsAreVisible($0, size: size) }.flatMap { $0.manifest.places }.sorted { ($0.elevation ?? 0) > ($1.elevation ?? 0) }
-        var seen: Set<String> = []
-        for place in detailPlaces + atlas.places {
-            if place.kind == "peak" && scale < 150000 { continue }
-            guard seen.insert(place.id).inserted else { continue }
-            let p = screen(place.coordinate, size: size)
-            guard CGRect(origin: .zero, size: size).contains(p) else { continue }
-            let text = context.resolve(Text(place.name).font(.system(size: scale > 80_000 ? 13 : 12, weight: .medium)).foregroundStyle(RidgeTheme.muted))
-            let measured = text.measure(in: CGSize(width: 220, height: 24))
-            let box = CGRect(x: p.x, y: p.y - 2 - measured.height / 2, width: measured.width + 10, height: measured.height).insetBy(dx: -5, dy: -4)
-            guard !occupied.contains(where: { $0.intersects(box) }) else { continue }
-            occupied.append(box)
-            context.fill(Path(ellipseIn: CGRect(x: p.x - 1.5, y: p.y - 1.5, width: 3, height: 3)), with: .color(RidgeTheme.muted))
-            context.draw(text, in: CGRect(x: p.x + 5, y: p.y - 2 - measured.height / 2, width: measured.width, height: measured.height))
+        guard scale > 4000 else { return }
+        var occupied = worldRegions.isEmpty
+            ? clusters(size:size).map { clusterLabelRect($0,size:size).insetBy(dx:-5,dy:-5) }
+            : regionLabels(size:size).filter { $0.opacity>0.1 }.map { $0.rect.insetBy(dx:-6,dy:-6) }
+        // Include neighbours just offscreen so panning past the edge does not
+        // constantly change which of two nearby names wins the space.
+        let viewport=CGRect(origin:.zero,size:size).insetBy(dx:-240,dy:-50)
+        let northWest=coordinate(at:CGPoint(x:viewport.minX,y:viewport.minY),size:size)
+        let southEast=coordinate(at:CGPoint(x:viewport.maxX,y:viewport.maxY),size:size)
+        let detailPlaces=entries.filter { cellsAreVisible($0,size:size) }.flatMap { $0.manifest.places }
+        var seen=Set<String>()
+        // The bundled list is ordered by city/town/village, then population.
+        for place in [atlas.places,detailPlaces].joined() {
+            let start:Double,fontSize:CGFloat,weight:Font.Weight
+            switch place.kind {
+            case "city": (start,fontSize,weight)=(4000,14,.semibold)
+            case "town", "settlement": (start,fontSize,weight)=(20000,13,.medium)
+            case "village": (start,fontSize,weight)=(80000,12,.regular)
+            case "peak": (start,fontSize,weight)=(150000,12,.medium)
+            default: continue
+            }
+            let t=min(1,max(0,(Double(scale)/start-1)/0.65))
+            guard t>0,place.coordinate.latitude<=northWest.latitude,
+                  place.coordinate.latitude>=southEast.latitude,
+                  place.coordinate.longitude>=northWest.longitude,
+                  place.coordinate.longitude<=southEast.longitude else { continue }
+            let p=screen(place.coordinate,size:size)
+            guard viewport.contains(p),seen.insert(place.searchIdentity).inserted else { continue }
+            let label=Text(place.name).font(.system(size:fontSize,weight:weight))
+            let text=context.resolve(label.foregroundStyle(RidgeTheme.ink))
+            let measured=text.measure(in:CGSize(width:240,height:24))
+            let origins=[CGPoint(x:p.x+6,y:p.y-measured.height/2),
+                         CGPoint(x:p.x-measured.width-6,y:p.y-measured.height/2),
+                         CGPoint(x:p.x-measured.width/2,y:p.y-measured.height-6),
+                         CGPoint(x:p.x-measured.width/2,y:p.y+6)]
+            guard let rect=origins.map({ CGRect(origin:$0,size:measured) }).first(where: { rect in
+                !occupied.contains { $0.intersects(rect.insetBy(dx:-5,dy:-4)) }
+            }) else { continue }
+            occupied.append(rect.insetBy(dx:-5,dy:-4))
+            var lettering=context
+            lettering.opacity *= t*t*(3-2*t)
+            // A small paper halo stays legible over relief and download fills.
+            let halo=lettering.resolve(label.foregroundStyle(RidgeTheme.paper.opacity(0.95)))
+            for offset in [CGSize(width:-1,height:0),CGSize(width:1,height:0),CGSize(width:0,height:-1),CGSize(width:0,height:1)] {
+                lettering.draw(halo,in:rect.offsetBy(dx:offset.width,dy:offset.height))
+            }
+            lettering.fill(Path(ellipseIn:CGRect(x:p.x-2,y:p.y-2,width:4,height:4)),with:.color(RidgeTheme.paper))
+            lettering.fill(Path(ellipseIn:CGRect(x:p.x-1.25,y:p.y-1.25,width:2.5,height:2.5)),with:.color(RidgeTheme.ink))
+            lettering.draw(text,in:rect)
         }
     }
     private struct AreaCluster {
