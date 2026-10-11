@@ -79,3 +79,15 @@ Validation: 24 native pack checks (including normal region download/planning and
 an already-open landscape discovering a new pack); 344,699 existing region,
 coverage, overlap, rendering, animation and repair assertions; Python pack
 round-trip/deduplication/rebuild/corruption tests; signed iOS Debug build.
+
+The full local conversion is running as the one-off Docker container
+`ridge-section-pack-builder`, using the existing local Python image. Inspect it
+with `docker logs --tail 5 ridge-section-pack-builder`; read
+`section-pack-status.json` in the library root for exact counts. The script copy
+used by this job is in `~/Library/Application Support/Ridge Download Server/`.
+The job is independent of the Codex turn, stops on completion/error, and has no
+restart policy. `docker start ridge-section-pack-builder` resumes after an
+interruption, verifying previously completed files. A temporary macOS job
+`com.bilella.ridge.section-packs-awake-20261011` holds an idle-sleep assertion only
+while this container is running. Keep Docker running and the drive connected.
+Newly published packs become available when the app refreshes its catalogue.

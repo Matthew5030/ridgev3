@@ -1,6 +1,8 @@
 import hashlib
 import json
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -10,6 +12,40 @@ import pack_sections as packs
 
 
 class SectionPackTests(unittest.TestCase):
+    def test_catalogue_publication_and_failure_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sources = []
+            for number in range(26):
+                source_id = f'test-{number}'
+                folder = root / 'sources' / source_id
+                folder.mkdir(parents=True)
+                data = b'{"value":123}'
+                (folder / 'data.json').write_bytes(data)
+                asset = dict(file='data.json', byteCount=len(data), sha256=hashlib.sha256(data).hexdigest())
+                manifest = dict(id=source_id, overview=asset, graph=asset, tiles=[])
+                (folder / 'world.json').write_bytes(packs.raw(manifest))
+                sources.append(dict(id=source_id, path=f'sources/{source_id}/world.json', preserved='coverage'))
+            catalog = dict(schemaVersion=1, revision='fixture', sources=sources)
+            (root / 'catalog.json').write_bytes(packs.raw(catalog))
+            command = [sys.executable, packs.__file__, str(root), '--publish', '--workers', '2']
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            published = json.loads((root / 'catalog.json').read_bytes())
+            self.assertEqual(published['packVersion'], 1)
+            self.assertTrue(all(s['pack'] and s['preserved'] == 'coverage' for s in published['sources']))
+            self.assertEqual(json.loads((root / 'catalog.before-section-packs.json').read_bytes()), catalog)
+            self.assertEqual(json.loads((root / 'section-pack-status.json').read_bytes())['state'], 'complete')
+            # Resume publication accepts its own added pack descriptors.
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            broken = root / 'sources/test-0'
+            (broken / 'section-pack-v1.json').unlink()
+            (broken / 'data.json').write_bytes(b'corrupt')
+            result = subprocess.run(command + ['--source', 'test-0'], capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(json.loads((root / 'section-pack-status.json').read_bytes())['state'], 'failed')
+            self.assertEqual(json.loads((root / 'catalog.json').read_bytes()), published)
+
     def test_round_trip_resume_corruption_and_changed_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
