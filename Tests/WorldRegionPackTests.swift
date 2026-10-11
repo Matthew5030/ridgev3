@@ -47,7 +47,9 @@ actor RegionTransferAudit {
         let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("ridge-region-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
-        let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
+        let published=try await WorldCatalogStore(cacheURL:cache).open(root:root)
+        // Keep the loose-file migration/repair regression independently covered.
+        let catalog=WorldCatalog(schemaVersion:published.schemaVersion,revision:published.revision,sources:published.sources.map { var source=$0;source.pack=nil;return source })
         let upgradeCache=cache.appendingPathComponent("legacy-catalogue")
         try FileManager.default.createDirectory(at:upgradeCache,withIntermediateDirectories:true)
         let oldSource=catalog.sources.first { $0.tileCount<256 }!
@@ -203,6 +205,7 @@ actor RegionTransferAudit {
         // country-sized scene or automatically fly to the centre of the pack.
         let model=WorldModel(cacheURL:cache)
         await model.configure(mode:"local",local:root.absoluteString)
+        model.catalog=catalog
         model.offerRegionDownload(incomplete)
         try await wait { model.checkingDownload }
         try check(model.regionPlan?.isEstimate==true && !model.checkingDownload && model.source==nil,"Model presents the download immediately without rendering or preflight")

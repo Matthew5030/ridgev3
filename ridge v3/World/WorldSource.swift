@@ -142,6 +142,8 @@ actor WorldSourceStore {
     private let cache: URL
     private var base: URL
     private var pins: Set<String> = []
+    private var sectionPack:WorldSectionPack.Reader?
+    private var packedSourceID:String?
     private var bytesSincePrune = 0
     private var writesSincePrune = 0
     private let diskLimit: Int64 = 2 * 1024 * 1024 * 1024
@@ -185,6 +187,8 @@ actor WorldSourceStore {
         }
         var source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
         if let routing { source.graph = routing }
+        packedSourceID=source.id
+        sectionPack=WorldSectionPack.open(sourceID:source.id,cache:cache)
         // Recover the outline of completed saves made before coverage receipts existed.
         if recoverCoverage { try? recordSavedCoverage(source.tiles, source:source) }
         return source
@@ -283,10 +287,15 @@ actor WorldSourceStore {
     /// alone never establish integrity for a download.
     func cachedAssetHashes(for assets: [WorldMapAsset]) throws -> Set<String> {
         var hashes=Set<String>()
+        if let sectionPack {
+            do { try sectionPack.verify() }
+            catch { self.sectionPack=nil }
+        }
         for asset in assets {
             try Task.checkCancellation()
             guard PackStore.safeName(asset.file), (1...64_000_000).contains(asset.byteCount),
                   asset.sha256.count == 64, asset.sha256.allSatisfy(\.isHexDigit) else { throw RidgeError.message("Invalid world asset.") }
+            if let sectionPack,sectionPack.contains(asset) { hashes.insert(asset.sha256);continue }
             let url=base.isFileURL ? base.appendingPathComponent(asset.file) : cache.appendingPathComponent(asset.sha256)
             let key=url.absoluteString+"|"+asset.sha256
             guard let values=try? url.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey,.creationDateKey]),
@@ -352,8 +361,15 @@ actor WorldSourceStore {
                 + [tile.map, WorldMapAsset(file:tile.mesh.path,byteCount:tile.mesh.byteCount,sha256:tile.mesh.sha256)]
         } + Self.assets(tiles:tiles,source:source,surroundings:surroundings)
         let assets = ordered.filter { seen.insert($0.sha256).inserted }
-        pins = try Self.reserve(Set(assets.map(\.sha256)),cache:cache)
         let cached=try cachedAssetHashes(for:assets)
+        if let sectionPack,assets.allSatisfy({ sectionPack.contains($0) && cached.contains($0.sha256) }) {
+            pins=try Self.reserve([sectionPack.asset.sha256],cache:cache)
+            try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
+            await progress(countCachedInProgress ? assets.reduce(0) { $0+Int64($1.byteCount) } : 0)
+            await assetProgress(cached,[])
+            return
+        }
+        pins = try Self.reserve(Set(assets.map(\.sha256)),cache:cache)
         let pending=assets.filter { !cached.contains($0.sha256) }
         try await withThrowingTaskGroup(of:(String,Int64).self) { group in
             var next = 0
@@ -388,8 +404,35 @@ actor WorldSourceStore {
         try Task.checkCancellation()
         try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
     }
+    func downloadPack(_ asset:WorldMapAsset,source:WorldSource,
+                      assetProgress:@escaping @Sendable (Set<String>,Set<String>) async -> Void,
+                      progress:@escaping @Sendable (Int64) async -> Void) async throws -> Int64 {
+        guard allowsNetwork,!base.isFileURL else { throw RidgeError.message("Connect to the map server to download this pack.") }
+        let tracker=WorldPackProgress(asset:asset,sourceID:source.id,cache:cache)
+        let count=try await WorldSectionPack.download(url:base.appendingPathComponent(asset.file),asset:asset,cache:cache) { received,transferred in
+            let (verified,active)=await tracker.update(received:received)
+            await progress(transferred);await assetProgress(verified,active)
+        }
+        try Task.checkCancellation()
+        let partial=WorldSectionPack.partial(asset,cache:cache)
+        do { try await tracker.finish(required:Self.assets(tiles:source.tiles,source:source)) }
+        catch { try? FileManager.default.removeItem(at:partial);throw error }
+        let final=WorldSectionPack.file(asset,cache:cache)
+        if FileManager.default.fileExists(atPath:final.path) { try FileManager.default.removeItem(at:final) }
+        try FileManager.default.moveItem(at:partial,to:final)
+        try WorldSectionPack.install(asset,sourceID:source.id,cache:cache)
+        sectionPack=try WorldSectionPack.Reader(url:final,asset:asset,sourceID:source.id)
+        pins=try Self.reserve([asset.sha256],cache:cache)
+        try recordSavedCoverage(source.tiles,source:source,coverageID:source.id)
+        return count
+    }
     private func recordSavedCoverage(_ tiles: [WorldTile], source: WorldSource, coverageID: String? = nil) throws {
         guard !base.isFileURL, !pins.isEmpty else { return }
+        if let sectionPack,Self.assets(tiles:tiles,source:source).allSatisfy({ sectionPack.contains($0) }),pins.contains(sectionPack.asset.sha256) {
+            let receiptAsset=WorldOfflineCoverage.Asset(hash:sectionPack.asset.sha256,bytes:sectionPack.asset.byteCount,packed:true)
+            try WorldOfflineCoverage.record(tiles.map { .init(bounds:$0.mesh.bounds,assets:[receiptAsset]) },at:cache,identifier:coverageID)
+            return
+        }
         var present: [String:Bool] = [:]
         let receipts = tiles.compactMap { tile -> WorldOfflineCoverage.Receipt? in
             let assets = [source.overview,source.graph,tile.map,
@@ -397,10 +440,17 @@ actor WorldSourceStore {
                 + [tile.background].compactMap { $0 }.map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) }
             guard assets.allSatisfy({ asset in
                 if let value=present[asset.sha256] { return value }
-                let value=asset.sha256.count==64 && asset.sha256.allSatisfy(\.isHexDigit) && pins.contains(asset.sha256) && (try? cache.appendingPathComponent(asset.sha256).resourceValues(forKeys:[.fileSizeKey]).fileSize)==asset.byteCount
+                let packed=sectionPack.flatMap { $0.contains(asset) ? $0.asset : nil }
+                let hash=packed?.sha256 ?? asset.sha256,bytes=packed?.byteCount ?? asset.byteCount
+                let file=packed.map { WorldSectionPack.file($0,cache:cache) } ?? cache.appendingPathComponent(hash)
+                let value=hash.count==64 && hash.allSatisfy(\.isHexDigit) && pins.contains(hash) && (try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize)==bytes
                 present[asset.sha256]=value;return value
             }) else { return nil }
-            return .init(bounds:tile.mesh.bounds,assets:assets.map { .init(hash:$0.sha256,bytes:$0.byteCount) })
+            let receipts=assets.map { asset -> WorldOfflineCoverage.Asset in
+                if let sectionPack,sectionPack.contains(asset) { return .init(hash:sectionPack.asset.sha256,bytes:sectionPack.asset.byteCount,packed:true) }
+                return .init(hash:asset.sha256,bytes:asset.byteCount)
+            }
+            return .init(bounds:tile.mesh.bounds,assets:Array(Set(receipts)))
         }
         try WorldOfflineCoverage.record(receipts,at:cache,identifier:coverageID)
     }
@@ -431,8 +481,16 @@ actor WorldSourceStore {
         if base.isFileURL {
             let data = try Data(contentsOf: base.appendingPathComponent(asset.file)); guard checked(data) else { throw RidgeError.message("A bundled world file is damaged.") }; return data
         }
+        if let sectionPack,sectionPack.contains(asset) {
+            do { return try sectionPack.read(asset) }
+            catch { self.sectionPack=nil } // A repair may have replaced the open inode.
+        }
         if let data = try? Data(contentsOf: saved), checked(data) {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: saved.path); return data
+        }
+        // Another download actor can install a pack while this landscape lives.
+        if let packedSourceID,let installed=WorldSectionPack.open(sourceID:packedSourceID,cache:cache),installed.contains(asset) {
+            sectionPack=installed;return try installed.read(asset)
         }
         guard allowsNetwork else { throw RidgeError.message("A downloaded map file is missing. Download this area again while connected.") }
         var request = URLRequest(url: base.appendingPathComponent(asset.file)); request.timeoutInterval = 20

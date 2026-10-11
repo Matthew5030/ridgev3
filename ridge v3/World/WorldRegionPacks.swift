@@ -207,7 +207,7 @@ struct WorldRegionDownloadPlan: Sendable {
         let parts=regions.map { region in
             // Published folder sizes may predate the connected-path sidecar.
             // Include it conservatively; duplicate/cached bytes are skipped later.
-            Part(region:region,missingBytes:region.downloadBytes!+Int64(region.routing?.byteCount ?? 0))
+            Part(region:region,missingBytes:region.pack.map { Int64($0.byteCount) } ?? (region.downloadBytes!+Int64(region.routing?.byteCount ?? 0)))
         }
         let total=parts.reduce(Int64(0)) { $0+$1.missingBytes }
         return Self(pack:pack,root:root,parts:parts,bytes:total,totalBytes:total,
@@ -283,10 +283,17 @@ actor WorldRegionDownloadStore {
             let (files,source)=try await open(region,root:root)
             let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
             let cached=try await files.cachedAssetHashes(for:assets)
-            var missing:Int64=0
+            var missing:Int64=0,rawSectionBytes:Int64=0
             for asset in assets where seen.insert(asset.sha256).inserted {
-                total += Int64(asset.byteCount)
+                total += Int64(asset.byteCount);rawSectionBytes+=Int64(asset.byteCount)
                 if !cached.contains(asset.sha256) { missing += Int64(asset.byteCount) }
+            }
+            if let pack=region.pack {
+                total+=Int64(pack.byteCount)-rawSectionBytes
+                // Wire size includes the indexed container; decoded asset sizes
+                // are not a download estimate for compressed JSON entries.
+                let fresh=assets.filter { !cached.contains($0.sha256) }
+                if WorldSectionPack.useBundle(pack,missing:fresh) { missing=WorldSectionPack.remainingBytes(pack,cache:cache) }
             }
             parts.append(.init(region:region,missingBytes:missing));tiles+=source.tiles.count
             await progress(parts.count,regions.count)
@@ -305,26 +312,31 @@ actor WorldRegionDownloadStore {
         for (index,part) in plan.parts.enumerated() {
             try Task.checkCancellation()
             let (files,source)=try await open(part.region,root:plan.root)
-            let missing:Int64
-            if plan.isEstimate {
-                let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
-                let cached=try await files.cachedAssetHashes(for:assets)
-                missing=assets.filter { !cached.contains($0.sha256) }.reduce(0) { $0+Int64($1.byteCount) }
-                if missing>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
-                   capacity<missing+256*1024*1024 { throw RidgeError.message("There isn’t enough free space. Completed sections are kept; free some storage to continue.") }
-            } else { missing=part.missingBytes }
+            let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
+            let cached=try await files.cachedAssetHashes(for:assets)
+            let fresh=assets.filter { !cached.contains($0.sha256) }
+            let bundle=part.region.pack.flatMap { WorldSectionPack.useBundle($0,missing:fresh) ? $0 : nil }
+            let missing=bundle.map { WorldSectionPack.remainingBytes($0,cache:cache) } ?? fresh.reduce(Int64(0)) { $0+Int64($1.byteCount) }
+            if missing>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
+               capacity<missing+256*1024*1024 { throw RidgeError.message("There isn’t enough free space. Completed sections are kept; free some storage to continue.") }
             if missing>0 && !checkedConnection { try await files.checkDownloadConnection();checkedConnection=true }
             let base=completed
             let reporter=WorldRegionTileReporter(source:source,savedFills:savedFills,savedTileCount:savedTileCount,report:tileProgress)
-            try await files.pin(source.tiles,source:source,countCachedInProgress:false,coverageID:source.id,assetProgress: { verified,active in
-                await reporter.update(verified:verified,active:active)
-            },progress: { bytes in
-                await progress(plan.isEstimate ? base+bytes : min(plan.bytes,base+bytes),index)
-            })
+            let transferred:Int64
+            if let bundle {
+                transferred=try await files.downloadPack(bundle,source:source,assetProgress: { verified,active in
+                    await reporter.update(verified:verified,active:active)
+                },progress: { bytes in await progress(base+bytes,index) })
+            } else {
+                try await files.pin(source.tiles,source:source,countCachedInProgress:false,coverageID:source.id,assetProgress: { verified,active in
+                    await reporter.update(verified:verified,active:active)
+                },progress: { bytes in await progress(base+bytes,index) })
+                transferred=missing
+            }
             savedFills=WorldOfflineCoverage.displayBounds(savedFills+source.tiles.map { $0.mesh.bounds })
             savedTileCount+=source.tiles.count
-            completed+=missing
-            await progress(plan.isEstimate ? completed : min(plan.bytes,completed),index+1)
+            completed+=transferred
+            await progress(completed,index+1)
         }
         try Task.checkCancellation()
     }

@@ -3,7 +3,7 @@ import Foundation
 /// Completed, pinned downloads only. Cache residency and rendered tiles are not
 /// evidence that a landscape will still be available on the next offline trip.
 enum WorldOfflineCoverage {
-    struct Asset: Codable, Hashable { var hash: String; var bytes: Int }
+    struct Asset: Codable, Hashable { var hash: String; var bytes: Int; var packed:Bool? = nil }
     struct Receipt: Codable { var bounds: GeoBounds; var assets: [Asset] }
     struct Edge: Equatable, Sendable {
         var start: GeoPoint
@@ -51,8 +51,9 @@ enum WorldOfflineCoverage {
         return receipts(at:cache).filter { receipt in
             receipt.bounds.isValid && !receipt.assets.isEmpty && receipt.assets.allSatisfy { asset in
                 if let value = present[asset] { return value }
+                let file=asset.packed == true ? WorldSectionPack.directory(cache).appendingPathComponent(asset.hash+".ridgepack") : cache.appendingPathComponent(asset.hash)
                 let valid = asset.hash.count == 64 && asset.hash.allSatisfy(\.isHexDigit) && pins.contains(asset.hash)
-                    && (try? cache.appendingPathComponent(asset.hash).resourceValues(forKeys:[.fileSizeKey]).fileSize) == asset.bytes
+                    && (try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize) == asset.bytes
                 present[asset] = valid
                 return valid
             }

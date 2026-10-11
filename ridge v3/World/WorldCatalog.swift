@@ -67,14 +67,17 @@ struct WorldCatalog: Decodable, Sendable {
         /// Actual holes within the source rectangle; an empty list certifies
         /// complete coverage. Older sparse catalogues cannot certify this.
         var missingTerrain: [GeoBounds]? = nil
+        var pack: WorldMapAsset? = nil
     }
     let schemaVersion: Int
     let revision: String
     let sources: [Region]
+    var packVersion:Int? = nil
     func validate() throws {
         guard schemaVersion == 1, !revision.isEmpty, sources.count <= 20_000,
               Set(sources.map(\.id)).count == sources.count else { throw RidgeError.message("Unsupported map catalogue.") }
         for region in sources {
+            if let pack=region.pack,!WorldSectionPack.valid(pack) { throw RidgeError.message("Invalid section pack in catalogue.") }
             if let gaps=region.missingTerrain {
                 guard gaps.count<=256,gaps.allSatisfy({ $0.isValid &&
                     $0.minLongitude>=region.bounds.minLongitude-1e-8 && $0.maxLongitude<=region.bounds.maxLongitude+1e-8 &&
@@ -111,10 +114,10 @@ actor WorldCatalogStore {
             guard data.count < 16_000_000 else { throw RidgeError.message("The map catalogue is too large.") }
             let value = try JSONDecoder().decode(WorldCatalog.self, from: data); try value.validate(); return value
         }
-        // Upgrade cached catalogues that predate explicit coverage holes. If
+        // Upgrade catalogues predating coverage holes or complete pack publication. If
         // offline, the fallback below still opens them conservatively.
         if preferCached, let data=try? Data(contentsOf:saved),let value=try? decode(data),
-           value.sources.allSatisfy({ $0.missingTerrain != nil || $0.tileCount==256 }) { return value }
+           value.packVersion==1,value.sources.allSatisfy({ $0.pack != nil && ($0.missingTerrain != nil || $0.tileCount==256) }) { return value }
         do {
             var request = URLRequest(url: url); request.timeoutInterval = 10
             let (file, response) = try await URLSession.shared.download(for: request)

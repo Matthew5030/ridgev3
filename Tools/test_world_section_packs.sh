@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+TEST=$(mktemp -d /tmp/ridge-world-test.XXXXXX)
+python3 "$ROOT/Tests/pack_http_fixture.py" "$TEST/port" &
+FIXTURE_PID=$!
+trap 'kill "$FIXTURE_PID" 2>/dev/null || true; rm -rf "$TEST"' EXIT HUP INT TERM
+while [ ! -f "$TEST/port" ]; do sleep 0.1; done
+export RIDGE_PACK_FIXTURE_PORT=$(cat "$TEST/port")
+xcrun swiftc -swift-version 5 -O -parse-as-library \
+ "$ROOT/ridge v3/Core/Models.swift" "$ROOT/ridge v3/Core/AdaptiveTerrain.swift" \
+ "$ROOT/ridge v3/Core/AdaptiveArea.swift" "$ROOT/ridge v3/Core/CartographyAtlas.swift" \
+ "$ROOT/ridge v3/Core/TileGrid.swift" "$ROOT/ridge v3/Core/TerrainBudget.swift" \
+ "$ROOT/ridge v3/Core/PackStore.swift" "$ROOT/ridge v3/Core/AdaptivePackStore.swift" \
+ "$ROOT/ridge v3/Core/RouteEngine.swift" \
+ "$ROOT/ridge v3/World/WorldPreview.swift" "$ROOT/ridge v3/World/WorldSource.swift" "$ROOT/ridge v3/World/WorldSectionPack.swift" "$ROOT/ridge v3/World/WorldOfflineCoverage.swift" "$ROOT/ridge v3/World/WorldCartography.swift" \
+ "$ROOT/ridge v3/World/WorldGeometry.swift" "$ROOT/ridge v3/World/WorldCameraTransition.swift" "$ROOT/ridge v3/Core/TerrainNavigation.swift" "$ROOT/ridge v3/World/WorldCatalog.swift" "$ROOT/ridge v3/World/WorldLandscape.swift" "$ROOT/ridge v3/World/WorldAtlasIndex.swift" "$ROOT/ridge v3/World/WorldDistantTerrain.swift" "$ROOT/ridge v3/World/WorldRegionPacks.swift" "$ROOT/ridge v3/World/WorldModel.swift" "$ROOT/Tests/WorldSectionPackTests.swift" -o "$TEST/run"
+"$TEST/run" "$ROOT/ridge v3/Resources/WorldData.bundle" "$@"
