@@ -18,15 +18,31 @@ enum WorldOfflineCoverage {
         override ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("WorldCache",isDirectory:true)
     }
     private static let lock = NSLock()
-    private static func receipts(at cache: URL) -> [Receipt] {
-        (try? JSONDecoder().decode([Receipt].self,from:Data(contentsOf:cache.appendingPathComponent("offline-coverage.json")))) ?? []
+    private static func receipts(in file: URL) -> [Receipt] {
+        (try? JSONDecoder().decode([Receipt].self,from:Data(contentsOf:file))) ?? []
     }
-    static func record(_ additions: [Receipt], at cache: URL) throws {
+    private static func receipts(at cache: URL) -> [Receipt] {
+        // Keep legacy custom-area receipts readable. Big region saves write one
+        // small receipt per source instead of rewriting the entire UK per block.
+        var result=Dictionary(receipts(in:cache.appendingPathComponent("offline-coverage.json")).map { ($0.bounds,$0) },uniquingKeysWith: { _,new in new })
+        let directory=cache.appendingPathComponent("offline-regions",isDirectory:true)
+        for file in (try? FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil)) ?? [] where file.pathExtension=="json" {
+            for receipt in receipts(in:file) { result[receipt.bounds]=receipt }
+        }
+        return Array(result.values)
+    }
+    static func record(_ additions: [Receipt], at cache: URL, identifier: String? = nil) throws {
         guard !additions.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }
-        var current = Dictionary(receipts(at:cache).map { ($0.bounds,$0) },uniquingKeysWith: { _,new in new })
+        let file:URL
+        if let identifier {
+            let directory=cache.appendingPathComponent("offline-regions",isDirectory:true)
+            try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+            file=directory.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(identifier.utf8))+".json")
+        } else { file=cache.appendingPathComponent("offline-coverage.json") }
+        var current = Dictionary(receipts(in:file).map { ($0.bounds,$0) },uniquingKeysWith: { _,new in new })
         for receipt in additions { current[receipt.bounds] = receipt }
-        try JSONEncoder().encode(Array(current.values)).write(to:cache.appendingPathComponent("offline-coverage.json"),options:.atomic)
+        try JSONEncoder().encode(Array(current.values)).write(to:file,options:.atomic)
     }
     static func savedBounds(at cache: URL) -> [GeoBounds] {
         lock.lock(); defer { lock.unlock() }

@@ -23,6 +23,12 @@ import CoreGraphics
     var completedDownloadTiles = Set<GeoBounds>()
     var activeDownloadTiles = Set<GeoBounds>()
     var downloadPlan: WorldDownloadPlan?
+    var downloadRegion: WorldRegionPack?
+    var regionPlan: WorldRegionDownloadPlan?
+    var regionChecked = 0
+    var regionTotal = 0
+    var regionSaved = 0
+    var regionComplete = false
     var checkingDownload = false
     var downloadedBytes: Int64 = 0
     var downloadError: String?
@@ -330,6 +336,7 @@ import CoreGraphics
     /// Metadata inspection is allowed here; the transfer waits for confirmation.
     func offerDownload(at point: GeoPoint, radius: Double? = nil, selection: GeoBounds? = nil) {
         guard !isSavingOffline else { return }
+        downloadRegion=nil;regionPlan=nil;regionComplete=false
         cancelRegionLoad();downloadGeneration+=1;let ticket=downloadGeneration
         downloadTask?.cancel();downloadPlan=nil;downloadError=nil;downloadedBytes=0
         downloadCenter=point;downloadRadius=radius ?? downloadRadius;downloadSelection=selection
@@ -402,8 +409,71 @@ import CoreGraphics
         guard ticket==downloadGeneration else { return }
         downloadedBytes=bytes
     }
+    /// Regional saves never install a scene or move the camera. The user picks
+    /// where to explore after the files are safely on disk.
+    func offerRegionDownload(_ pack: WorldRegionPack) {
+        guard !isSavingOffline else { return }
+        cancelDownload();cancelRegionLoad()
+        downloadRegion=pack;regionChecked=0;regionSaved=0;regionComplete=false
+        guard let catalog,let root=libraryRoot else { downloadError="Connect to a map source in Settings first.";return }
+        regionTotal=pack.sources(in:catalog).count
+        checkingDownload=true;let ticket=downloadGeneration
+        let downloads=WorldRegionDownloadStore(cacheURL:cacheURL)
+        downloadTask=Task { [weak self] in
+            do {
+                let plan=try await downloads.plan(pack:pack,catalog:catalog,root:root) { [weak self] checked,total in
+                    await self?.receiveRegionCheck(checked,total:total,ticket:ticket)
+                }
+                try Task.checkCancellation()
+                guard let self,ticket==downloadGeneration else { return }
+                regionPlan=plan;checkingDownload=false;downloadTask=nil
+            } catch {
+                guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
+                checkingDownload=false;downloadError=error.localizedDescription;downloadTask=nil
+            }
+        }
+    }
+    private func receiveRegionCheck(_ checked:Int,total:Int,ticket:Int) {
+        guard ticket==downloadGeneration else { return }
+        regionChecked=checked;regionTotal=total
+    }
+    private func receiveRegionProgress(_ bytes:Int64,saved:Int,ticket:Int) {
+        guard ticket==downloadGeneration else { return }
+        isConnectingDownload=false;downloadedBytes=bytes;regionSaved=saved
+    }
+    func downloadRegionPack() {
+        guard let plan=regionPlan,!isSavingOffline else { return }
+        downloadGeneration+=1;let ticket=downloadGeneration
+        isSavingOffline=true;isConnectingDownload=plan.bytes>0;downloadedBytes=0;downloadError=nil;regionSaved=0
+        let downloads=WorldRegionDownloadStore(cacheURL:cacheURL)
+        downloadTask=Task { [weak self] in
+            do {
+                try await downloads.download(plan) { [weak self] bytes,saved in
+                    await self?.receiveRegionProgress(bytes,saved:saved,ticket:ticket)
+                }
+                try Task.checkCancellation()
+                guard let self,ticket==downloadGeneration else { return }
+                await reloadOfflineCoverage()
+                guard ticket==downloadGeneration,!Task.isCancelled else { return }
+                isSavingOffline=false;isConnectingDownload=false;regionComplete=true;downloadTask=nil
+            } catch {
+                guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
+                isSavingOffline=false;isConnectingDownload=false;downloadTask=nil;regionPlan=nil
+                downloadError=error.localizedDescription+" Completed files are kept. Check the remaining download to continue."
+                await reloadOfflineCoverage()
+            }
+        }
+    }
+    func pauseRegionDownload() {
+        guard downloadRegion != nil else { return }
+        downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
+        isSavingOffline=false;isConnectingDownload=false;checkingDownload=false;regionPlan=nil
+        downloadError="Paused. Completed files are kept. Check the remaining download to continue."
+        refreshOfflineCoverage()
+    }
     func cancelDownload() {
         let wasSaving=isSavingOffline
+        downloadRegion=nil;regionPlan=nil;regionComplete=false;regionChecked=0;regionSaved=0;regionTotal=0
         downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
         drawingDownload=false;downloadSelection=nil;completedDownloadTiles=[];activeDownloadTiles=[]
         checkingDownload=false;isSavingOffline=false;isConnectingDownload=false;downloadCenter=nil;downloadPlan=nil;downloadError=nil;downloadedBytes=0

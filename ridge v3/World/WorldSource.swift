@@ -154,7 +154,7 @@ actor WorldSourceStore {
         var url = cache; var values = URLResourceValues(); values.isExcludedFromBackup = true; try? url.setResourceValues(values)
         if let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")), let saved = try? JSONDecoder().decode(Set<String>.self, from: data) { pins = saved }
     }
-    func manifest(address: String, routing: WorldMapAsset? = nil, preferCached: Bool = false) async throws -> WorldSource {
+    func manifest(address: String, routing: WorldMapAsset? = nil, preferCached: Bool = false, recoverCoverage: Bool = true) async throws -> WorldSource {
         let manifest: Data
         if address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             base = bundled; manifest = try Data(contentsOf: bundled.appendingPathComponent("world.json"))
@@ -186,7 +186,7 @@ actor WorldSourceStore {
         var source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
         if let routing { source.graph = routing }
         // Recover the outline of completed saves made before coverage receipts existed.
-        try? recordSavedCoverage(source.tiles, source:source)
+        if recoverCoverage { try? recordSavedCoverage(source.tiles, source:source) }
         return source
     }
     func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
@@ -344,7 +344,7 @@ actor WorldSourceStore {
             throw error
         }
     }
-    func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = [], countCachedInProgress: Bool = true, assetProgress: @Sendable (Set<String>, Set<String>) async -> Void = { _,_ in }, progress: @Sendable (Int64) async -> Void = { _ in }) async throws {
+    func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = [], countCachedInProgress: Bool = true, coverageID: String? = nil, assetProgress: @Sendable (Set<String>, Set<String>) async -> Void = { _,_ in }, progress: @Sendable (Int64) async -> Void = { _ in }) async throws {
         // Keep each tile's files together so usable tiles complete throughout a download.
         var seen = Set<String>()
         let ordered = [source.overview, source.graph] + tiles.flatMap { tile in
@@ -378,9 +378,9 @@ actor WorldSourceStore {
             }
         }
         try Task.checkCancellation()
-        try recordSavedCoverage(tiles,source:source)
+        try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
     }
-    private func recordSavedCoverage(_ tiles: [WorldTile], source: WorldSource) throws {
+    private func recordSavedCoverage(_ tiles: [WorldTile], source: WorldSource, coverageID: String? = nil) throws {
         guard !base.isFileURL, !pins.isEmpty else { return }
         var present: [String:Bool] = [:]
         let receipts = tiles.compactMap { tile -> WorldOfflineCoverage.Receipt? in
@@ -394,7 +394,7 @@ actor WorldSourceStore {
             }) else { return nil }
             return .init(bounds:tile.mesh.bounds,assets:assets.map { .init(hash:$0.sha256,bytes:$0.byteCount) })
         }
-        try WorldOfflineCoverage.record(receipts,at:cache)
+        try WorldOfflineCoverage.record(receipts,at:cache,identifier:coverageID)
     }
     /// Fetch at most six files at a time. Geometry and image work stays serial.
     private func prefetch(_ assets: [WorldMapAsset]) async throws {
@@ -434,7 +434,12 @@ actor WorldSourceStore {
         guard try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize == asset.byteCount else { throw RidgeError.message("Incomplete map download.") }
         let data = try Data(contentsOf: temporary)
         guard (response as? HTTPURLResponse)?.statusCode == 200, checked(data) else { throw RidgeError.message("A map file is incomplete. Move back to retry.") }
-        try data.write(to: saved, options: .atomic); prune(protecting: asset.sha256, writtenBytes:data.count); return data
+        try data.write(to: saved, options: .atomic)
+        // Explicit downloads reserve these files before transfer. Scanning the
+        // whole cache every few MB cannot evict them and becomes quadratic for
+        // regional packs. Only opportunistic, unpinned writes need cache pruning.
+        if !pins.contains(asset.sha256) { prune(protecting:asset.sha256,writtenBytes:data.count) }
+        return data
     }
     private func refreshPins() {
         if let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")),
