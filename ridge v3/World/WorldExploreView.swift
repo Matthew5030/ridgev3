@@ -34,9 +34,14 @@ struct WorldExploreView: View {
                 WorldScene(model: world, route: store.activeRoute?.points ?? [], segments: store.activeRoute?.segments.map(\.points) ?? [], waypoints: store.activeRoute?.waypoints ?? [], command: store.camera,
                     onTap: tapped, onAtlas: leaveWorld, atlasRequest:atlasRequest).ignoresSafeArea(edges: .bottom)
             } else {
-                OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: false,
-                    selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: false,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.previewBounds, worldPreview:world.preview, onWorldTap: visit, worldOfflineBounds:world.offlineBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:world.downloadPlan?.edges ?? [])
+                OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: world.drawingDownload && !world.isSavingOffline,
+                    selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: world.downloadError == nil,
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.previewBounds, worldPreview:world.preview, onWorldTap: visit, worldOfflineBounds:world.offlineBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:dragging ? [] : world.downloadPlan?.edges ?? [],
+                    worldDownloadTiles:dragging ? [] : world.downloadPlan?.bounds ?? [],
+                    worldCompletedTiles:world.completedDownloadTiles,worldActiveTiles:world.activeDownloadTiles,
+                    worldDownloading:world.isSavingOffline,onSelectionFinished: { bounds in
+                        world.offerDownload(at:bounds.center,selection:bounds)
+                    })
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
@@ -75,7 +80,7 @@ struct WorldExploreView: View {
                                 Button("Downloaded maps",systemImage:"map") { atlasRequest=UUID() }
                             } label: { Image(systemName:"ellipsis").frame(width:42,height:42).background(.regularMaterial,in:Circle()) }
                         }
-                    } else {
+                    } else if world.downloadCenter == nil {
                         VStack(alignment:.leading,spacing:10) {
                             Text("Explore the mountains").font(.headline)
                             Text("Choose a place and download its map. Then explore in 3D without a connection.").font(.subheadline)
@@ -197,15 +202,25 @@ struct WorldExploreView: View {
             HStack {
                 Text(world.isSavingOffline ? (world.downloadPlan?.bytes == 0 ? "Preparing saved map" : "Downloading map") : "Download this area").font(.headline)
                 Spacer()
-                Button(world.isSavingOffline ? "Cancel download" : "Cancel") { world.cancelDownload() }
+                Button(world.isSavingOffline ? "Cancel download" : "Cancel") { selection=nil;world.cancelDownload() }
             }
             if !world.isSavingOffline {
+                Picker("Select an area",selection:Binding(get:{world.drawingDownload},set:{ enabled in
+                    selection=nil;world.setDrawingDownload(enabled)
+                })) {
+                    Text("Around a place").tag(false);Text("Draw area").tag(true)
+                }.pickerStyle(.segmented)
+                if world.drawingDownload {
+                    Text("Drag a rectangle, or tap two opposite corners. Drag the corners to resize. Two fingers move the map.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    if let selection { Text(String(format:"%.1f × %.1f km",selection.widthMeters/1000,selection.depthMeters/1000)).font(.caption.monospacedDigit()) }
+                } else {
                 Text("Tap the map to move the area. Size is the distance across.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 Picker("Area size",selection:Binding(get:{Int(world.downloadRadius)},set:{ radius in
                     if let point=world.downloadCenter { world.offerDownload(at:point,radius:Double(radius)) }
                 })) {
                     Text("8 km").tag(4000);Text("16 km").tag(8000);Text("24 km").tag(12000)
                 }.pickerStyle(.segmented)
+                }
             }
             if world.checkingDownload { ProgressView("Checking download size…") }
             else if let plan=world.downloadPlan {
@@ -215,17 +230,21 @@ struct WorldExploreView: View {
                         ProgressView(value:Double(world.downloadedBytes),total:Double(plan.bytes))
                         Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.caption.monospacedDigit())
                     }
-                    Text("Terrain, maps and walking paths. 3D opens when everything is ready.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    HStack(spacing:8) {
+                        Image(systemName:"square.grid.3x3.fill").foregroundStyle(RidgeTheme.forest)
+                        Text("\(world.completedDownloadTiles.count) of \(plan.bounds.count) tiles ready").monospacedDigit()
+                    }.font(.subheadline).accessibilityLabel("\(world.completedDownloadTiles.count) of \(plan.bounds.count) tiles ready")
+                    Text("Amber tiles are loading. Green ticks mean ready. 3D opens when the whole area is saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 } else {
                     Text(plan.bytes == 0 ? "Files already on this device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.subheadline.weight(.medium))
-                    Text("The outlined area will be kept on this device for offline use.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Text("\(plan.bounds.count) tiles · The outline follows the tiles that will be saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     Button(world.downloadError != nil ? "Resume download" : plan.bytes == 0 ? "Open in 3D" : "Download and open in 3D") { world.downloadAndOpen() }
-                        .buttonStyle(.borderedProminent).foregroundStyle(.white)
+                        .buttonStyle(.borderedProminent).foregroundStyle(.white).disabled(dragging)
                 }
             }
             if let error=world.downloadError {
                 Text(error).font(.caption)
-                if world.downloadPlan == nil { Button("Retry") { if let point=world.downloadCenter { world.offerDownload(at:point) } } }
+                if world.downloadPlan == nil { Button("Retry") { if let point=world.downloadCenter { world.offerDownload(at:point,selection:world.downloadSelection) } } }
             }
         }.padding(16).frame(maxWidth:500).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }
@@ -233,10 +252,10 @@ struct WorldExploreView: View {
         searchFocused=false
         let point=world.in3D ? world.center : visibleBounds?.center ?? focus.point
         if world.in3D { atlasRequest=UUID() }
-        world.offerDownload(at:point)
+        selection=nil;world.cancelDownload();world.offerDownload(at:point)
     }
     private func previewDownload() {
-        guard !world.in3D,let point=world.downloadCenter else { return }
+        guard !world.in3D,!world.drawingDownload,let point=world.downloadCenter else { return }
         let bounds=WorldCameraTransition.viewport(center:point,span:world.downloadRadius*2.7,aspect:Double(mapSize.width/max(1,mapSize.height)))
         focus=AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
     }
@@ -283,7 +302,7 @@ struct WorldExploreView: View {
     private func visit(_ point:GeoPoint) {
         guard !world.isSavingOffline else { return }
         query = "";searchFocused=false
-        if world.downloadCenter != nil { world.offerDownload(at:point);return }
+        if world.downloadCenter != nil { if !world.drawingDownload { world.offerDownload(at:point) };return }
         if world.in3D {
             world.visit(point)
             return

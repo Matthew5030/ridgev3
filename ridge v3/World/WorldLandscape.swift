@@ -269,6 +269,7 @@ struct WorldDownloadPlan: Sendable {
     }
     let center: GeoPoint
     let radius: Double
+    let selection: GeoBounds?
     let parts: [Part]
     let bytes: Int64
     let bounds: [GeoBounds]
@@ -278,15 +279,27 @@ struct WorldDownloadPlan: Sendable {
 actor WorldDownloadStore {
     private let cache: URL
     init(cacheURL: URL? = nil) { cache=WorldOfflineCoverage.cache(cacheURL) }
-    func plan(center: GeoPoint, radius: Double, catalog: WorldCatalog, root: URL) async throws -> WorldDownloadPlan {
+    func plan(center: GeoPoint, radius: Double, catalog: WorldCatalog, root: URL, selection: GeoBounds? = nil) async throws -> WorldDownloadPlan {
+        if let selection {
+            guard selection.isValid, selection.widthMeters <= 24_000, selection.depthMeters <= 24_000 else {
+                throw RidgeError.message("Draw an area up to 24 km across. Zoom in or move the corners closer together.")
+            }
+        }
+        func includes(_ bounds: GeoBounds) -> Bool {
+            if let selection {
+                return bounds.minLatitude < selection.maxLatitude && bounds.maxLatitude > selection.minLatitude
+                    && bounds.minLongitude < selection.maxLongitude && bounds.maxLongitude > selection.minLongitude
+            }
+            return WorldWindow.distance(center,to:bounds)<=radius
+        }
         guard (400...12000).contains(radius),catalog.region(at:center) != nil else { throw RidgeError.message("Detailed terrain is not available here.") }
         var parts: [WorldDownloadPlan.Part] = [], bounds: [GeoBounds] = [], seen=Set<String>()
-        for region in catalog.sources.filter({ WorldWindow.distance(center,to:$0.bounds)<=radius }) {
+        for region in catalog.sources.filter({ includes($0.bounds) }) {
             try Task.checkCancellation()
             let files=WorldSourceStore(cacheURL:cache)
             var source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true)
             guard source.id==region.id, source.bounds==region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
-            source.tiles=source.tiles.filter { WorldWindow.distance(center,to:$0.mesh.bounds)<=radius }
+            source.tiles=source.tiles.filter { includes($0.mesh.bounds) }
             guard !source.tiles.isEmpty else { continue }
             let assets=WorldSourceStore.assets(tiles:source.tiles,source:source).filter { seen.insert($0.sha256).inserted }
             let cached=try await files.cachedBytes(for:assets)
@@ -295,16 +308,27 @@ actor WorldDownloadStore {
             bounds += source.tiles.map { $0.mesh.bounds }
         }
         guard bounds.contains(where:{$0.contains(center)}) else { throw RidgeError.message("Detailed terrain is missing at this location. Choose a nearby area.") }
-        return WorldDownloadPlan(center:center,radius:radius,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },bounds:bounds,edges:WorldOfflineCoverage.outline(bounds))
+        return WorldDownloadPlan(center:center,radius:radius,selection:selection,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },bounds:bounds,edges:WorldOfflineCoverage.outline(bounds))
     }
-    func download(_ plan: WorldDownloadPlan, progress: @escaping @Sendable (Int64) async -> Void) async throws {
+    func download(_ plan: WorldDownloadPlan, tilesProgress: @escaping @Sendable (Set<GeoBounds>,Set<GeoBounds>) async -> Void = { _,_ in }, progress: @escaping @Sendable (Int64) async -> Void) async throws {
         var completed: Int64=0
+        var ready=Set<GeoBounds>()
         for part in plan.parts {
             try Task.checkCancellation()
-            let base=completed
-            try await part.files.pin(part.source.tiles,source:part.source,countCachedInProgress:false) { value in
+            let base=completed, previous=ready
+            try await part.files.pin(part.source.tiles,source:part.source,countCachedInProgress:false,assetProgress: { verified,active in
+                var done=previous, loading=Set<GeoBounds>()
+                for tile in part.source.tiles {
+                    let own=Set([tile.map.sha256,tile.mesh.sha256] + [tile.background?.sha256].compactMap { $0 })
+                    let required=own.union([part.source.overview.sha256,part.source.graph.sha256])
+                    if required.isSubset(of:verified) { done.insert(tile.mesh.bounds) }
+                    else if !own.isDisjoint(with:active) || own.isSubset(of:verified) { loading.insert(tile.mesh.bounds) }
+                }
+                await tilesProgress(done,loading)
+            }) { value in
                 await progress(min(plan.bytes,base+value))
             }
+            ready.formUnion(part.source.tiles.map { $0.mesh.bounds })
             completed += part.missingBytes
             await progress(min(plan.bytes,completed))
         }

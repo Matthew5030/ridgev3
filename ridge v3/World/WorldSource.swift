@@ -294,23 +294,34 @@ actor WorldSourceStore {
         try JSONEncoder().encode(merged).write(to:url,options:.atomic)
         return merged
     }
-    func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = [], countCachedInProgress: Bool = true, progress: @Sendable (Int64) async -> Void = { _ in }) async throws {
-        let assets = Self.assets(tiles:tiles,source:source,surroundings:surroundings)
+    func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = [], countCachedInProgress: Bool = true, assetProgress: @Sendable (Set<String>, Set<String>) async -> Void = { _,_ in }, progress: @Sendable (Int64) async -> Void = { _ in }) async throws {
+        // Keep each tile's files together so usable tiles complete throughout a download.
+        var seen = Set<String>()
+        let ordered = [source.overview, source.graph] + tiles.flatMap { tile in
+            [tile.background].compactMap { $0 }.map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) }
+                + [tile.map, WorldMapAsset(file:tile.mesh.path,byteCount:tile.mesh.byteCount,sha256:tile.mesh.sha256)]
+        } + Self.assets(tiles:tiles,source:source,surroundings:surroundings)
+        let assets = ordered.filter { seen.insert($0.sha256).inserted }
         pins = try Self.reserve(Set(assets.map(\.sha256)),cache:cache)
-        try await withThrowingTaskGroup(of:Int64.self) { group in
+        try await withThrowingTaskGroup(of:(String,Int64).self) { group in
             var next = 0, completed: Int64 = 0
+            var verified=Set<String>(), active=Set<String>()
             func add(_ asset: WorldMapAsset) {
+                active.insert(asset.sha256)
                 group.addTask {
                     let cached = countCachedInProgress ? 0 : try await self.cachedBytes(for:[asset])
                     _ = try await self.read(asset,maximumBytes:asset.file == source.graph.file ? 64_000_000 : 32_000_000)
-                    return Int64(asset.byteCount) - cached
+                    return (asset.sha256, Int64(asset.byteCount) - cached)
                 }
             }
             for _ in 0..<min(6,assets.count) { add(assets[next]); next += 1 }
-            while let bytes = try await group.next() {
+            await assetProgress(verified,active)
+            while let (hash,bytes) = try await group.next() {
                 try Task.checkCancellation()
+                verified.insert(hash); active.remove(hash)
                 completed += bytes; await progress(completed)
                 if next < assets.count { add(assets[next]); next += 1 }
+                await assetProgress(verified,active)
             }
         }
         try Task.checkCancellation()

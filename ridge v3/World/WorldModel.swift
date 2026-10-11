@@ -20,6 +20,10 @@ import CoreGraphics
     @ObservationIgnored private var downloadGeneration = 0
     var downloadCenter: GeoPoint?
     var downloadRadius = 8000.0
+    var drawingDownload = false
+    var downloadSelection: GeoBounds?
+    var completedDownloadTiles = Set<GeoBounds>()
+    var activeDownloadTiles = Set<GeoBounds>()
     var downloadPlan: WorldDownloadPlan?
     var checkingDownload = false
     var downloadedBytes: Int64 = 0
@@ -318,11 +322,12 @@ import CoreGraphics
         message = "Detail reduced to free memory."; pump()
     }
     /// Metadata inspection is allowed here; the transfer waits for confirmation.
-    func offerDownload(at point: GeoPoint, radius: Double? = nil) {
+    func offerDownload(at point: GeoPoint, radius: Double? = nil, selection: GeoBounds? = nil) {
         guard !isSavingOffline else { return }
         cancelRegionLoad();downloadGeneration+=1;let ticket=downloadGeneration
         downloadTask?.cancel();downloadPlan=nil;downloadError=nil;downloadedBytes=0
-        downloadCenter=point;downloadRadius=radius ?? downloadRadius
+        downloadCenter=point;downloadRadius=radius ?? downloadRadius;downloadSelection=selection
+        completedDownloadTiles=[];activeDownloadTiles=[]
         guard let catalog,let root=libraryRoot else {
             downloadError="Connect to your map source in Settings to check this area.";checkingDownload=false;return
         }
@@ -330,7 +335,7 @@ import CoreGraphics
         let store=WorldDownloadStore(cacheURL:cacheURL),radius=downloadRadius
         downloadTask=Task { [weak self] in
             do {
-                let plan=try await store.plan(center:point,radius:radius,catalog:catalog,root:root)
+                let plan=try await store.plan(center:point,radius:radius,catalog:catalog,root:root,selection:selection)
                 try Task.checkCancellation()
                 guard let self,ticket==downloadGeneration else { return }
                 downloadPlan=plan;checkingDownload=false;downloadTask=nil
@@ -347,7 +352,9 @@ import CoreGraphics
         let store=WorldDownloadStore(cacheURL:cacheURL)
         downloadTask=Task { [weak self] in
             do {
-                try await store.download(plan) { [weak self] bytes in
+                try await store.download(plan,tilesProgress: { [weak self] done,active in
+                    await self?.receiveTileProgress(done,active:active,ticket:ticket)
+                }) { [weak self] bytes in
                     await self?.receiveDownloadProgress(bytes,ticket:ticket)
                 }
                 try Task.checkCancellation()
@@ -355,20 +362,31 @@ import CoreGraphics
                 await reloadOfflineCoverage()
                 guard ticket==downloadGeneration,!Task.isCancelled else { return }
                 downloadTask=nil;isSavingOffline=false;downloadCenter=nil;downloadPlan=nil;coverageMessage=nil
+                drawingDownload=false;downloadSelection=nil
                 downloadedDestination=plan.center
                 visit(plan.center)
             } catch {
                 guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
-                isSavingOffline=false;downloadTask=nil
+                isSavingOffline=false;downloadTask=nil;activeDownloadTiles=[]
                 downloadError="The download didn’t finish. Check your connection and resume; completed files are kept."
                 await reloadOfflineCoverage()
                 guard ticket==downloadGeneration,let catalog,let root=libraryRoot else { return }
                 checkingDownload=true
-                let remaining=try? await store.plan(center:plan.center,radius:plan.radius,catalog:catalog,root:root)
+                let remaining=try? await store.plan(center:plan.center,radius:plan.radius,catalog:catalog,root:root,selection:plan.selection)
                 guard ticket==downloadGeneration,!Task.isCancelled else { return }
                 downloadPlan=remaining;checkingDownload=false;downloadedBytes=0
             }
         }
+    }
+    func setDrawingDownload(_ enabled: Bool) {
+        guard !isSavingOffline else { return }
+        let point=downloadCenter ?? center
+        cancelDownload();drawingDownload=enabled
+        if enabled { downloadCenter=point } else { offerDownload(at:point) }
+    }
+    private func receiveTileProgress(_ done: Set<GeoBounds>,active: Set<GeoBounds>,ticket:Int) {
+        guard ticket==downloadGeneration else { return }
+        completedDownloadTiles=done;activeDownloadTiles=active
     }
     private func receiveDownloadProgress(_ bytes: Int64,ticket:Int) {
         guard ticket==downloadGeneration else { return }
@@ -377,6 +395,7 @@ import CoreGraphics
     func cancelDownload() {
         let wasSaving=isSavingOffline
         downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
+        drawingDownload=false;downloadSelection=nil;completedDownloadTiles=[];activeDownloadTiles=[]
         checkingDownload=false;isSavingOffline=false;downloadCenter=nil;downloadPlan=nil;downloadError=nil;downloadedBytes=0
         if wasSaving { refreshOfflineCoverage() }
     }

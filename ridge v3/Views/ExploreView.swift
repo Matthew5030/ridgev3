@@ -443,6 +443,12 @@ struct OfflineAtlasView: View {
     var worldOfflineBounds: [GeoBounds] = []
     var worldOfflineEdges: [WorldOfflineCoverage.Edge] = []
     var worldDownloadEdges: [WorldOfflineCoverage.Edge] = []
+    var worldDownloadTiles: [GeoBounds] = []
+    var worldCompletedTiles: Set<GeoBounds> = []
+    var worldActiveTiles: Set<GeoBounds> = []
+    var worldDownloading = false
+    var onSelectionFinished: ((GeoBounds) -> Void)? = nil
+    @State private var tileCompletionTimes: [GeoBounds:Date] = [:]
     // The callback identifies the world flow even before its terrain source opens.
     private var usesWorldStyle: Bool { onWorldTap != nil || worldCoverage != nil }
     private let verticalOffset: CGFloat = 0
@@ -501,6 +507,27 @@ struct OfflineAtlasView: View {
                 if let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawSelection(context: &context, size: size)
                 }
+                TimelineView(.animation(minimumInterval:1.0/15,paused:!worldDownloading || reduceMotion)) { timeline in
+                    Canvas { context,size in
+                        let viewport=CGRect(origin:.zero,size:size)
+                        let pulse=reduceMotion ? 0.0 : (sin(timeline.date.timeIntervalSinceReferenceDate*4)+1)*0.08
+                        for bounds in worldDownloadTiles {
+                            let rect=rectangle(bounds,size:size)
+                            guard viewport.intersects(rect) else { continue }
+                            let done=worldCompletedTiles.contains(bounds), active=worldActiveTiles.contains(bounds)
+                            let age=tileCompletionTimes[bounds].map { timeline.date.timeIntervalSince($0) } ?? 1
+                            let fade=reduceMotion ? 1 : max(0,min(1,age/0.4))
+                            let color=done ? RidgeTheme.forest : active ? RidgeTheme.orange : RidgeTheme.forest
+                            context.fill(Path(rect),with:.color(color.opacity(done ? 0.30*fade : active ? 0.18+pulse : 0.04)))
+                            context.stroke(Path(rect),with:.color(color.opacity(done || active ? 0.65 : 0.18)),lineWidth:1)
+                            if done && rect.width>18 && rect.height>18 {
+                                var tick=Path(); tick.move(to:CGPoint(x:rect.midX-4,y:rect.midY))
+                                tick.addLine(to:CGPoint(x:rect.midX-1,y:rect.midY+3));tick.addLine(to:CGPoint(x:rect.midX+5,y:rect.midY-4))
+                                context.stroke(tick,with:.color(RidgeTheme.forest.opacity(fade)),style:StrokeStyle(lineWidth:2,lineCap:.round,lineJoin:.round))
+                            }
+                        }
+                    }
+                }.allowsHitTesting(false)
             }.contentShape(Rectangle())
                 .overlay {
                     AtlasTouchSurface(selecting: selecting, onDrag: { start, point, translation, twoFingers, ended in
@@ -511,7 +538,10 @@ struct OfflineAtlasView: View {
                         } else {
                             center = CGPoint(x:min(1,max(0,center.x-translation.width/scale)),y:min(0.94,max(0.06,center.y-translation.height/scale)))
                         }
-                        if ended { dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size) }
+                        if ended {
+                            if selecting && !movingMap && !twoFingers,let selectedBounds { onSelectionFinished?(selectedBounds) }
+                            dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size)
+                        }
                     }, onZoom: { factor, anchor, ended in
                         focusFlight?.cancel(); focusFlight=nil
                         let offset=CGPoint(x:anchor.x-geometry.size.width/2,y:anchor.y-geometry.size.height/2)
@@ -520,6 +550,13 @@ struct OfflineAtlasView: View {
                         center=CGPoint(x:min(1,max(0,before.x-offset.x/scale)),y:min(0.94,max(0.06,before.y-offset.y/scale)))
                         if ended { reportViewport(geometry.size) }
                     }, onTap: { location in
+                        if selecting && !movingMap, let onSelectionFinished {
+                            let point=coordinate(at:location,size:geometry.size)
+                            if let anchor=tapAnchor,let bounds=area(from:anchor,to:point) {
+                                selectedBounds=bounds;tapAnchor=nil;draggingSelection=false;onSelectionFinished(bounds)
+                            } else { tapAnchor=point;draggingSelection=true }
+                            return
+                        }
                         if let onWorldTap {
                             onWorldTap(coordinate(at: location, size: geometry.size)); return
                         }
@@ -564,9 +601,14 @@ struct OfflineAtlasView: View {
                         }
                     } else { reportViewport(geometry.size) }
                 }
+                .onChange(of:worldCompletedTiles) { _, tiles in
+                    tileCompletionTimes=tileCompletionTimes.filter { tiles.contains($0.key) }
+                    let now=Date()
+                    for tile in tiles where tileCompletionTimes[tile] == nil { tileCompletionTimes[tile]=now }
+                }
                 .onDisappear { focusFlight?.cancel() }
                 .onChange(of: geometry.size) { _, size in reportViewport(size) }
-                .onChange(of: selecting) { _, _ in tapAnchor = nil; dragAnchor = nil; movingBounds = nil; movingMap = false }
+                .onChange(of: selecting) { _, _ in tapAnchor = nil; dragAnchor = nil; movingBounds = nil; movingMap = false; draggingSelection = false }
                 .task {
                     if let bounds = focus.bounds { zoom(to: bounds, size: geometry.size, exact:focus.exactViewport) }
                     else { center = world(focus.point); scale = focus.scale }
@@ -586,7 +628,7 @@ struct OfflineAtlasView: View {
                     if !Task.isCancelled { images = rendered }
                 }
                 .accessibilityLabel(selecting ? "Area selection map" : "Offline atlas")
-                .accessibilityHint(selecting ? "Tap a tile or drag to select whole tiles. Two fingers pan the map and pinch zooms. Move map lets one finger pan without changing the selection." : "Drag to browse, pinch to zoom, or choose a place using search.")
+                .accessibilityHint(selecting ? "Drag a rectangle or tap two opposite corners. Drag handles to resize. Two fingers pan and pinch zooms." : "Drag to browse, pinch to zoom, or choose a place using search.")
                 .overlay(alignment: .bottomTrailing) {
                     VStack(spacing: 8) {
                         if selecting {
@@ -913,7 +955,7 @@ private struct AtlasTouchSurface: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self; updateAccessibility(view) }
     private func updateAccessibility(_ view: UIView) {
         view.accessibilityLabel = selecting ? "Area selection map" : "Offline atlas"
-        view.accessibilityHint = selecting ? "Tap a tile. Drag a corner to resize or drag inside to move. Two fingers pan and pinch zooms. Move map enables one-finger navigation." : "Drag to pan and pinch to zoom. Zoom buttons are also available."
+        view.accessibilityHint = selecting ? "Drag to select an area. Drag a corner to resize or drag inside to move. Two fingers pan and pinch zooms." : "Drag to pan and pinch to zoom. Zoom buttons are also available."
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {

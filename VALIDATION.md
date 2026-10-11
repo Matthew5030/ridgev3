@@ -256,3 +256,11 @@ Validation:
 - Final simulator and signed iOS Debug builds passed. Search now dismisses the keyboard on place selection; already-cached preparations show a checking phase instead of a misleading zero-byte progress bar. 2D entry waits for scene preparation to finish.
 
 The transfer can still take time on a slow server. This change makes it an explicit preparation step and removes live terrain-transfer dependency during exploration; it does not claim to increase Wi-Fi throughput or eliminate all rendering cost. No national pack rebuild or Cloudflare change.
+
+## 2026-10-11 — Draw download areas and animate tile progress
+
+- Download selection now offers Around a place or Draw area. Draw a rectangle with one finger, or tap two opposite corners; existing handles resize and moving inside shifts it. Two fingers or Move map pan without changing the selection. Preview uses the actual intersecting tiles, missing-byte estimate and a 24 km per-side limit. No terrain files transfer until confirmation; retry retains the rectangle.
+- Transfer scheduling keeps each tile's files together, with six requests maximum. Tile progress follows verified asset completion, including shared overview/routing dependencies; amber pulses for active tiles and completed tiles fade green with a tick. A tile count accompanies byte progress. Animation is isolated to a lightweight atlas overlay, pauses outside downloads, and respects Reduce Motion.
+- `sh Tools/test_world_catalog.sh`: PASS 38 (selection, exact-edge intersection, size limit, verified completion, cache-only rendering, repair, cancellation and reopening).
+- `sh Tools/test_world_streaming.sh`: PASS 1619 (streaming, retention, geometry reuse, memory and routing). An initial run was invalidated by editing an input while Swift compiled; the subsequent unchanged-source run passed.
+- Debug simulator and signed device builds succeeded. Simulator UI: chose Draw area, tapped opposite corners around Llanberis, inspected a 6.7 × 6.1 km / 195 tile selection, downloaded the missing 1.3 MB, observed 107/195 then 195/195 ready and green ticks, and confirmed entry into 3D. Direct drag injection through Device Hub did not move the pointer; the two-corner selection path was exercised end-to-end, with physical drag/resize left for touch-device testing.
