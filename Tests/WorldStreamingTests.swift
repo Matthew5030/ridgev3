@@ -1,6 +1,12 @@
 import Foundation
 import SceneKit
 
+@MainActor private final class ProgressProbe {
+    var batches: [(Set<String>,Set<String>)] = []
+    func receive(_ background:WorldBackdrop,_ pages:[String:WorldPreparedTile]) {
+        batches.append((Set(background.geometries.keys),Set(pages.keys)))
+    }
+}
 @main struct WorldStreamingTests {
     @MainActor static func main() async throws {
         var checks = 0
@@ -35,12 +41,23 @@ import SceneKit
         let shifted = GeoPoint(latitude:point.latitude,longitude:point.longitude+0.045)
         let second = WorldLandscapeStore(cacheURL:cache)
         let nextBegan = Date()
-        let (next,_,nextGraph,nextBackground,nextPages) = try await second.window(center:shifted,radius:5000,frame:source.frame,catalog:catalog,root:root,previous:await first.snapshot())
+        let progress = ProgressProbe()
+        let (next,_,nextGraph,nextBackground,nextPages) = try await second.window(center:shifted,radius:5000,frame:source.frame,catalog:catalog,root:root,previous:await first.snapshot(),priority:WorldWindow.leadingPoint(from:point,to:shifted)) { _,_,background,pages in
+            await progress.receive(background,pages)
+        }
         print("Shifted window: \(next.tiles.count) tiles, \(Date().timeIntervalSince(nextBegan)) s")
+        try check(progress.batches.count > 1,"Additions publish in multiple batches before the final window")
+        for (geometry,maps) in progress.batches {
+            try check(geometry==maps && maps.count<=32,"Each published batch contains complete textured terrain and at most 32 tiles")
+        }
+        let streamed=progress.batches.reduce(into:Set<String>()) { $0.formUnion($1.1) }
+        let lead=WorldWindow.leadingPoint(from:point,to:shifted)
+        try check(lead.longitude>shifted.longitude && lead.distance(to:shifted)<1510,"Preparation leads actual travel by at most 1.5 km")
         try check(source.frame == next.frame,"Camera frame stays fixed across region boundaries")
         let shared = Set(source.tiles.map(\.id)).intersection(next.tiles.map(\.id))
         let removed = Set(source.tiles.map(\.id)).subtracting(next.tiles.map(\.id))
         let added = Set(next.tiles.map(\.id)).subtracting(source.tiles.map(\.id))
+        try check(added.isSubset(of:streamed),"Every new tile is published incrementally, not held until completion")
         try check(!shared.isEmpty && !removed.isEmpty && !added.isEmpty,"Window moves, rather than accumulating every visited tile")
         for id in shared {
             try check(pages[id]!.image === nextPages[id]!.image,"Existing vector textures are reused")

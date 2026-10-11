@@ -33,10 +33,14 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     private var overview: WorldOverview?
     private var nodes: [String: SCNNode] = [:]
     private var distantNode = SCNNode()
+    private var seamNode = SCNNode()
     private var distantID: UUID?
+    private var contextCoverage: Set<String>?
     private var contextKeys: [String:String] = [:]
+    private var retiringNodes: [String:(String,SCNNode)] = [:]
     private var contextMask: Task<Void,Never>?
     private var contextMaskPending = false
+    private var contextMaskGeneration = 0
     private var tileIndex = WorldTileIndex(tiles:[])
     private var cameraNotification: DispatchWorkItem?
     private var labelNotification: DispatchWorkItem?
@@ -44,6 +48,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     private var uploadNotification: DispatchWorkItem?
     private var uploadQueue: [String] = []
     private var queuedUploads = Set<String>()
+    private var reconciledTileIDs = Set<String>()
     private var coarse: [String: SCNGeometry] = [:]
     private var applied: [String: WorldTileRequest] = [:]
     private var flightLink: CADisplayLink?
@@ -110,15 +115,15 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             else { reconcileTerrain(next,overview:overview); updateCamera(notify:false) }
         }
         if let distant = model.distantTerrain, distantID != distant.id {
-            distantID = distant.id
-            distantNode.removeFromParentNode(); distantNode = SCNNode()
+            distantID = distant.id; contextCoverage=nil
             distantNode.categoryBitMask = 4 // Context cannot create route waypoints.
-            scene?.rootNode.addChildNode(distantNode)
+            if distantNode.parent == nil { scene?.rootNode.addChildNode(distantNode);seamNode.categoryBitMask=4;scene?.rootNode.addChildNode(seamNode) }
             scheduleContextMask()
         }
         if revision != model.revision {
             revision = model.revision
-            let changed = sourceChanged ? next.tiles.sorted { $0.mesh.bounds.center.distance(to:model.center) > $1.mesh.bounds.center.distance(to:model.center) }.map(\.id) : Array(model.changedTileIDs)
+            let changedIDs = model.changedTileIDs.union(sourceChanged ? reconciledTileIDs : [])
+            let changed = next.tiles.filter { changedIDs.contains($0.id) }.sorted { $0.mesh.bounds.center.distance(to:model.center) > $1.mesh.bounds.center.distance(to:model.center) }.map(\.id)
             model.changedTileIDs.removeAll(keepingCapacity:true)
             enqueueTerrain(changed)
         }
@@ -153,7 +158,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         let scene = SCNScene(); scene.background.contents = backgroundColor
         scene.fogColor = backgroundColor; scene.fogDensityExponent = 1
         cancelCameraNotification()
-        distantID=nil; distantNode.removeFromParentNode(); contextKeys=[:]
+        distantID=nil; distantNode.removeFromParentNode();seamNode.removeFromParentNode();distantNode=SCNNode();seamNode=SCNNode();retiringNodes=[:]; contextKeys=[:]
         self.scene = scene; nodes = [:]; coarse = [:]; applied = [:]; tileIndex = WorldTileIndex(tiles:[]); routeOverlays = [:]
         cameraNode = SCNNode(); cameraNode.camera = SCNCamera(); cameraNode.camera?.fieldOfView = 43
         cameraNode.camera?.zNear = 2; cameraNode.camera?.zFar = 60000; cameraNode.camera?.wantsHDR = false
@@ -174,17 +179,22 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     }
     private func reconcileTerrain(_ source: WorldSource, overview: WorldOverview) {
         guard scene != nil else { return }
+        reconciledTileIDs.removeAll(keepingCapacity:true)
         tileIndex = WorldTileIndex(tiles:source.tiles)
+        let previousContextKeys=contextKeys
         contextKeys = Dictionary(uniqueKeysWithValues:source.tiles.compactMap { tile in WorldDistantTerrain.key(for:tile.mesh.bounds).map { (tile.id,$0) } })
         let keep = Set(source.tiles.map(\.id))
         uploadQueue.removeAll { !keep.contains($0) }; queuedUploads.formIntersection(keep)
         for id in Array(coarse.keys) where !keep.contains(id) {
-            nodes.removeValue(forKey:id)?.removeFromParentNode()
+            if let node=nodes.removeValue(forKey:id) {
+                if distantNode.geometry != nil,let key=previousContextKeys[id] { retiringNodes[id]=(key,node) }
+                else { node.removeFromParentNode() }
+            }
             coarse.removeValue(forKey:id); applied.removeValue(forKey:id); routeOverlays.removeValue(forKey:id)
         }
         for tile in source.tiles {
             guard let g = model?.backdrop?.geometries[tile.id] else { continue }
-            if coarse[tile.id] !== g { coarse[tile.id] = g; applied.removeValue(forKey:tile.id) }
+            if coarse[tile.id] !== g { coarse[tile.id] = g; applied.removeValue(forKey:tile.id); reconciledTileIDs.insert(tile.id) }
         }
         let focus = model?.center ?? source.bounds.center
         let places = source.places.filter { $0.kind == "peak" }.sorted {
@@ -204,7 +214,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         uploadNotification = nil
         guard let model, let scene else { return }
         let began = CACurrentMediaTime()
-        var count = 0
+        var count = 0, coverageChanged = false
         SCNTransaction.begin(); SCNTransaction.animationDuration = 0
         while let id = uploadQueue.popLast() {
             queuedUploads.remove(id)
@@ -214,14 +224,20 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
                 geometry.materials = [material(prepared.image,tileID:id)]
                 let node: SCNNode
                 if let old = nodes[id] { node = old }
-                else { node = SCNNode(); node.categoryBitMask = 1; node.name = id; nodes[id] = node; scene.rootNode.addChildNode(node) }
+                else {
+                    coverageChanged=true
+                    if let retained=retiringNodes.removeValue(forKey:id) { node=retained.1 }
+                    else { node=SCNNode();node.isHidden=distantNode.geometry != nil && contextKeys[id] != nil }
+                    node.categoryBitMask=1;node.name=id;nodes[id]=node
+                    if node.parent == nil { scene.rootNode.addChildNode(node) }
+                }
                 node.geometry = geometry; applied[id] = prepared.request
                 if prepared.geometry != nil { fallback.materials = [] }
             }
             count += 1
             if count >= 24 || CACurrentMediaTime()-began >= 0.004 { break }
         }
-        SCNTransaction.commit(); setNeedsDisplay(); scheduleContextMask()
+        SCNTransaction.commit(); setNeedsDisplay(); if coverageChanged { scheduleContextMask() }
         if !uploadQueue.isEmpty {
             let next = DispatchWorkItem { [weak self] in self?.uploadTerrain() }
             uploadNotification = next
@@ -231,22 +247,37 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     private func scheduleContextMask() {
         contextMaskPending = true
         guard contextMask == nil, model?.distantTerrain != nil else { return }
+        let maskGeneration=contextMaskGeneration
         contextMask = Task { [weak self] in
             guard let self else { return }
-            defer { contextMask=nil }
+            defer {
+                if maskGeneration==contextMaskGeneration {
+                    contextMask=nil
+                    if contextMaskPending && !Task.isCancelled { scheduleContextMask() }
+                }
+            }
             while contextMaskPending && !Task.isCancelled {
                 contextMaskPending=false
                 guard let distant=model?.distantTerrain else { return }
                 let covered=Set(nodes.keys.compactMap { contextKeys[$0] })
-                let preparation=Task.detached(priority:.utility) { distant.geometry(excluding:covered) }
-                let geometry=await preparation.value
+                if contextCoverage==covered && distantNode.geometry != nil { continue }
+                let boundaries=nodes.compactMap { id,node -> WorldDistantTerrain.Boundary? in
+                    guard let key=contextKeys[id],let geometry=node.geometry,(0..<4).contains(where:{ !covered.contains(WorldDistantTerrain.neighbor(key,edge:$0)) }) else { return nil }
+                    return .init(key:key,geometry:geometry)
+                }
+                let preparation=Task.detached(priority:.utility) { (distant.geometry(excluding:covered),distant.seams(boundaries,covered:covered)) }
+                let (geometry,seams)=await preparation.value
                 guard !Task.isCancelled, distantID==distant.id else { return }
                 let current=Set(nodes.keys.compactMap { contextKeys[$0] })
                 if current != covered { contextMaskPending=true }
                 let material=SCNMaterial();material.lightingModel = .constant
                 material.diffuse.contents=distant.image;material.diffuse.mipFilter = .linear
                 material.diffuse.maxAnisotropy=4; material.isDoubleSided=true
-                geometry.materials=[material];distantNode.geometry=geometry;setNeedsDisplay()
+                SCNTransaction.begin();SCNTransaction.animationDuration=0
+                geometry.materials=[material];distantNode.geometry=geometry;seams?.materials=[material];seamNode.geometry=seams;contextCoverage=covered
+                for (id,node) in nodes { if let key=contextKeys[id] { node.isHidden = !covered.contains(key) } }
+                for (id,old) in Array(retiringNodes) where !covered.contains(old.0) { old.1.removeFromParentNode();retiringNodes.removeValue(forKey:id) }
+                SCNTransaction.commit();setNeedsDisplay()
                 try? await Task.sleep(nanoseconds:100_000_000)
             }
         }
@@ -282,7 +313,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:notification)
     }
     func cancelCameraNotification() {
-        contextMask?.cancel(); contextMask=nil; contextMaskPending=false
+        contextMaskGeneration+=1;contextMask?.cancel(); contextMask=nil; contextMaskPending=false
         cameraNotification?.cancel(); cameraNotification = nil
         labelNotification?.cancel(); labelNotification = nil
         uploadNotification?.cancel(); uploadNotification = nil

@@ -112,6 +112,7 @@ import CoreGraphics
         let oldFiles = files
         let frame = source?.frame ?? region.bounds
         let sessionID = source?.id ?? region.id
+        let priority = WorldWindow.leadingPoint(from:loadedCenter,to:point)
         let candidate = WorldLandscapeStore(cacheURL:cacheURL)
         selectionGeneration += 1; let ticket = selectionGeneration
         loadingRegionID = region.id; windowCenter = point; windowRadius = requestedRadius
@@ -121,7 +122,9 @@ import CoreGraphics
             guard let self else { return }
             do {
                 let previous = initial ? nil : await oldFiles.snapshot()
-                var (next,elevation,graph,background,pages) = try await candidate.window(center:point,radius:requestedRadius,frame:frame,catalog:catalog,root:root,previous:previous)
+                var (next,elevation,graph,background,pages) = try await candidate.window(center:point,radius:requestedRadius,frame:frame,catalog:catalog,root:root,previous:previous,priority:priority) { [weak self] metadata,elevation,background,pages in
+                    await self?.receiveAddition(metadata,elevation:elevation,background:background,pages:pages,files:candidate,ticket:ticket)
+                }
                 next.id = sessionID
                 try Task.checkCancellation()
                 guard ticket == selectionGeneration else { return }
@@ -151,6 +154,21 @@ import CoreGraphics
             }
         }
         return ready
+    }
+    private func receiveAddition(_ metadata: WorldSource, elevation: WorldOverview, background: WorldBackdrop, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore, ticket: Int) {
+        guard ticket==selectionGeneration, var current=source, var visible=backdrop else { return }
+        // Additions become usable immediately; retire old coverage only when the
+        // replacement window finishes. Routing is swapped at that final commit.
+        let additions=metadata.tiles.filter { pages[$0.id] != nil }
+        var byID=Dictionary(uniqueKeysWithValues:current.tiles.map { ($0.id,$0) })
+        for tile in additions { byID[tile.id]=tile; tilesByID[tile.id]=tile }
+        current.tiles=byID.values.sorted { $0.id<$1.id }
+        current.bounds=metadata.bounds;current.places=metadata.places;current.sources=metadata.sources
+        current.revision=UUID().uuidString
+        visible.geometries.merge(background.geometries) { _,new in new }
+        for id in background.geometries.keys { visible.meshes[id]=background.meshes[id] }
+        previewPages.merge(pages) { _,new in new }
+        files=candidate;overview=elevation;backdrop=visible;source=current;revision+=1
     }
     private func loadDistantTerrain(around point: GeoPoint,frame:GeoBounds) {
         guard distantLoad == nil, distantTerrain == nil || distantTerrain!.center.distance(to:point) > 20000 else { return }

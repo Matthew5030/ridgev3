@@ -33,9 +33,10 @@ actor WorldLandscapeStore {
     /// Build only newly exposed pieces. A candidate owns its state until the
     /// model commits it, so cancellation cannot invalidate the visible window.
     func window(center: GeoPoint, radius: Double, frame: GeoBounds, catalog: WorldCatalog, root: URL,
-                previous: Snapshot?) async throws -> (WorldSource,WorldOverview,WalkingGraph,WorldBackdrop,[String:WorldPreparedTile]) {
+                previous: Snapshot?, priority: GeoPoint? = nil, progress: @escaping @Sendable (WorldSource,WorldOverview,WorldBackdrop,[String:WorldPreparedTile]) async -> Void = { _,_,_,_ in }) async throws -> (WorldSource,WorldOverview,WalkingGraph,WorldBackdrop,[String:WorldPreparedTile]) {
+        let priority = priority ?? center
         let regions = catalog.sources.filter { WorldWindow.distance(center,to:$0.bounds) <= radius }
-            .sorted { WorldWindow.distance(center,to:$0.bounds) < WorldWindow.distance(center,to:$1.bounds) }
+            .sorted { WorldWindow.distance(priority,to:$0.bounds) < WorldWindow.distance(priority,to:$1.bounds) }
         guard !regions.isEmpty else { throw RidgeError.message("No terrain is available here.") }
         let oldParts = Dictionary(uniqueKeysWithValues:(previous?.parts ?? []).map { ($0.source.id,$0) })
         parts = []; owners = [:]
@@ -97,11 +98,26 @@ actor WorldLandscapeStore {
             }
         }
         var background = WorldBackdrop(geometries:[:],meshes:[:]), pages: [String:WorldPreparedTile] = [:]
-        let work = parts, selected = combined.tiles, desiredAdaptive = adaptive
-        try await withThrowingTaskGroup(of:(WorldBackdrop,[String:WorldPreparedTile]).self) { group in
+        let work = parts, selected = combined.tiles, desiredAdaptive = adaptive, metadata = combined
+        residentBackdrop = previous?.backdrop ?? WorldBackdrop(geometries:[:],meshes:[:])
+        residentPages = previous?.pages ?? [:]
+        // Jobs are small geographic additions, ranked toward travel. A completed
+        // job is published immediately; another region's slow file cannot hold it.
+        struct Job: Sendable { var part: Part; var tiles: [WorldTile]; var distance: Double }
+        var jobs: [Job] = []
+        for part in work {
+            let tiles = selected.filter { $0.id.hasPrefix(part.source.id + "__") }.sorted {
+                $0.mesh.bounds.center.distance(to:priority) < $1.mesh.bounds.center.distance(to:priority)
+            }
+            for offset in stride(from:0,to:tiles.count,by:32) {
+                let batch=Array(tiles[offset..<min(offset+32,tiles.count)])
+                jobs.append(Job(part:part,tiles:batch,distance:batch[0].mesh.bounds.center.distance(to:priority)))
+            }
+        }
+        jobs.sort { $0.distance < $1.distance }
+        try await withThrowingTaskGroup(of:(WorldBackdrop,[String:WorldPreparedTile],Bool).self) { group in
             func add(_ index: Int) {
-                let part = work[index]
-                let selectedTiles = selected.filter { $0.id.hasPrefix(part.source.id + "__") }
+                let job=jobs[index],part=job.part,selectedTiles=job.tiles
                 group.addTask(priority:.utility) {
                     var result = WorldBackdrop(geometries:[:],meshes:[:]), maps: [String:WorldPreparedTile] = [:]
                     let originals = Dictionary(uniqueKeysWithValues:part.source.tiles.map { ($0.id,$0) })
@@ -118,33 +134,40 @@ actor WorldLandscapeStore {
                         return originals[String(tile.id.dropFirst(part.source.id.count+2))]
                     }
                     let newBackground = try await part.files.backdrop(source:meshSource,overview:part.overview,frame:frame)
+                    var changed = false
                     for tile in selectedTiles {
                         try Task.checkCancellation()
                         let originalID = String(tile.id.dropFirst(part.source.id.count+2))
                         guard let original = originals[originalID] else { continue }
                         if let old = previous?.pages[tile.id] { maps[tile.id] = old }
-                        else if var page = newPages[originalID] { page.request.id = tile.id; maps[tile.id] = page }
+                        else if var page = newPages[originalID] { page.request.id = tile.id; maps[tile.id] = page; changed=true }
                         let wantsAdaptive = desiredAdaptive.contains(tile.id)
                         if let old = previous?.backdrop.geometries[tile.id],
                            (previous?.backdrop.meshes[tile.id] != nil) == wantsAdaptive {
                             result.geometries[tile.id] = old; result.meshes[tile.id] = previous?.backdrop.meshes[tile.id]
                         } else if wantsAdaptive {
-                            result.geometries[tile.id] = newBackground.geometries[originalID]; result.meshes[tile.id] = newBackground.meshes[originalID]
+                            result.geometries[tile.id] = newBackground.geometries[originalID]; result.meshes[tile.id] = newBackground.meshes[originalID]; changed=true
                         } else {
-                            result.geometries[tile.id] = WorldGeometry.coarse(tile:original,source:part.source,overview:part.overview,maximumDivisions:8,frame:frame)
+                            result.geometries[tile.id] = WorldGeometry.coarse(tile:original,source:part.source,overview:part.overview,maximumDivisions:8,frame:frame); changed=true
                         }
                     }
-                    return (result,maps)
+                    return (result,maps,changed)
                 }
             }
             var next = 0
-            for _ in 0..<min(2,work.count) { add(next); next += 1 }
-            while let (ready,maps) = try await group.next() {
+            for _ in 0..<min(2,jobs.count) { add(next); next += 1 }
+            while let (ready,maps,changed) = try await group.next() {
                 background.geometries.merge(ready.geometries) { _,new in new }
                 background.meshes.merge(ready.meshes) { _,new in new }
                 pages.merge(maps) { _,new in new }
+                // Snapshotting during a pan/cancellation retains already visible
+                // additions, as well as the completed previous window.
+                residentBackdrop.geometries.merge(ready.geometries) { _,new in new }
+                for id in ready.geometries.keys { residentBackdrop.meshes[id]=ready.meshes[id] }
+                residentPages.merge(maps) { _,new in new }
                 try Task.checkCancellation()
-                if next < work.count { add(next); next += 1 }
+                if changed { await progress(metadata,overview,ready,maps) }
+                if next < jobs.count { add(next); next += 1 }
             }
         }
         residentBackdrop = background; residentPages = pages
@@ -201,7 +224,15 @@ actor WorldLandscapeStore {
 /// Camera-centred coverage; storage boundaries never select the visible window.
 enum WorldWindow {
     static let routingRadius = 12000.0
-    static let movementThreshold = 2000.0
+    static let movementThreshold = 750.0
+    static func leadingPoint(from previous: GeoPoint?, to current: GeoPoint) -> GeoPoint {
+        guard let previous else { return current }
+        let distance=previous.distance(to:current)
+        guard distance>100 else { return current }
+        let fraction=min(1500,distance)/distance
+        return GeoPoint(latitude:current.latitude+(current.latitude-previous.latitude)*fraction,
+                        longitude:current.longitude+(current.longitude-previous.longitude)*fraction)
+    }
     // Publish nearby additions regularly instead of making the first visible
     // window wait for every tile out to the full horizon.
     static func nextRadius(desired: Double, loaded: Double) -> Double {

@@ -13,6 +13,62 @@ struct WorldDistantTerrain: @unchecked Sendable {
     let sources: [SCNGeometrySource]
     let cells: [Cell]
     let image: CGImage
+    let positions: [SCNVector3]
+    let left: Int
+    let top: Int
+    struct Boundary: @unchecked Sendable { let key: String; let geometry: SCNGeometry }
+    static func neighbor(_ key:String,edge:Int) -> String {
+        var v=key.split(separator:":").map { Int($0)! }
+        if edge==0 { v[2]-=1 };if edge==1 { v[2]+=1 };if edge==2 { v[3]-=1 };if edge==3 { v[3]+=1 }
+        if v[2]<0 {v[0]-=1;v[2]=47};if v[2]>47 {v[0]+=1;v[2]=0}
+        if v[3]<0 {v[1]-=1;v[3]=47};if v[3]>47 {v[1]+=1;v[3]=0}
+        return v.map(String.init).joined(separator:":")
+    }
+    /// Join the actual rendered edge to the coarse surface, rather than relying
+    /// on a fixed skirt depth to conceal differences between elevation sources.
+    func seams(_ boundaries:[Boundary],covered:Set<String>) -> SCNGeometry? {
+        var p:[SCNVector3]=[],uv:[CGPoint]=[],indices:[Int32]=[]
+        func texture(_ position:SCNVector3) -> CGPoint {
+            let point=frame.point(u:Double(position.x)/frame.widthMeters+0.5,v:Double(position.z)/frame.depthMeters+0.5)
+            return CGPoint(x:((point.longitude+180)/360*1024-Double(left))/9,y:(Self.mercatorY(point.latitude)*1024-Double(top))/9)
+        }
+        func values(_ source:SCNGeometrySource) -> [[Double]] {
+            source.data.withUnsafeBytes { bytes in
+                (0..<source.vectorCount).map { i in (0..<source.componentsPerVector).map { j in
+                    let offset=source.dataOffset+i*source.dataStride+j*source.bytesPerComponent
+                    return source.bytesPerComponent==4 ? Double(bytes.loadUnaligned(fromByteOffset:offset,as:Float.self)) : bytes.loadUnaligned(fromByteOffset:offset,as:Double.self)
+                } }
+            }
+        }
+        for boundary in boundaries {
+            let k=boundary.key.split(separator:":").map { Int($0)! },x=k[0]-left,y=k[1]-top
+            guard (0..<9).contains(x),(0..<9).contains(y),let vertices=boundary.geometry.sources(for:.vertex).first,let coords=boundary.geometry.sources(for:.texcoord).first else { continue }
+            let start=(y*9+x)*49*49+k[3]*49+k[2]
+            let corners=[positions[start],positions[start+1],positions[start+49],positions[start+50]]
+            let v=values(vertices),t=values(coords)
+            for edge in 0..<4 where !covered.contains(Self.neighbor(boundary.key,edge:edge)) {
+                var side:[Double:SCNVector3]=[:]
+                for i in 0..<min(v.count,t.count) {
+                    let value=edge<2 ? t[i][0] : t[i][1], expected=edge==0 || edge==2 ? 0.0 : 1.0
+                    guard abs(value-expected)<1e-6 else { continue }
+                    let along=edge<2 ? t[i][1] : t[i][0],position=SCNVector3(Float(v[i][0]),Float(v[i][1]),Float(v[i][2]))
+                    // Skirt duplicates share UVs: retain the actual surface top.
+                    if side[along] == nil || position.y>side[along]!.y { side[along]=position }
+                }
+                let sorted=side.sorted { $0.key<$1.key }
+                let a=corners[edge==1 ? 1 : edge==3 ? 2 : 0],b=corners[edge==0 ? 2 : edge==2 ? 1 : 3]
+                for pair in zip(sorted,sorted.dropFirst()) {
+                    let first=pair.0,second=pair.1
+                    var c=first.value,d=second.value
+                    c.y = .init(Double(a.y)+Double(b.y-a.y)*first.key);d.y = .init(Double(a.y)+Double(b.y-a.y)*second.key)
+                    let n=Int32(p.count);p += [first.value,second.value,c,d]
+                    let u=texture(first.value),w=texture(second.value);uv += [u,w,u,w]
+                    indices += [n,n+1,n+2,n+1,n+3,n+2]
+                }
+            }
+        }
+        return indices.isEmpty ? nil : WorldGeometry.build(positions:p,uv:uv,indices:indices)
+    }
     func geometry(excluding covered: Set<String>) -> SCNGeometry {
         let indices = cells.filter { !covered.contains($0.key) }.flatMap(\.indices)
         return SCNGeometry(sources:sources,elements:[SCNGeometryElement(indices:indices,primitiveType:.triangles)])
@@ -87,6 +143,6 @@ actor WorldDistantTerrainStore {
             ctx.draw(image,in:CGRect(x:px,y:Double(size)-py-side,width:side,height:side))
         }
         guard let image=ctx.makeImage() else { throw RidgeError.message("Could not prepare distant map.") }
-        return WorldDistantTerrain(center:center,frame:frame,sources:surface.sources,cells:cells,image:image)
+        return WorldDistantTerrain(center:center,frame:frame,sources:surface.sources,cells:cells,image:image,positions:positions,left:left,top:top)
     }
 }
