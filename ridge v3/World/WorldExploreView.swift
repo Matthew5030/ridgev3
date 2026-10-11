@@ -200,7 +200,7 @@ struct WorldExploreView: View {
     private var downloadSelectionCard: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
-                Text(world.isSavingOffline ? (world.downloadPlan?.bytes == 0 ? "Preparing saved map" : "Downloading map") : "Download this area").font(.headline)
+                Text(world.isSavingOffline ? (world.downloadPlan?.bytes == 0 ? "Opening saved map" : "Downloading new tiles") : "Download this area").font(.headline)
                 Spacer()
                 Button(world.isSavingOffline ? "Cancel download" : "Cancel") { selection=nil;world.cancelDownload() }
             }
@@ -225,7 +225,7 @@ struct WorldExploreView: View {
             if world.checkingDownload { ProgressView("Checking download size…") }
             else if let plan=world.downloadPlan {
                 if world.isSavingOffline {
-                    if plan.bytes == 0 { ProgressView("Checking map files…") }
+                    if plan.bytes == 0 { ProgressView("Opening saved map…") }
                     else {
                         ProgressView(value:Double(world.downloadedBytes),total:Double(plan.bytes))
                         Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.caption.monospacedDigit())
@@ -236,8 +236,8 @@ struct WorldExploreView: View {
                     }.font(.subheadline).accessibilityLabel("\(world.completedDownloadTiles.count) of \(plan.bounds.count) tiles ready")
                     Text("Amber tiles are loading. Green ticks mean ready. 3D opens when the whole area is saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 } else {
-                    Text(plan.bytes == 0 ? "Files already on this device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.subheadline.weight(.medium))
-                    Text("\(plan.bounds.count) tiles · The outline follows the tiles that will be saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Text(plan.bytes == 0 ? "This area is already on your device" : "\(RidgeTheme.bytes(plan.bytes)) of new data").font(.subheadline.weight(.medium))
+                    Text("\(plan.readyBounds.count) tiles already on device · \(plan.bounds.count-plan.readyBounds.count) to download").font(.caption).foregroundStyle(RidgeTheme.muted)
                     Button(world.downloadError != nil ? "Resume download" : plan.bytes == 0 ? "Open in 3D" : "Download and open in 3D") { world.downloadAndOpen() }
                         .buttonStyle(.borderedProminent).foregroundStyle(.white).disabled(dragging)
                 }

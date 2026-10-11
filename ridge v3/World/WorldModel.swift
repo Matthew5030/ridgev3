@@ -338,7 +338,7 @@ import CoreGraphics
                 let plan=try await store.plan(center:point,radius:radius,catalog:catalog,root:root,selection:selection)
                 try Task.checkCancellation()
                 guard let self,ticket==downloadGeneration else { return }
-                downloadPlan=plan;checkingDownload=false;downloadTask=nil
+                downloadPlan=plan;completedDownloadTiles=plan.readyBounds;checkingDownload=false;downloadTask=nil
             } catch {
                 guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
                 checkingDownload=false;downloadError=error.localizedDescription;downloadTask=nil
@@ -374,7 +374,7 @@ import CoreGraphics
                 checkingDownload=true
                 let remaining=try? await store.plan(center:plan.center,radius:plan.radius,catalog:catalog,root:root,selection:plan.selection)
                 guard ticket==downloadGeneration,!Task.isCancelled else { return }
-                downloadPlan=remaining;checkingDownload=false;downloadedBytes=0
+                downloadPlan=remaining;completedDownloadTiles=remaining?.readyBounds ?? [];checkingDownload=false;downloadedBytes=0
             }
         }
     }

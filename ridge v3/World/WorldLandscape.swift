@@ -274,6 +274,7 @@ struct WorldDownloadPlan: Sendable {
     let bytes: Int64
     let bounds: [GeoBounds]
     let edges: [WorldOfflineCoverage.Edge]
+    let readyBounds: Set<GeoBounds>
 }
 
 actor WorldDownloadStore {
@@ -293,7 +294,7 @@ actor WorldDownloadStore {
             return WorldWindow.distance(center,to:bounds)<=radius
         }
         guard (400...12000).contains(radius),catalog.region(at:center) != nil else { throw RidgeError.message("Detailed terrain is not available here.") }
-        var parts: [WorldDownloadPlan.Part] = [], bounds: [GeoBounds] = [], seen=Set<String>()
+        var parts: [WorldDownloadPlan.Part] = [], bounds: [GeoBounds] = [], seen=Set<String>(), ready=Set<GeoBounds>()
         for region in catalog.sources.filter({ includes($0.bounds) }) {
             try Task.checkCancellation()
             let files=WorldSourceStore(cacheURL:cache)
@@ -301,21 +302,27 @@ actor WorldDownloadStore {
             guard source.id==region.id, source.bounds==region.bounds else { throw RidgeError.message("The map does not match its catalogue.") }
             source.tiles=source.tiles.filter { includes($0.mesh.bounds) }
             guard !source.tiles.isEmpty else { continue }
-            let assets=WorldSourceStore.assets(tiles:source.tiles,source:source).filter { seen.insert($0.sha256).inserted }
-            let cached=try await files.cachedBytes(for:assets)
-            let missing=max(0,assets.reduce(Int64(0)) { $0+Int64($1.byteCount) }-cached)
+            let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
+            let cached=try await files.cachedAssetHashes(for:assets)
+            let missing=assets.filter { seen.insert($0.sha256).inserted && !cached.contains($0.sha256) }.reduce(Int64(0)) { $0+Int64($1.byteCount) }
+            for tile in source.tiles {
+                let required=Set([source.overview.sha256,source.graph.sha256,tile.map.sha256,tile.mesh.sha256]
+                    + [tile.background?.sha256].compactMap { $0 })
+                if required.isSubset(of:cached) { ready.insert(tile.mesh.bounds) }
+            }
             parts.append(.init(source:source,files:files,missingBytes:missing))
             bounds += source.tiles.map { $0.mesh.bounds }
         }
         guard bounds.contains(where:{$0.contains(center)}) else { throw RidgeError.message("Detailed terrain is missing at this location. Choose a nearby area.") }
-        return WorldDownloadPlan(center:center,radius:radius,selection:selection,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },bounds:bounds,edges:WorldOfflineCoverage.outline(bounds))
+        return WorldDownloadPlan(center:center,radius:radius,selection:selection,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },bounds:bounds,edges:WorldOfflineCoverage.outline(bounds),readyBounds:ready)
     }
     func download(_ plan: WorldDownloadPlan, tilesProgress: @escaping @Sendable (Set<GeoBounds>,Set<GeoBounds>) async -> Void = { _,_ in }, progress: @escaping @Sendable (Int64) async -> Void) async throws {
         var completed: Int64=0
-        var ready=Set<GeoBounds>()
+        var ready=plan.readyBounds
+        await tilesProgress(ready,[])
         for part in plan.parts {
             try Task.checkCancellation()
-            let base=completed, previous=ready
+            let base=completed, previous=ready.subtracting(part.source.tiles.map { $0.mesh.bounds })
             try await part.files.pin(part.source.tiles,source:part.source,countCachedInProgress:false,assetProgress: { verified,active in
                 var done=previous, loading=Set<GeoBounds>()
                 for tile in part.source.tiles {

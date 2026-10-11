@@ -4,7 +4,11 @@ actor TileProgressAudit {
     var ready=Set<GeoBounds>()
     var valid=true
     var updates=0
+    var existingNeverActive=true
+    var initialReady: Set<GeoBounds>?
     func record(_ done:Set<GeoBounds>,_ active:Set<GeoBounds>,plan:WorldDownloadPlan,cache:URL) {
+        if initialReady == nil { initialReady=done }
+        existingNeverActive = existingNeverActive && plan.readyBounds.isDisjoint(with:active)
         valid = valid && ready.isSubset(of:done) && done.isDisjoint(with:active)
         for part in plan.parts {
             for tile in part.source.tiles where done.contains(tile.mesh.bounds) {
@@ -20,6 +24,7 @@ actor TileProgressAudit {
         ready=done;updates+=1
     }
     func passed(_ expected:Set<GeoBounds>) -> Bool { valid && ready==expected && updates>1 }
+    func reused(_ expected:Set<GeoBounds>) -> Bool { initialReady==expected && existingNeverActive }
 }
 
 @main struct WorldCatalogTests {
@@ -31,7 +36,7 @@ actor TileProgressAudit {
             while active() && Date()<deadline { try await Task.sleep(nanoseconds:20_000_000) }
             try check(!active(),"Operation timed out")
         }
-        let local=try WorldLibrary.root(mode:"local",local:"http://127.0.0.1:8787")
+        let local=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         try check(local.path=="/world","Local server root")
         for bad in ["", "file:///etc", "http://u:p@host", "https://host/?q=1", "http://host/#fragment"] {
             do { _=try WorldLibrary.root(mode:"local",local:bad);throw RidgeError.message("Accepted bad endpoint") }
@@ -118,6 +123,39 @@ actor TileProgressAudit {
         try check(model.downloadPlan?.selection==rectangle,"Model preserves custom rectangle")
         model.cancelDownload()
         try check(!model.drawingDownload && model.downloadSelection==nil && model.completedDownloadTiles.isEmpty,"Cancel clears drawing and progress")
+        let shifted=GeoPoint(latitude:origin.latitude,longitude:origin.longitude+0.012)
+        let overlap=try await repair.plan(center:shifted,radius:600,catalog:catalog,root:local)
+        let existing=Set(overlap.bounds).intersection(plan.bounds)
+        try check(!existing.isEmpty && existing.count<overlap.bounds.count,"Overlap fixture includes both saved and new tiles")
+        try check(overlap.readyBounds==existing,"Overlapping tiles are ready in the preview before any transfer")
+        let overlapAudit=TileProgressAudit()
+        try await repair.download(overlap,tilesProgress: { done,active in
+            await overlapAudit.record(done,active,plan:overlap,cache:cache)
+        },progress: { _ in })
+        try check(await overlapAudit.passed(Set(overlap.bounds)),"Overlapping download completes with verified assets")
+        try check(await overlapAudit.reused(existing),"Saved tiles start ready and never enter the loading animation")
+        let repeated=try await repair.plan(center:shifted,radius:600,catalog:catalog,root:local)
+        try check(repeated.bytes==0 && repeated.readyBounds==Set(repeated.bounds),"Selecting the same area again requires no new data")
+        for part in repeated.parts {
+            let region=catalog.sources.first { $0.id==part.source.id }!
+            let offline=WorldSourceStore(cacheURL:cache,allowsNetwork:false)
+            _=try await offline.manifest(address:local.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true)
+            // A fully overlapping selection must finish even with HTTP forbidden.
+            try await offline.pin(part.source.tiles,source:part.source,countCachedInProgress:false,assetProgress: { verified,active in
+                precondition(active.isEmpty,"Cached files entered the transfer queue")
+                precondition(!verified.isEmpty,"Cached files must be ready immediately")
+            },progress: { bytes in precondition(bytes==0,"Cached assets counted as new data") })
+        }
+        try check(true,"Fully overlapping saves need no network or active transfer files")
+        // Verify a previously checked file is not blindly trusted after replacement.
+        let stampTile=repeated.parts[0].source.tiles[0]
+        let stampFile=cache.appendingPathComponent(stampTile.mesh.sha256)
+        var damaged=try Data(contentsOf:stampFile);damaged[0] ^= 1
+        try damaged.write(to:stampFile,options:.atomic)
+        let stampAsset=WorldMapAsset(file:stampTile.mesh.path,byteCount:stampTile.mesh.byteCount,sha256:stampTile.mesh.sha256)
+        try check(try await repeated.parts[0].files.cachedAssetHashes(for:[stampAsset]).isEmpty,"Replacing a same-size file invalidates remembered verification")
+        let damagedPlan=try await repair.plan(center:shifted,radius:600,catalog:catalog,root:local)
+        try check(damagedPlan.bytes==Int64(stampTile.mesh.byteCount) && !damagedPlan.readyBounds.contains(stampTile.mesh.bounds),"Damaged overlapping tiles request only their broken asset")
         model.offerDownload(at:outside,radius:600);model.cancelDownload()
         try await Task.sleep(nanoseconds:100_000_000)
         try check(model.downloadPlan==nil && !model.checkingDownload && !model.isSavingOffline,"Cancelled selection cannot publish stale work")

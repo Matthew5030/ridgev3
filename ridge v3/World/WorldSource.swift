@@ -272,16 +272,39 @@ actor WorldSourceStore {
         var seen = Set<String>()
         return keep.filter { seen.insert($0.sha256).inserted }
     }
-    func cachedBytes(for assets: [WorldMapAsset]) throws -> Int64 {
-        var bytes: Int64 = 0
+    private struct VerifiedFile: Equatable {
+        let size: Int
+        let modified: Date
+        let created: Date
+    }
+    private var verifiedFiles: [String:VerifiedFile] = [:]
+    /// Reuse a hash check within this store only while the file's size and dates
+    /// are unchanged. A new planning store verifies the bytes again; receipts
+    /// alone never establish integrity for a download.
+    func cachedAssetHashes(for assets: [WorldMapAsset]) throws -> Set<String> {
+        var hashes=Set<String>()
         for asset in assets {
             try Task.checkCancellation()
             guard PackStore.safeName(asset.file), (1...64_000_000).contains(asset.byteCount),
                   asset.sha256.count == 64, asset.sha256.allSatisfy(\.isHexDigit) else { throw RidgeError.message("Invalid world asset.") }
-            let url = base.isFileURL ? base.appendingPathComponent(asset.file) : cache.appendingPathComponent(asset.sha256)
-            if let data = try? Data(contentsOf:url), data.count == asset.byteCount, AdaptiveTerrainCodec.hash(data) == asset.sha256 { bytes += Int64(asset.byteCount) }
+            let url=base.isFileURL ? base.appendingPathComponent(asset.file) : cache.appendingPathComponent(asset.sha256)
+            let key=url.absoluteString+"|"+asset.sha256
+            guard let values=try? url.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey,.creationDateKey]),
+                  values.fileSize==asset.byteCount else { verifiedFiles.removeValue(forKey:key);continue }
+            let stamp: VerifiedFile?
+            if let modified=values.contentModificationDate,let created=values.creationDate {
+                stamp=VerifiedFile(size:asset.byteCount,modified:modified,created:created)
+            } else { stamp=nil }
+            if let stamp,verifiedFiles[key]==stamp { hashes.insert(asset.sha256);continue }
+            if let data=try? Data(contentsOf:url),data.count==asset.byteCount,AdaptiveTerrainCodec.hash(data)==asset.sha256 {
+                hashes.insert(asset.sha256);verifiedFiles[key]=stamp
+            } else { verifiedFiles.removeValue(forKey:key) }
         }
-        return bytes
+        return hashes
+    }
+    func cachedBytes(for assets: [WorldMapAsset]) throws -> Int64 {
+        let hashes=try cachedAssetHashes(for:assets)
+        return assets.filter { hashes.contains($0.sha256) }.reduce(Int64(0)) { $0+Int64($1.byteCount) }
     }
     // Shared cache writers reserve hashes atomically before starting downloads.
     // Partial saves remain reserved so a cancelled operation can be resumed.
@@ -303,24 +326,27 @@ actor WorldSourceStore {
         } + Self.assets(tiles:tiles,source:source,surroundings:surroundings)
         let assets = ordered.filter { seen.insert($0.sha256).inserted }
         pins = try Self.reserve(Set(assets.map(\.sha256)),cache:cache)
+        let cached=try cachedAssetHashes(for:assets)
+        let pending=assets.filter { !cached.contains($0.sha256) }
         try await withThrowingTaskGroup(of:(String,Int64).self) { group in
-            var next = 0, completed: Int64 = 0
-            var verified=Set<String>(), active=Set<String>()
+            var next = 0
+            var completed: Int64 = countCachedInProgress ? assets.filter { cached.contains($0.sha256) }.reduce(0) { $0+Int64($1.byteCount) } : 0
+            var verified=cached, active=Set<String>()
             func add(_ asset: WorldMapAsset) {
                 active.insert(asset.sha256)
                 group.addTask {
-                    let cached = countCachedInProgress ? 0 : try await self.cachedBytes(for:[asset])
                     _ = try await self.read(asset,maximumBytes:asset.file == source.graph.file ? 64_000_000 : 32_000_000)
-                    return (asset.sha256, Int64(asset.byteCount) - cached)
+                    return (asset.sha256, Int64(asset.byteCount))
                 }
             }
-            for _ in 0..<min(6,assets.count) { add(assets[next]); next += 1 }
+            for _ in 0..<min(6,pending.count) { add(pending[next]); next += 1 }
+            await progress(completed)
             await assetProgress(verified,active)
             while let (hash,bytes) = try await group.next() {
                 try Task.checkCancellation()
                 verified.insert(hash); active.remove(hash)
                 completed += bytes; await progress(completed)
-                if next < assets.count { add(assets[next]); next += 1 }
+                if next < pending.count { add(pending[next]); next += 1 }
                 await assetProgress(verified,active)
             }
         }

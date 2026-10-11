@@ -516,7 +516,7 @@ struct OfflineAtlasView: View {
                             guard viewport.intersects(rect) else { continue }
                             let done=worldCompletedTiles.contains(bounds), active=worldActiveTiles.contains(bounds)
                             let age=tileCompletionTimes[bounds].map { timeline.date.timeIntervalSince($0) } ?? 1
-                            let fade=reduceMotion ? 1 : max(0,min(1,age/0.4))
+                            let fade=reduceMotion || !worldDownloading ? 1 : max(0,min(1,age/0.4))
                             let color=done ? RidgeTheme.forest : active ? RidgeTheme.orange : RidgeTheme.forest
                             context.fill(Path(rect),with:.color(color.opacity(done ? 0.30*fade : active ? 0.18+pulse : 0.04)))
                             context.stroke(Path(rect),with:.color(color.opacity(done || active ? 0.65 : 0.18)),lineWidth:1)
