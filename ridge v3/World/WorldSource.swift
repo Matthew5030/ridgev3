@@ -369,12 +369,20 @@ actor WorldSourceStore {
             for _ in 0..<min(6,pending.count) { add(pending[next]); next += 1 }
             await progress(completed)
             await assetProgress(verified,active)
+            var lastReport=Date()
             while let (hash,bytes) = try await group.next() {
                 try Task.checkCancellation()
                 verified.insert(hash); active.remove(hash)
-                completed += bytes; await progress(completed)
+                completed += bytes
+                // Refill the network queue before yielding to the UI. Thousands
+                // of tiny files must not each wait for a map redraw to finish.
                 if next < pending.count { add(pending[next]); next += 1 }
-                await assetProgress(verified,active)
+                let now=Date()
+                if active.isEmpty || now.timeIntervalSince(lastReport)>=0.08 {
+                    await progress(completed)
+                    await assetProgress(verified,active)
+                    lastReport=Date()
+                }
             }
         }
         try Task.checkCancellation()

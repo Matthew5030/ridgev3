@@ -229,15 +229,23 @@ private actor WorldRegionTileReporter {
     private let source: WorldSource
     private var state: WorldRegionTileProgress
     private var lastSent = Date.distantPast
+    private let requiredHashes:Set<String>
     private let report: @Sendable (WorldRegionTileProgress) async -> Void
     init(source: WorldSource, savedFills: [GeoBounds], savedTileCount: Int,
          report: @escaping @Sendable (WorldRegionTileProgress) async -> Void) {
         self.source=source; self.report=report
+        requiredHashes=Set([source.overview.sha256,source.graph.sha256]+source.tiles.flatMap {
+            [$0.map.sha256,$0.mesh.sha256]+[$0.background?.sha256].compactMap { $0 }
+        })
         state=WorldRegionTileProgress(tiles:source.tiles.map { $0.mesh.bounds },
                                       savedFills:savedFills,savedTileCount:savedTileCount)
     }
     func update(verified: Set<String>, active: Set<String>) async {
         guard !Task.isCancelled else { return }
+        // Throttle before building hundreds of tile sets, rather than doing
+        // the work for every file and discarding most results afterwards.
+        let now=Date(),finished=requiredHashes.isSubset(of:verified)
+        guard finished || now.timeIntervalSince(lastSent)>=0.08 else { return }
         var done=Set<GeoBounds>(),loading=Set<GeoBounds>()
         for tile in source.tiles {
             let own=Set([tile.map.sha256,tile.mesh.sha256]+[tile.background?.sha256].compactMap { $0 })
@@ -247,8 +255,6 @@ private actor WorldRegionTileReporter {
         }
         // Coalesce very fast cached/local transfers; always deliver the first
         // and final states, including a fully reused section with no transfers.
-        let now=Date(),finished=done.count==state.tiles.count
-        guard finished || now.timeIntervalSince(lastSent)>=0.08 else { return }
         guard lastSent == .distantPast || done != state.completed || loading != state.active else { return }
         state.completed=done;state.active=loading;lastSent=now
         await report(state)

@@ -3,6 +3,7 @@ import Foundation
 actor RegionTransferAudit {
     var streamedBeforeFinalIndex=false
     var bytes:Int64=0
+    var byteEvents=0
     var tileEvents=0,maximumTiles=0
     var sawActive=false,validTiles=true
     var completedTiles=Set<GeoBounds>()
@@ -19,7 +20,7 @@ actor RegionTransferAudit {
         sawPreviousSection = sawPreviousSection || (state.savedTileCount>0 && !state.savedFills.isEmpty)
     }
     func record(_ value:Int64,saved:Int,finalIndex:URL) {
-        bytes=value
+        bytes=value;byteEvents+=1
         if saved==0,value>0,!FileManager.default.fileExists(atPath:finalIndex.path) { streamedBeforeFinalIndex=true }
     }
 }
@@ -251,7 +252,11 @@ actor RegionTransferAudit {
         let lastAddress=root.appendingPathComponent(streamed.parts.last!.region.path).absoluteString
         let lastIndex=streamingCache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(lastAddress.utf8))+".index")
         let audit=RegionTransferAudit()
+        let transferStarted=Date()
         try await streamingStore.download(streamed,tileProgress: { await audit.recordTiles($0) }) { bytes,saved in await audit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        let transferSeconds=Date().timeIntervalSince(transferStarted),byteEvents=await audit.byteEvents
+        try check(byteEvents<=Int(ceil(transferSeconds/0.08))+streamed.parts.count*3,"Progress notifications are bounded by elapsed time, not the number of files")
+        print("TRANSFER BENCH: \(transferSeconds) seconds; \(byteEvents) byte callbacks; \(await audit.tileEvents) tile callbacks; \(plan.bytes) bytes")
         let animation=await (audit.tileEvents,audit.maximumTiles,audit.sawActive,audit.validTiles,audit.completedTiles,audit.sawPreviousSection)
         try check(animation.0>2 && animation.1<=256 && animation.2,"Real transfers emit bounded live tile animation")
         try check(animation.3 && animation.4.count==plan.tileCount,"Every tile completes geographically across sections without active/completed overlap")
