@@ -863,7 +863,7 @@ struct OfflineAtlasView: View {
                 let point=CGPoint(x:0,y:(CGFloat(index)-CGFloat(lines.count-1)/2)*48)
                 // Keep glyph layout constant and scale the drawing transform;
                 // fractional font relayout used to shimmer during pinching.
-                let text=Text(String(line)).font(.system(size:40,weight:.medium)).tracking(0.5)
+                let text=Text(String(line)).font(.system(size:40,weight:.regular,design:.serif)).tracking(0.8)
                 for offset in [CGPoint(x:-1,y:0),CGPoint(x:1,y:0),CGPoint(x:0,y:-1),CGPoint(x:0,y:1)] {
                     lettering.draw(text.foregroundStyle(RidgeTheme.paper.opacity(0.95)),at:CGPoint(x:point.x+offset.x,y:point.y+offset.y))
                 }
