@@ -511,15 +511,19 @@ struct OfflineAtlasView: View {
                 if worldRegions.isEmpty,let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawWorldRegions(context:&context,size:size)
                 drawSelection(context: &context, size: size)
+                var savedContext=context
+                if let footprint=downloadFootprint(size:size) { savedContext.clip(to:footprint,style:FillStyle(eoFill:true)) }
                 for bounds in worldSavedDownloadFills {
                     let rect=rectangle(bounds,size:size)
                     if CGRect(origin:.zero,size:size).intersects(rect) {
-                        context.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.30)))
+                        savedContext.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.30)))
                     }
                 }
                 }
                 TimelineView(.animation(minimumInterval:1.0/15,paused:!worldDownloading || reduceMotion)) { timeline in
                     Canvas { context,size in
+                        var context=context
+                        if let footprint=downloadFootprint(size:size) { context.clip(to:footprint,style:FillStyle(eoFill:true)) }
                         let viewport=CGRect(origin:.zero,size:size)
                         let pulse=reduceMotion ? 0.0 : (sin(timeline.date.timeIntervalSinceReferenceDate*4)+1)*0.08
                         for bounds in worldDownloadTiles {
@@ -843,6 +847,31 @@ struct OfflineAtlasView: View {
             return (region,rect,fontSize,appearance.opacity)
         }
     }
+    private func regionPath(_ region:WorldRegionMapOverlay,size:CGSize)->Path {
+        var path=Path()
+        if let shapes=region.pack.mapShapes {
+            for shape in shapes where rectangle(shape.bounds,size:size).intersects(CGRect(origin:.zero,size:size)) {
+                for ring in shape.rings {
+                    for (index,pair) in ring.enumerated() {
+                        let point=screen(GeoPoint(latitude:pair[1],longitude:pair[0]),size:size)
+                        if index==0 { path.move(to:point) } else { path.addLine(to:point) }
+                    }
+                    path.closeSubpath()
+                }
+            }
+        } else {
+            for bounds in region.fills { path.addRect(rectangle(bounds,size:size)) }
+        }
+        return path
+    }
+    private func downloadFootprint(size:CGSize)->Path? {
+        guard let selectedWorldRegion else { return nil }
+        let regions=worldRegions.filter { $0.id==selectedWorldRegion || $0.pack.parkID==selectedWorldRegion }
+        guard !regions.isEmpty,regions.allSatisfy({ $0.pack.mapShapes != nil }) else { return nil }
+        var path=Path()
+        for region in regions { path.addPath(regionPath(region,size:size)) }
+        return path
+    }
     private func drawWorldRegions(context:inout GraphicsContext,size:CGSize) {
         guard !worldRegions.isEmpty else { return }
         let viewport=CGRect(origin:.zero,size:size)
@@ -850,15 +879,15 @@ struct OfflineAtlasView: View {
             let selected=region.id==selectedWorldRegion || (selectedWorldRegion != nil && region.pack.parkID==selectedWorldRegion),available = !region.available.isEmpty
             let color:Color=region.downloadState == .saved ? RidgeTheme.forest
                 : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
-            var fill=Path(),outline=Path()
-            for bounds in region.fills {
-                let rect=rectangle(bounds,size:size)
-                if rect.intersects(viewport) { fill.addRect(rect) }
+            guard rectangle(region.pack.bounds,size:size).intersects(viewport) else { continue }
+            let fill=regionPath(region,size:size)
+            context.fill(fill,with:.color(color.opacity(region.downloadState == .saved ? 0.24 : region.downloadState == .partial ? 0.16 : selected ? 0.12 : 0.025)),style:FillStyle(eoFill:true))
+            var outline=fill
+            if region.pack.mapShapes == nil {
+                outline=Path()
+                for edge in region.edges { outline.move(to:screen(edge.start,size:size));outline.addLine(to:screen(edge.end,size:size)) }
             }
-            context.fill(fill,with:.color(color.opacity(region.downloadState == .saved ? 0.30 : region.downloadState == .partial ? 0.20 : selected ? 0.14 : 0.03)))
-            for edge in region.edges { outline.move(to:screen(edge.start,size:size));outline.addLine(to:screen(edge.end,size:size)) }
-            context.stroke(outline,with:.color(RidgeTheme.paper.opacity(0.95)),lineWidth:selected ? 6 : 3)
-            context.stroke(outline,with:.color(color.opacity(selected ? 1 : 0.65)),style:StrokeStyle(lineWidth:selected ? 3 : 1.3,dash:available ? [] : [4,3]))
+            context.stroke(outline,with:.color(color.opacity(selected ? 0.9 : 0.42)),style:StrokeStyle(lineWidth:selected ? 1.5 : 0.6,lineJoin:.round,dash:available ? [] : [3,4]))
         }
         for item in regionLabels(size:size) {
             var lettering=context

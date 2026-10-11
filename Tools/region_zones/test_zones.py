@@ -1,7 +1,8 @@
 import json
 import unittest
 from pathlib import Path
-from shapely.geometry import box
+from shapely.geometry import box, Polygon
+from shapely.ops import unary_union
 from build_zones import split
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,22 @@ class DownloadZonesTests(unittest.TestCase):
                 from shapely.ops import unary_union
                 self.assertLess(rectangle.symmetric_difference(unary_union(parts)).area, 1e-12)
                 self.assertAlmostEqual(sum(p.area for p in parts), rectangle.area, places=10)
+
+    def test_display_footprints_exclude_sea_and_keep_labels_on_land(self):
+        atlas = json.loads((ROOT/'ridge v3/Resources/RidgeData.bundle/atlas.json').read_text())
+        land = unary_union([Polygon(r).buffer(0) for r in atlas['land']])
+        for zone in self.index['regions']:
+            polygons = [Polygon(s['rings'][0], s['rings'][1:]) for s in zone['mapShapes']]
+            footprint = unary_union(polygons)
+            self.assertLess(footprint.difference(land).area, 1e-10, zone['id'])
+            cells = [box(c['bounds']['minLongitude'], c['bounds']['minLatitude'], c['bounds']['maxLongitude'], c['bounds']['maxLatitude']) for c in zone['cells']]
+            self.assertLess(footprint.difference(unary_union(cells)).area, 1e-10, zone['id'])
+            if footprint.is_empty:
+                self.assertIsNone(zone['labelBounds'])
+            else:
+                b = zone['labelBounds']
+                label = box(b['minLongitude'], b['minLatitude'], b['maxLongitude'], b['maxLatitude'])
+                self.assertTrue(footprint.covers(label), zone['id'])
 
     def test_park_boundaries_auditable_and_compass_names_match(self):
         self.assertEqual(len(self.index['boundarySources']), 15)

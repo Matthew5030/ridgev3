@@ -5,11 +5,44 @@ import CoreGraphics
 /// group; regional downloads use exactly the same assets as custom-area saves.
 struct WorldRegionPack: Identifiable, Sendable {
     struct Cell: Decodable, Sendable { let id: String; let bounds: GeoBounds }
+    /// Geographic display footprint, separate from immutable download files.
+    /// Rings use longitude/latitude and even-odd filling (including water holes).
+    struct MapShape: Decodable, Sendable {
+        let rings:[[[Double]]]
+        let bounds:GeoBounds
+        private enum CodingKeys:String,CodingKey { case rings }
+        init(from decoder:Decoder) throws {
+            rings=try decoder.container(keyedBy:CodingKeys.self).decode([[[Double]]].self,forKey:.rings)
+            guard !rings.isEmpty,rings.allSatisfy({ $0.count>=4 && $0.allSatisfy { $0.count==2 && $0.allSatisfy(\.isFinite) } }) else {
+                throw RidgeError.message("Invalid map outline.")
+            }
+            let points=rings.flatMap { $0 }
+            bounds=GeoBounds(minLatitude:points.map { $0[1] }.min()!,minLongitude:points.map { $0[0] }.min()!,
+                             maxLatitude:points.map { $0[1] }.max()!,maxLongitude:points.map { $0[0] }.max()!)
+        }
+        func contains(_ point:GeoPoint)->Bool {
+            guard bounds.contains(point) else { return false }
+            var inside=false
+            for ring in rings {
+                var previous=ring.last!
+                for current in ring {
+                    if (current[1]>point.latitude) != (previous[1]>point.latitude) {
+                        let crossing=(previous[0]-current[0])*(point.latitude-current[1])/(previous[1]-current[1])+current[0]
+                        if point.longitude<crossing { inside.toggle() }
+                    }
+                    previous=current
+                }
+            }
+            return inside
+        }
+    }
     let id: String
     let name: String
     let subtitle: String
     let landmark: String
     let cells: [Cell]
+    var mapShapes:[MapShape]? = nil
+    var labelBounds:GeoBounds? = nil
     var mapLabel: String? = nil
     var parkID: String? = nil
     var parkName: String? = nil
@@ -31,8 +64,16 @@ struct WorldRegionPack: Identifiable, Sendable {
         default: return "countryside"
         }
     }
+    func contains(_ point:GeoPoint)->Bool {
+        if let mapShapes { return mapShapes.contains { $0.contains(point) } }
+        return cells.contains { $0.bounds.contains(point) }
+    }
     var bounds: GeoBounds {
-        GeoBounds(minLatitude:cells.map { $0.bounds.minLatitude }.min()!,minLongitude:cells.map { $0.bounds.minLongitude }.min()!,
+        if let mapShapes,!mapShapes.isEmpty {
+            return GeoBounds(minLatitude:mapShapes.map { $0.bounds.minLatitude }.min()!,minLongitude:mapShapes.map { $0.bounds.minLongitude }.min()!,
+                             maxLatitude:mapShapes.map { $0.bounds.maxLatitude }.max()!,maxLongitude:mapShapes.map { $0.bounds.maxLongitude }.max()!)
+        }
+        return GeoBounds(minLatitude:cells.map { $0.bounds.minLatitude }.min()!,minLongitude:cells.map { $0.bounds.minLongitude }.min()!,
                   maxLatitude:cells.map { $0.bounds.maxLatitude }.max()!,maxLongitude:cells.map { $0.bounds.maxLongitude }.max()!)
     }
     func sources(in catalog: WorldCatalog) -> [WorldCatalog.Region] {
@@ -55,6 +96,7 @@ struct WorldRegionPack: Identifiable, Sendable {
             guard parts.count>1,let first=parts.first else { return nil }
             return Self(id:id,name:first.parkName ?? first.name,subtitle:first.subtitle,
                         landmark:first.parkName ?? first.name,cells:parts.flatMap(\.cells).sorted { $0.id<$1.id },
+                        mapShapes:parts.allSatisfy { $0.mapShapes != nil } ? parts.flatMap { $0.mapShapes! } : nil,
                         parkID:id,parkName:first.parkName,artwork:first.artwork)
         }.sorted { $0.id<$1.id }
     }
@@ -62,6 +104,7 @@ struct WorldRegionPack: Identifiable, Sendable {
         struct Zone: Decodable {
             let id:String;let name:String;let subtitle:String;let mapLabel:String
             let parkID:String?;let parkName:String?;let artwork:String?;let cells:[Cell]
+            let mapShapes:[MapShape]?;let labelBounds:GeoBounds?
         }
         struct Index: Decodable { let schemaVersion:Int;let regions:[Zone] }
         guard let url = url ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json")
@@ -78,7 +121,7 @@ struct WorldRegionPack: Identifiable, Sendable {
                 throw RidgeError.message("A region has an invalid map boundary.")
             }
             return Self(id:zone.id,name:zone.name,subtitle:zone.subtitle,landmark:zone.parkName ?? zone.name,
-                        cells:zone.cells,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
+                        cells:zone.cells,mapShapes:zone.mapShapes,labelBounds:zone.labelBounds,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
         }
     }
 }
@@ -291,19 +334,12 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         available=WorldOfflineCoverage.displayBounds(sources.map(\.bounds))
         totalTileCount=sources.reduce(0) { $0+$1.tileCount }
         labelPoint=cells.min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }!.center
-        labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:fills)
-        // Irregular park fringes can have a narrow neck at their centre. Fit
-        // lettering in a spacious interior rectangle, once, rather than hiding
-        // the name or moving it while the user zooms.
-        var anchors:[GeoPoint]=fills.map { $0.center }
-        anchors.sort { a,b in
-            if a.latitude == b.latitude { return a.longitude<b.longitude }
-            return a.latitude<b.latitude
-        }
-        for anchor in anchors {
-            let fit=Self.fittedLabelScale(label,anchor:anchor,fills:fills)
-            if fit>labelFontScale*1.001 { labelPoint=anchor;labelFontScale=fit }
-        }
+        if let labelBounds=pack.labelBounds {
+            labelPoint=labelBounds.center
+            labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:[labelBounds])
+        } else if pack.mapShapes == nil {
+            labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:fills)
+        } // No label is placed over an empty sea footprint.
     }
     /// Fit once in projected map coordinates, independent of camera/selection.
     /// Every zoom then uses the same footprint, so adjacent labels cannot swap
@@ -374,6 +410,6 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         return result
     }
     static func at(_ point:GeoPoint,in overlays:[Self])->Self? {
-        overlays.sorted { $0.id<$1.id }.first { $0.pack.cells.contains { $0.bounds.contains(point) } }
+        overlays.sorted { $0.id<$1.id }.first { $0.pack.contains(point) }
     }
 }

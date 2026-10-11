@@ -49,3 +49,20 @@ October 2026 catalogue upper estimates (terrain + maps + routing):
 
 Actual transfer skips verified saved files. Whole-park selection is the union of
 its smaller areas, never a separate duplicate pack.
+
+## Display footprints
+
+Storage membership and the map outline are deliberately separate. The generator
+clips each zone to the bundled atlas's Natural Earth land polygons. For the 445
+partially populated published sections it also reads `world.json` and unions the
+actual small terrain-tile bounds, so gaps and coastal tile edges are retained.
+Unpublished land stays in the outline and uses the existing unavailable state.
+Four entirely offshore, unpublished zones have empty footprints and are omitted
+from the map/search. No published download files are removed or renamed.
+
+`mapShapes` contains polygon rings, including holes. Drawing, hit testing and
+animated download fills use these shapes; sea taps select nothing. `labelBounds`
+is an interior rectangle computed offline, keeping labels off the water with no
+runtime coastline fitting or network requests. Coastlines have the precision of
+the existing bundled atlas, not a new survey dataset. Thin single strokes replace
+the previous double borders with white casing.

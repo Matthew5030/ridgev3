@@ -143,7 +143,7 @@ struct WorldExploreView: View {
         }
         .task(id:"\(connectionID)|\(world.catalog?.revision ?? "")|\(world.offlineCoverageRevision)") {
             do {
-                let packs=try WorldRegionPack.load(),catalog=world.catalog,saved=world.offlineBounds
+                let packs=try WorldRegionPack.load().filter { $0.mapShapes?.isEmpty != true },catalog=world.catalog,saved=world.offlineBounds
                 let (overlays,parks)=await Task.detached(priority:.userInitiated) {
                     (WorldRegionMapOverlay.make(packs:packs,catalog:catalog,offline:saved),
                      WorldRegionMapOverlay.make(packs:WorldRegionPack.wholeParks(in:packs),catalog:catalog,offline:saved))

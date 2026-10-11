@@ -58,6 +58,11 @@ actor RegionTransferAudit {
         }
         let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
         for overlay in overlays {
+            if overlay.pack.mapShapes?.isEmpty == true {
+                try check(overlay.labelFontScale==0 && overlay.totalTileCount==0,"Empty ocean areas have neither labels nor published terrain")
+                continue
+            }
+            try check(overlay.pack.contains(overlay.labelPoint),"Labels stay on the land footprint")
             try check(overlay.labelFontScale>0,"Each label has a stable geographic fit")
             var previous=overlay.labelAppearance(at:0)
             for step in 1...400 {
@@ -69,9 +74,11 @@ actor RegionTransferAudit {
             try check(previous.size==40 && previous.opacity==1,"Large labels settle at their maximum size")
             try check(WorldRegionMapOverlay.at(overlay.labelPoint,in:overlays)?.id==overlay.id,"Region labels are anchored inside their region")
             for cell in overlay.pack.cells {
-                try check(WorldRegionMapOverlay.at(cell.bounds.center,in:overlays)?.id==overlay.id,"Map taps use the same grid partition as the download")
+                let hit=WorldRegionMapOverlay.at(cell.bounds.center,in:overlays)
+                try check(overlay.pack.contains(cell.bounds.center) ? hit?.id==overlay.id : hit==nil,"Map taps follow the visible footprint, not an offshore storage rectangle")
             }
         }
+        try check(WorldRegionMapOverlay.at(.init(latitude:53.5,longitude: -4.5),in:overlays)==nil,"Sea north of Anglesey is not selectable")
         try check(WorldRegionMapOverlay.at(.init(latitude:0,longitude:0),in:overlays)==nil,"Tapping outside UK packs selects nothing")
         let emptyOverlay=WorldRegionMapOverlay(pack:packs[0],catalog:nil)
         try check(emptyOverlay.available.isEmpty && !emptyOverlay.fills.isEmpty,"Missing catalogue cannot invent downloadable coverage")

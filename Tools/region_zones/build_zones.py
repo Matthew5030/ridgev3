@@ -9,8 +9,10 @@ Requires shapely (also used by the terrain pipeline).
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
-from shapely.geometry import box, shape
+from shapely.geometry import box, shape, Polygon, Point
+from shapely.ops import unary_union
 
 PARKS = [
     ('eryri', 'Eryri', 'ERYRI', 'eryri-park', 'wales'),
@@ -149,6 +151,66 @@ def build(grid, source_root):
                 boundarySources=provenance, regions=zones)
 
 
+def add_map_footprints(result, source_root, atlas_path):
+    """Keep download ownership unchanged; map shapes omit ocean and tile gaps.
+
+    Published partial sections use their real terrain tile footprints. Unpublished
+    land stays selectable and dashed, rather than falsely becoming available.
+    The bundled atlas supplies the same Natural Earth coastline as the base map.
+    """
+    raw = atlas_path.read_bytes()
+    land = unary_union([Polygon(r).buffer(0) for r in json.loads(raw)['land']])
+    catalog = json.loads((source_root/'world-v1-2026-10-04/catalog.json').read_text())
+    sources = {s['id']: s for s in catalog['sources']}
+    partial = {}
+    for source in sources.values():
+        if source['tileCount'] < 256:
+            manifest = json.loads((source_root/'world-v1-2026-10-04'/source['path']).read_text())
+            assert len(manifest['tiles']) == source['tileCount']
+            partial[source['id']] = unary_union([rectangle(t['mesh']) for t in manifest['tiles']])
+    removed = 0
+    for zone in result['regions']:
+        blocks = [partial.get(c['id'], rectangle(c)) for c in zone['cells']]
+        raw_area = unary_union(blocks)
+        clipped = raw_area.intersection(land)
+        polygons = [clipped] if clipped.geom_type == 'Polygon' else [g for g in getattr(clipped, 'geoms', []) if g.geom_type == 'Polygon']
+        polygons = sorted([p for p in polygons if not p.is_empty and p.area > 1e-12], key=lambda p:(-p.area, p.bounds))
+        zone['mapShapes'] = [dict(rings=[list(p.exterior.coords)]+[list(r.coords) for r in p.interiors]) for p in polygons]
+        removed += raw_area.area-clipped.area
+        if not polygons:
+            zone['labelBounds'] = None
+            continue
+        # Find a spacious rectangle fully inside the footprint. Lettering never
+        # sits in a bay just because the storage area's centre falls offshore.
+        candidates = [p.representative_point() for p in polygons]
+        candidates += [Point(centre(c)) for c in zone['cells'] if clipped.contains(Point(centre(c)))]
+        lines = zone['mapLabel'].split('\n')
+        aspect = (max(map(len, lines))*0.72+0.5)/(len(lines)*1.2+0.4)
+        best, best_area = None, 0
+        west, south, east, north = clipped.bounds
+        for point in candidates:
+            ratio = aspect/max(0.2, math.cos(math.radians(point.y)))
+            low, high = 0, min(north-south, (east-west)/ratio)
+            for _ in range(20):
+                height = (low+high)/2
+                rect = box(point.x-height*ratio/2, point.y-height/2, point.x+height*ratio/2, point.y+height/2)
+                if clipped.covers(rect):
+                    low = height
+                else:
+                    high = height
+            area = low*low*ratio
+            if area > best_area:
+                best_area = area
+                best = dict(minLongitude=point.x-low*ratio/2, maxLongitude=point.x+low*ratio/2,
+                            minLatitude=point.y-low/2, maxLatitude=point.y+low/2)
+        assert best is not None, zone['id']
+        zone['labelBounds'] = best
+    result['mapFootprintSource'] = dict(atlasSHA256=hashlib.sha256(raw).hexdigest(),
+        coastline='Bundled Natural Earth atlas', partialSections=len(partial),
+        description='Land-clipped source coverage; partial sections use actual mesh tile bounds. Storage membership is unchanged.')
+    print(f'Clipped map footprints: {len(partial)} partial sections; {removed:.2f} square degrees of ocean/gaps omitted')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', type=Path, required=True)
@@ -156,6 +218,7 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('ridge v3/Resources/uk-download-zones.json'))
     args = parser.parse_args()
     result = build(json.loads(args.grid.read_text()), args.source_root)
+    add_map_footprints(result, args.source_root, Path('ridge v3/Resources/RidgeData.bundle/atlas.json'))
     args.output.write_text(json.dumps(result, separators=(',', ':'), ensure_ascii=False)+'\n')
     catalog = json.loads((args.source_root/'world-v1-2026-10-04/catalog.json').read_text())
     sources = {s['id']: s for s in catalog['sources']}
