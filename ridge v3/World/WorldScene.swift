@@ -25,7 +25,7 @@ struct WorldScene: UIViewRepresentable {
 
 /// The native renderer is deliberately independent of downloads. Nodes are
 /// replaced a tile at a time, and the camera survives every replacement.
-final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
+final class WorldSceneView: SCNView {
     weak var model: WorldModel?
     var onTap: ((GeoPoint) -> Void)?
     var onAtlas: ((GeoBounds) -> Void)?
@@ -65,8 +65,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     private var distance: Float = 6000
     private var yaw: Float = 0
     private var pitch: Float = 0.85
-    private var moveGesture: UIPanGestureRecognizer!
-    private var transformGesture: WorldTwoFingerGesture!
+    private var navigationGesture: WorldNavigationGesture!
     private var routeOverlays: [String: WorldRouteOverlay.Binding] = [:]
     private var routePoints: [RoutePoint] = []
     private var routeSegments: [[RoutePoint]] = []
@@ -77,22 +76,15 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         super.init(frame: .zero, options: nil)
         antialiasingMode = .multisampling4X; preferredFramesPerSecond = 60
         rendersContinuously = false; autoenablesDefaultLighting = false; backgroundColor = UIColor(red: 0.76, green: 0.86, blue: 0.91, alpha: 1)
-        moveGesture = UIPanGestureRecognizer(target: self, action: #selector(panWorld(_:)))
-        moveGesture.minimumNumberOfTouches = 1; moveGesture.maximumNumberOfTouches = 1
-        transformGesture = WorldTwoFingerGesture(target: self, action: #selector(transformMap(_:)))
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tap(_:)))
-        tap.require(toFail: moveGesture); tap.require(toFail: transformGesture)
-        for g in [moveGesture!,transformGesture!,tap] { g.delegate = self; addGestureRecognizer(g) }
+        navigationGesture = WorldNavigationGesture(target:self,action:#selector(navigateWorld(_:)))
+        let tap = UITapGestureRecognizer(target:self,action:#selector(tap(_:)))
+        tap.require(toFail:navigationGesture)
+        addGestureRecognizer(navigationGesture);addGestureRecognizer(tap)
         isMultipleTouchEnabled = true
         isAccessibilityElement = true
         accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom. Drag two fingers left or right to turn, up or down to tilt. The horizon stays level."
     }
     required init?(coder: NSCoder) { nil }
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        // The one-finger pan cancels as the second finger arrives. The transform
-        // recognizer must be allowed to take over that same touch sequence.
-        (gestureRecognizer === moveGesture && other === transformGesture) || (gestureRecognizer === transformGesture && other === moveGesture)
-    }
     private func local(_ point: GeoPoint) -> SIMD3<Float> {
         guard let source else { return .zero }
         let uv = source.frame.uv(point)
@@ -324,7 +316,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             self.cameraNotification = nil
             guard self.scene != nil, let pose = self.model?.cameraPose else { return }
             self.model?.update(center:pose.target,distance:pose.distanceMeters)
-            if self.distance > 12000 && self.flightLink == nil { self.beginExit() }
+            if self.distance > 12000 && self.flightLink == nil && !self.navigationGesture.isInteracting { self.beginExit() }
         }
         cameraNotification = notification
         DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:notification)
@@ -442,30 +434,33 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         target=ground; distance=length
         pitch=asin(max(-1,min(1,offset.y/length))); yaw=atan2(offset.x,offset.z)
     }
-    @objc private func panWorld(_ gesture: UIPanGestureRecognizer) {
-        guard gesture.numberOfTouches == 1, gesture.state == .began || gesture.state == .changed else { return }
-        if gesture.state == .began { interruptFlight(); rebaseDragPlane() }
-        let d=gesture.translation(in:self), current=gesture.location(in:self)
-        gesture.setTranslation(.zero,in:self)
-        let previous=CGPoint(x:current.x-d.x,y:current.y-d.y)
-        if let a=groundPoint(previous),let b=groundPoint(current) { target += a-b; updateCamera() }
-    }
-    @objc private func transformMap(_ gesture: WorldTwoFingerGesture) {
+    @objc private func navigateWorld(_ gesture: WorldNavigationGesture) {
         guard gesture.state == .began || gesture.state == .changed else {
-            moveGesture.isEnabled = true; return
+            updateCamera();return
         }
-        if gesture.state == .began { interruptFlight(); moveGesture.isEnabled = false; rebaseDragPlane() }
-        defer { gesture.consume() }
-        if gesture.intent == .angle {
-            let dx=gesture.centroid.x-gesture.previousCentroid.x
-            let dy=gesture.centroid.y-gesture.previousCentroid.y
+        if gesture.state == .began { interruptFlight() }
+        switch gesture.step {
+        case .none: return
+        case .rebase:
+            rebaseDragPlane()
+            return
+        case let .pan(previous,current):
+            if let a=groundPoint(previous),let b=groundPoint(current) { target += a-b }
+            else {
+                // Near the sky, finger rays may never meet the ground. Apply
+                // the same drag around the screen centre instead of freezing.
+                let middle=CGPoint(x:bounds.midX,y:bounds.midY)
+                let shifted=CGPoint(x:middle.x+current.x-previous.x,y:middle.y+current.y-previous.y)
+                if let a=groundPoint(middle),let b=groundPoint(shifted) { target += a-b }
+            }
+        case let .angle(dx,dy):
             yaw -= Float(dx)*0.005
             pitch=min(1.49,max(0.30,pitch-Float(dy)*0.004))
-        } else {
-            let anchor=groundPoint(gesture.previousCentroid)
-            distance /= Float(gesture.scaleDelta)
+        case let .zoom(previous,current,scale):
+            let anchor=groundPoint(previous)
+            distance /= Float(scale)
             updateCamera(notify:false)
-            if let anchor,let after=groundPoint(gesture.centroid) { target += anchor-after }
+            if let anchor,let after=groundPoint(current) { target += anchor-after }
         }
         updateCamera()
     }

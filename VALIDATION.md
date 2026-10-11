@@ -264,3 +264,11 @@ The transfer can still take time on a slow server. This change makes it an expli
 - `sh Tools/test_world_catalog.sh`: PASS 38 (selection, exact-edge intersection, size limit, verified completion, cache-only rendering, repair, cancellation and reopening).
 - `sh Tools/test_world_streaming.sh`: PASS 1619 (streaming, retention, geometry reuse, memory and routing). An initial run was invalidated by editing an input while Swift compiled; the subsequent unchanged-source run passed.
 - Debug simulator and signed device builds succeeded. Simulator UI: chose Draw area, tapped opposite corners around Llanberis, inspected a 6.7 × 6.1 km / 195 tile selection, downloaded the missing 1.3 MB, observed 107/195 then 195/195 ready and green ticks, and confirmed entry into 3D. Direct drag injection through Device Hub did not move the pointer; the two-corner selection path was exercised end-to-end, with physical drag/resize left for touch-device testing.
+
+## 2026-10-11 — Stabilise 3D gesture handoffs
+
+- Replaced the competing one-finger pan and custom two-finger recognizers with one continuous navigation recognizer. Adding/removing fingers resets the coordinate baseline without cancelling the remaining touch; a third finger pauses movement. Single taps remain available for route placement.
+- Two-finger angle recognition requires both fingers to travel together. Horizontal movement locks to heading and vertical movement to tilt for that gesture. A clear pinch can take over after initial angle classification, with no replay of accumulated scale. Recognition thresholds are consumed before applying camera deltas.
+- Ground dragging falls back to screen-centre projection when a finger's ray points into the sky. Zooming out waits until contact ends before transitioning to the atlas. The camera's level-horizon orientation is unchanged.
+- `sh Tools/test_world_gestures.sh`: PASS 338. Added multi-event sequences for 1→2→1 handoff, changed finger identity/order, third-finger pause, angle-axis isolation, pinch takeover, jitter and reset; existing full-heading/no-roll orientation tests pass.
+- Signed iOS and simulator Debug builds succeeded. Existing SceneKit concurrency/optional-colour warnings remain. These are deterministic gesture-state tests, not a claim that physical multitouch feel has been verified; the iPad build is for that hands-on check.
