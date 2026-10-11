@@ -142,3 +142,10 @@ No App Store upload, signing change or external publication was performed. Origi
 ## Normal Eryri source and local downloads — 14 September 2026
 
 The full prepared Eryri source is now published through a local Docker file server and connected to the normal atlas/selection/crop/3D flow. It covers 97.64% of the supplied national-park boundary with complete LiDAR cells; source gaps remain unavailable. It is separate from the application bundle and the adaptive experiment. See [download-server validation](Tools/download-server/VALIDATION.md) for measured timings, 397 new download/source assertions, real northern/southern terrain loads, Docker checks and remaining physical-device/visual checks.
+
+## Clear map-source saving — 11 October 2026
+
+- Map source is the first Settings section. A persistent header Save/Done action and a full-width Save map source button apply the draft; Cancel leaves the saved source unchanged. Local addresses are validated and normalised before the address and source mode are saved.
+- Explore shows the selected local hostname and the loaded catalogue's area count. Offline instructions now describe the download-before-3D flow. Removed the unused legacy download-server section.
+- Signed iPad and simulator Debug builds passed. In the iPad simulator, invalid input stayed on Settings with an error; saving a valid changed endpoint closed Settings, loaded the local catalogue and displayed the new hostname with 2,531 map areas. Reopening Settings retained the normalised address.
+- Installed on Matthew's physical M1 iPad Pro without uninstalling. Automatic launch was blocked by the locked device; no physical-device Settings interaction is claimed.

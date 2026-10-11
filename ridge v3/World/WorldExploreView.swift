@@ -78,7 +78,14 @@ struct WorldExploreView: View {
                             Text("Explore the mountains").font(.headline)
                             Text("Choose a place. Save the surrounding map, then explore in 3D.").font(.subheadline)
                             Text(mapMode == "cloud" ? "Cloud · Snowdon pilot coverage" : "Local network")
-                                .font(.caption).foregroundStyle(RidgeTheme.muted)
+                                .font(.caption.weight(.semibold)).foregroundStyle(RidgeTheme.muted)
+                            if mapMode == "local", let host = world.libraryRoot?.host {
+                                Text(host).font(.caption).foregroundStyle(RidgeTheme.muted)
+                            }
+                            if let catalog = world.catalog {
+                                Text("\(catalog.sources.count.formatted()) map areas available")
+                                    .font(.caption).foregroundStyle(RidgeTheme.muted)
+                            }
                             if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps") }
                         }.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                         Spacer()
