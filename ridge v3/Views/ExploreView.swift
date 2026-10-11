@@ -435,6 +435,7 @@ struct OfflineAtlasView: View {
     var route: [GeoPoint]
     var routeSegments: [[GeoPoint]]
     var onViewport: (GeoBounds) -> Void
+    var onUserViewport: ((GeoBounds) -> Void)? = nil
     var snapToTiles = false
     var worldCoverage: GeoBounds? = nil
     private var maximumScale: Double { onWorldTap != nil || worldCoverage != nil ? 16_000_000 : 4_000_000 }
@@ -562,7 +563,7 @@ struct OfflineAtlasView: View {
                         }
                         if ended {
                             if selecting && !movingMap && !twoFingers,let selectedBounds { onSelectionFinished?(selectedBounds) }
-                            dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size)
+                            dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size, userInitiated: true)
                         }
                     }, onZoom: { factor, anchor, ended in
                         focusFlight?.cancel(); focusFlight=nil
@@ -570,7 +571,7 @@ struct OfflineAtlasView: View {
                         let before=CGPoint(x:center.x+offset.x/scale,y:center.y+offset.y/scale)
                         scale = min(maximumScale, max(350, scale * factor))
                         center=CGPoint(x:min(1,max(0,before.x-offset.x/scale)),y:min(0.94,max(0.06,before.y-offset.y/scale)))
-                        if ended { reportViewport(geometry.size) }
+                        if ended { reportViewport(geometry.size, userInitiated: true) }
                     }, onTap: { location in
                         if let onRegionTap {
                             let labels=regionLabels(size:geometry.size)
@@ -666,16 +667,20 @@ struct OfflineAtlasView: View {
                                     .background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                             }.buttonStyle(.plain)
                         }
-                        RoundControl(symbol: "plus", label: "Zoom atlas in") { focusFlight?.cancel(); focusFlight=nil; scale = min(maximumScale, scale * 1.8); reportViewport(geometry.size) }
-                        RoundControl(symbol: "minus", label: "Zoom atlas out") { focusFlight?.cancel(); focusFlight=nil; scale = max(350, scale / 1.8); reportViewport(geometry.size) }
+                        RoundControl(symbol: "plus", label: "Zoom atlas in") { focusFlight?.cancel(); focusFlight=nil; scale = min(maximumScale, scale * 1.8); reportViewport(geometry.size, userInitiated: true) }
+                        RoundControl(symbol: "minus", label: "Zoom atlas out") { focusFlight?.cancel(); focusFlight=nil; scale = max(350, scale / 1.8); reportViewport(geometry.size, userInitiated: true) }
                         RoundControl(symbol: "globe.europe.africa", label: "Show United Kingdom") { focusFlight?.cancel(); focusFlight=nil; zoom(to: GeoBounds(minLatitude:49.8,minLongitude:-8.3,maxLatitude:59.4,maxLongitude:2.0),size:geometry.size); reportViewport(geometry.size) }
                     }.padding(12)
                 }
         }.clipped()
     }
 
-    private func reportViewport(_ size: CGSize) {
-        if let bounds = area(from: coordinate(at: .zero, size: size), to: coordinate(at: CGPoint(x: size.width, y: size.height), size: size)) { onViewport(bounds) }
+    private func reportViewport(_ size: CGSize, userInitiated: Bool = false) {
+        guard let bounds = area(from: coordinate(at: .zero, size: size), to: coordinate(at: CGPoint(x: size.width, y: size.height), size: size)) else { return }
+        // Layout, region focus and returning from 3D also report a viewport.
+        // Only deliberate navigation should restart automatic terrain entry.
+        if userInitiated, let onUserViewport { onUserViewport(bounds) }
+        else { onViewport(bounds) }
     }
     private func area(from a: GeoPoint, to b: GeoPoint) -> GeoBounds? {
         let bounds = GeoBounds(minLatitude: max(-85, min(a.latitude, b.latitude)), minLongitude: max(-180, min(a.longitude, b.longitude)), maxLatitude: min(85, max(a.latitude, b.latitude)), maxLongitude: min(180, max(a.longitude, b.longitude)))

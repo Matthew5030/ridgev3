@@ -45,7 +45,7 @@ struct WorldExploreView: View {
             } else {
                 OfflineAtlasView(atlas:store.atlas,entries:[],savedEntries:[],focus:focus,selecting:false,
                     selectedBounds:.constant(nil),draggingSelection:.constant(false),admittedBounds:nil,selectionAllowed:false,
-                    requiredBounds:nil,route:[],routeSegments:[],onViewport:viewportChanged,onWorldTap:visit,
+                    requiredBounds:nil,route:[],routeSegments:[],onViewport:viewportChanged,onUserViewport:userViewportChanged,onWorldTap:visit,
                     worldDownloadTiles:world.regionTileProgress.tiles,
                     worldCompletedTiles:world.regionTileProgress.completed,
                     worldActiveTiles:world.regionTileProgress.active,
@@ -257,7 +257,7 @@ struct WorldExploreView: View {
                 }.accessibilityLabel("Show all regions")
             }
             if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps").font(.caption) }
-            else { Text("Tap a region · dashed outlines are unavailable").font(.caption).foregroundStyle(RidgeTheme.muted) }
+            else { Text("Zoom into saved terrain · tap a region to download").font(.caption).foregroundStyle(RidgeTheme.muted) }
             if let regionMapError { Text(regionMapError).font(.caption) }
         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }
@@ -352,10 +352,21 @@ struct WorldExploreView: View {
         if world.in3D && world.hasCoverage(point) { openPlace(point) }
         else { showRegion(at:point) }
     }
+    private func userViewportChanged(_ bounds:GeoBounds) {
+        visibleBounds=bounds
+        guard !world.in3D,!world.isSavingOffline else { return }
+        exploring=true
+        // A selected region must not trap a pinch zoom behind its Explore button.
+        // browse() still checks saved coverage before preparing any terrain.
+        if bounds.depthMeters < WorldCameraTransition.entrySpanLimit,world.downloadRegion != nil {
+            world.cancelDownload();explorePoint=nil
+        }
+        viewportChanged(bounds)
+    }
     private func viewportChanged(_ bounds:GeoBounds) {
         visibleBounds = bounds
-        guard !world.in3D,exploring,world.downloadRegion == nil else { return }
-        guard bounds.depthMeters < 7000 else { world.cancelRegionLoad(); world.coverageMessage = nil; return }
+        guard !world.in3D,exploring,!world.isSavingOffline,world.downloadRegion == nil else { return }
+        guard bounds.depthMeters < WorldCameraTransition.entrySpanLimit else { world.cancelRegionLoad(); world.coverageMessage = nil; return }
         guard world.browse(bounds.center), !world.streaming, let source = world.source, source.bounds.contains(bounds.center) else { return }
         world.center = bounds.center; world.cameraPose = nil; world.entrySpan = bounds.depthMeters
         world.distance = max(1800,bounds.depthMeters); atlasRequest = nil; world.in3D = true
