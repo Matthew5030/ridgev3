@@ -21,8 +21,10 @@ the existing geographic context, refined with elevation.
 
 A section is rendered at 1,024 pixels (z12) with 2x antialiasing, then divided into
 256px pages; z11/z10 are derived from that same image. Coarser parents use the full
-UK base rectangle. Overview lines have modest minimum widths for readability;
-close-up vector styling is unchanged. Terrain derivatives use neighbouring source
+UK base rectangle. Roads use the same ground widths as the native renderer:
+3.35 m major roads, 2.4 m minor roads, and a 1.43 m casing addition. Fractional
+pixel coverage makes distant roads naturally fade rather than rounding them up
+to wide stripes. Other overview line styles and close-up vector styling are unchanged. Terrain derivatives use neighbouring source
 heights and global pixel centres. Colour margins extend the clipped edge before
 filtering to avoid a pale seam at source boundaries.
 
@@ -31,13 +33,13 @@ filtering to avoid a pale seam at source boundaries.
 Use a new output revision after changing renderer, palette or inputs:
 
 ```sh
-/tmp/ridge-world-build-env/bin/python Tools/world_atlas/texture_overview.py \
+python3 Tools/world_atlas/texture_overview.py \
   --base '/Volumes/MLB_EXT_4TB/Ridge Sources/world-atlas-v1' \
   --background '/Volumes/MLB_EXT_4TB/Ridge Sources/uk-coarse-background-v2/background.json' \
   --atlas 'ridge v3/Resources/RidgeData.bundle/atlas.json' \
   --style 'ridge v3/World/WorldCartography.swift' \
   --archives '/Volumes/MLB_EXT_4TB/Ridge Experiments/world-source-archives-v1' \
-  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-atlas-textured-v2'
+  --output '/Volumes/MLB_EXT_4TB/Ridge Sources/world-atlas-textured-v3'
 ```
 
 Two workers process one section each, recycling after eight sections to release
@@ -53,8 +55,8 @@ output revision. It still supplies the untextured UK context outside that test.
 ## Check and publish
 
 ```sh
-/tmp/ridge-world-build-env/bin/python Tools/world_atlas/test_build.py
-/tmp/ridge-world-build-env/bin/python Tools/world_atlas/test_texture_overview.py
+python3 Tools/world_atlas/test_build.py
+python3 Tools/world_atlas/test_texture_overview.py
 sh Tools/test_world_atlas.sh
 ```
 

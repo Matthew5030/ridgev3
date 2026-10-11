@@ -27,14 +27,29 @@ AA = 2
 FILLS = [('openLand', (227,227,206)), ('accessLand', (227,221,214)),
          ('wetland', (216,226,207)), ('woodland', (200,216,188)),
          ('water', SEA), ('building', (157,148,133))]
-# Same inks as WorldCartography; minimum widths make overview roads readable.
+# Roads use the same ground widths and casing as WorldCartography. A minimum
+# screen width would turn a 3 m road into a 20–40 m stripe in the atlas, then
+# visibly shrink it at the handover to 3D.
 LINES = [('water', (118,173,184), .95, .35),
-         ('majorRoad', (216,169,121), 3.35, .85),
-         ('minorRoad', (181,166,139), 2.4, .5),
+         ('majorRoad', (216,169,121), 3.35, 0),
+         ('minorRoad', (181,166,139), 2.4, 0),
          ('track', (155,141,112), 1.43, .3),
          ('footpath', (171,100,113), 1.43, .3),
          ('bridleway', (134,104,145), 1.43, .3),
          ('unknownPath', (164,155,149), 1.43, .3)]
+ROAD_CASING_METRES = 1.43
+
+
+def ground_stroke(image, points, ink, width_pixels):
+    """Preserve fractional-pixel coverage instead of rounding thin roads up.
+
+    Pillow requires integer stroke widths. Opacity supplies the remaining
+    coverage, before the existing supersampled reduction filters the result.
+    """
+    width = max(1, math.ceil(width_pixels))
+    opacity = max(0, min(255, round(255 * width_pixels / width)))
+    if opacity:
+        ImageDraw.Draw(image, 'RGBA').line(points, fill=(*ink, opacity), width=width, joint='curve')
 
 
 def polygons(geometry):
@@ -161,8 +176,10 @@ class Textures:
                     if len(ring)<2:continue
                     pts=coords(ring)
                     if kind.endswith('Road'):
-                        draw.line(pts,fill=(255,253,243),width=thickness+2,joint='curve')
-                    draw.line(pts,fill=ink,width=thickness,joint='curve')
+                        ground_stroke(image,pts,(255,253,243),(width+ROAD_CASING_METRES)/metres*AA)
+                        ground_stroke(image,pts,ink,width/metres*AA)
+                    else:
+                        draw.line(pts,fill=ink,width=thickness,joint='curve')
         extrude_gutter(image,GUTTER*AA)
         extrude_gutter(water,GUTTER*AA)
         image=image.resize((side,side),Image.Resampling.LANCZOS)

@@ -38,6 +38,26 @@ def rectangle(x0, y0, x1, y1):
 
 
 class OverviewTests(unittest.TestCase):
+    def test_distant_roads_fade_with_ground_coverage_instead_of_staying_one_pixel(self):
+        energies = []
+        for width in (0.2, 0.4, 0.8, 1.6):
+            image = Image.new('RGB', (100, 30), (255, 255, 255))
+            renderer.ground_stroke(image, [(0, 15), (99, 15)], (0, 0, 0), width)
+            energies.append(float((255 - np.asarray(image).astype(float)).sum()))
+        for previous, current in zip(energies, energies[1:]):
+            self.assertAlmostEqual(current / previous, 2, delta=0.025)
+
+    def test_road_ground_widths_and_casing_match_native_cartography(self):
+        import re
+        swift = (Path(__file__).resolve().parents[2] / 'ridge v3/World/WorldCartography.swift').read_text()
+        for kind, _, width, minimum in renderer.LINES:
+            if kind.endswith('Road'):
+                native = re.search(r'\("' + kind + r'",0x[0-9a-f]+,([0-9.]+),', swift)
+                self.assertIsNotNone(native)
+                self.assertEqual(width, float(native[1]))
+                self.assertEqual(minimum, 0)
+        self.assertIn('setLineWidth(width+' + str(renderer.ROAD_CASING_METRES) + ')', swift)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
