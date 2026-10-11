@@ -26,6 +26,25 @@ import Foundation
                 }
             }
         }
+        // Focused ground and its nearby route remain outside the haze at every
+        // stage of the sky/terrain transition, including its final frame.
+        for span in [2000.0,3500,6900] {
+            for i in 0...100 {
+                let pose = WorldCameraTransition.entry(span:span,progress:Double(i)/100)
+                let fog = WorldAtmosphere.range(cameraDistance:pose.distance)
+                check(fog.start > pose.distance+10000)
+                check(fog.end-fog.start >= 50000)
+                if i < 100 {
+                    let next = WorldCameraTransition.entry(span:span,progress:Double(i+1)/100)
+                    let nextFog = WorldAtmosphere.range(cameraDistance:next.distance)
+                    check(abs(nextFog.start-fog.start) <= abs(next.distance-pose.distance)+0.001)
+                }
+            }
+        }
+        for distance in [170.0,2000,6000,12000,26000,300000] {
+            let fog = WorldAtmosphere.range(cameraDistance:distance)
+            check(fog.start >= 20000 && fog.start > distance && fog.end > fog.start)
+        }
         print("PASS \(checks) camera transition checks")
     }
 }

@@ -19,6 +19,8 @@ import CoreGraphics
     var routeTerrain: LoadedTerrain?
     var tiles: [String: WorldPreparedTile] = [:]
     var revision = 0
+    @ObservationIgnored var changedTileIDs = Set<String>()
+    @ObservationIgnored private var tilesByID: [String:WorldTile] = [:]
     var isLoading = false
     var message: String?
     var center = GeoPoint(latitude: 53.0763, longitude: -4.0546)
@@ -56,6 +58,7 @@ import CoreGraphics
     func configure(mode: String, local: String) async {
         cancelRegionLoad(); generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; failed = []; tiles = [:]; previewPages = [:]
+        tilesByID = [:]; changedTileIDs = []
         source = nil; overview = nil; backdrop = nil; preview = nil; previewBounds = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
         savingOffline?.cancel(); savingOffline = nil; offlineMessage = nil
@@ -151,6 +154,8 @@ import CoreGraphics
     private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, image: CGImage?, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore) {
         generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
         files = candidate; source = next; overview = elevation; backdrop = background; preview = image
+        tilesByID = Dictionary(uniqueKeysWithValues:next.tiles.map { ($0.id,$0) })
+        changedTileIDs.removeAll(keepingCapacity:true)
         // All windows use the same frame, so overlapping meshes, images and
         // scene nodes can stay exactly where they are.
         let previous = tiles
@@ -192,8 +197,9 @@ import CoreGraphics
         // attached until its replacement is ready. A detail change must never
         // expose an untextured tile.
         for id in Array(tiles.keys) {
-            guard let desired=requests[id] else { tiles.removeValue(forKey:id);continue }
+            guard let desired=requests[id] else { tiles.removeValue(forKey:id);changedTileIDs.insert(id);continue }
             if tiles[id]?.request.fine == true && !desired.fine {
+                changedTileIDs.insert(id)
                 tiles[id]?.mesh=nil;tiles[id]?.geometry=nil;tiles[id]?.request.fine=false
             }
         }
@@ -212,12 +218,12 @@ import CoreGraphics
             while !Task.isCancelled && token == generation {
                 let requests = WorldWorkingSet.pending(wanted:wanted,current:tiles.mapValues(\.request)).filter { !self.failed.contains($0.id) }
                 pending = requests.count
-                guard let request = requests.first, let tile = source.tiles.first(where: { $0.id == request.id }) else { return }
+                guard let request = requests.first, let tile = tilesByID[request.id] else { return }
                 do {
                     let prepared = try await files.prepare(tile, request: request, sourceBounds: source.frame, previous:tiles[request.id])
                     guard token == generation, !Task.isCancelled else { return }
                     let firstPage = tiles[request.id] == nil && !request.fine && wanted.contains(where: { $0.id == request.id && $0.pixels >= request.pixels })
-                    if wanted.contains(request) || firstPage { tiles[request.id] = prepared; revision += 1 }
+                    if wanted.contains(request) || firstPage { tiles[request.id] = prepared; changedTileIDs.insert(request.id); revision += 1 }
                 } catch {
                     guard token == generation, !Task.isCancelled else { return }
                     failed.insert(request.id); message = "Some detail is unavailable. The overview is still usable."
@@ -232,13 +238,14 @@ import CoreGraphics
         }
         pump()
     }
-    func suspend() { cancelRegionLoad(); generation += 1; work?.cancel(); work = nil; pending = 0; isLoading = false; tiles = previewPages; revision += 1 }
+    func suspend() { cancelRegionLoad(); generation += 1; work?.cancel(); work = nil; pending = 0; isLoading = false; changedTileIDs.formUnion(tiles.keys); tiles = [:]; revision += 1 }
     func resume() {
         if catalog != nil, let point = requestedPoint { browse(point) }
         pump()
     }
     func memoryWarning() {
         reduceDetailUntil = Date().addingTimeInterval(30)
+        changedTileIDs.formUnion(tiles.keys)
         tiles = [:]; wanted = wanted.prefix(12).map { WorldTileRequest(id: $0.id, pixels: 256, fine: false) }; revision += 1
         message = "Detail reduced to free memory."; pump()
     }

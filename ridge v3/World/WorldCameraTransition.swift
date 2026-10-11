@@ -25,3 +25,12 @@ enum WorldCameraTransition {
     }
     private static func ease(_ progress: Double) -> Double { let t=max(0,min(1,progress));return t*t*(3-2*t) }
 }
+
+/// Atmosphere depends on viewing distance, never on the state of tile loading.
+/// Use the same curve during flight and ordinary gestures so entry cannot flash.
+enum WorldAtmosphere {
+    static func range(cameraDistance: Double) -> (start: Double, end: Double) {
+        let start = max(20000,cameraDistance+16000)
+        return (start,start+60000)
+    }
+}

@@ -20,7 +20,7 @@ struct WorldScene: UIViewRepresentable {
         view.model = model; view.onTap = onTap; view.onAtlas = onAtlas
         view.refresh(route: route, segments: segments, waypoints: waypoints, command: command, atlasRequest:atlasRequest)
     }
-    static func dismantleUIView(_ view: WorldSceneView, coordinator: ()) { view.stopFlight(); view.scene = nil; view.model = nil }
+    static func dismantleUIView(_ view: WorldSceneView, coordinator: ()) { view.stopFlight(); view.cancelCameraNotification(); view.scene = nil; view.model = nil }
 }
 
 /// The native renderer is deliberately independent of downloads. Nodes are
@@ -32,7 +32,12 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     private var source: WorldSource?
     private var overview: WorldOverview?
     private var nodes: [String: SCNNode] = [:]
-    private var tileIDs: [Int: String] = [:]
+    private var tileIndex = WorldTileIndex(tiles:[])
+    private var cameraNotification: DispatchWorkItem?
+    private var labelNotification: DispatchWorkItem?
+    private var uploadNotification: DispatchWorkItem?
+    private var uploadQueue: [String] = []
+    private var queuedUploads = Set<String>()
     private var coarse: [String: SCNGeometry] = [:]
     private var applied: [String: WorldTileRequest] = [:]
     private var flightLink: CADisplayLink?
@@ -54,6 +59,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     private var routeWaypoints: [RouteWaypoint] = []
     private var lastCommand: TerrainCameraCommand?
     private var labels: [(MapPlace, UILabel)] = []
+    private var labelPositions: [String:SIMD3<Float>] = [:]
+    private var labelsDirty = true
+    private var lastLabelUpdate = 0.0
 
     init() {
         super.init(frame: .zero, options: nil)
@@ -67,6 +75,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         tap.require(toFail: moveGesture); tap.require(toFail: transformGesture)
         for g in [moveGesture!,transformGesture!,tap] { g.delegate = self; addGestureRecognizer(g) }
         isMultipleTouchEnabled = true
+        isAccessibilityElement = true
         accessibilityLabel = "Terrain map"; accessibilityHint = "Drag to move. Pinch to zoom. Drag two fingers left or right to turn, up or down to tilt. The horizon stays level."
     }
     required init?(coder: NSCoder) { nil }
@@ -85,7 +94,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     private func height(_ point: GeoPoint) -> Float {
         guard let source, let overview else { return 0 }
-        if let tile = source.tiles.first(where: { $0.mesh.bounds.contains(point) }),
+        if let tile = tileIndex.tile(at:point),
            let mesh = model?.tiles[tile.id]?.mesh ?? model?.backdrop?.meshes[tile.id],
            let h = mesh.elevation(at:point) { return Float(h) }
         return overview.elevation(point, bounds: source.bounds)
@@ -101,20 +110,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         }
         if revision != model.revision {
             revision = model.revision
-            SCNTransaction.begin(); SCNTransaction.animationDuration = 0
-            for tile in next.tiles {
-                if let prepared = model.preparedTile(tile.id) {
-                    guard applied[tile.id] != prepared.request else { continue }
-                    let geometry = prepared.geometry ?? coarse[tile.id]!
-                    geometry.materials = [material(prepared.image, tileID:tile.id)]
-                    nodes[tile.id]?.geometry = geometry; applied[tile.id] = prepared.request
-                    // Hidden fallback geometry must not retain an obsolete texture.
-                    if prepared.geometry != nil { coarse[tile.id]?.materials = [] }
-                } else if applied.removeValue(forKey: tile.id) != nil {
-                    coarse[tile.id]?.materials = [material(nil, tileID:tile.id)]; nodes[tile.id]?.geometry = coarse[tile.id]
-                }
-            }
-            SCNTransaction.commit(); scheduleLabels()
+            let changed = sourceChanged ? next.tiles.sorted { $0.mesh.bounds.center.distance(to:model.center) > $1.mesh.bounds.center.distance(to:model.center) }.map(\.id) : Array(model.changedTileIDs)
+            model.changedTileIDs.removeAll(keepingCapacity:true)
+            enqueueTerrain(changed)
         }
         if sourceChanged || route != routePoints || segments != routeSegments || waypoints != routeWaypoints { routeSegments = segments; routePoints = route; routeWaypoints = waypoints; updateRouteOverlay() }
         if lastCommand != command {
@@ -145,8 +143,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     }
     private func buildScene(_ source: WorldSource, overview: WorldOverview) {
         let scene = SCNScene(); scene.background.contents = backgroundColor
-        scene.fogColor = backgroundColor; scene.fogStartDistance = 9000; scene.fogEndDistance = 26000
-        self.scene = scene; nodes = [:]; coarse = [:]; applied = [:]; tileIDs = [:]; routeOverlays = [:]
+        scene.fogColor = backgroundColor; scene.fogDensityExponent = 1
+        cancelCameraNotification()
+        self.scene = scene; nodes = [:]; coarse = [:]; applied = [:]; tileIndex = WorldTileIndex(tiles:[]); routeOverlays = [:]
         cameraNode = SCNNode(); cameraNode.camera = SCNCamera(); cameraNode.camera?.fieldOfView = 43
         cameraNode.camera?.zNear = 2; cameraNode.camera?.zFar = 60000; cameraNode.camera?.wantsHDR = false
         scene.rootNode.addChildNode(cameraNode); pointOfView = cameraNode
@@ -165,44 +164,72 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         } else { updateCamera() }
     }
     private func reconcileTerrain(_ source: WorldSource, overview: WorldOverview) {
-        guard let scene else { return }
+        guard scene != nil else { return }
+        tileIndex = WorldTileIndex(tiles:source.tiles)
         let keep = Set(source.tiles.map(\.id))
-        for id in Array(nodes.keys) where !keep.contains(id) {
+        uploadQueue.removeAll { !keep.contains($0) }; queuedUploads.formIntersection(keep)
+        for id in Array(coarse.keys) where !keep.contains(id) {
             nodes.removeValue(forKey:id)?.removeFromParentNode()
             coarse.removeValue(forKey:id); applied.removeValue(forKey:id); routeOverlays.removeValue(forKey:id)
         }
         for tile in source.tiles {
             guard let g = model?.backdrop?.geometries[tile.id] else { continue }
-            if nodes[tile.id] != nil {
-                if coarse[tile.id] !== g { coarse[tile.id] = g; applied.removeValue(forKey:tile.id) }
-                continue
-            }
-            g.materials = [material(model?.preparedTile(tile.id)?.image,tileID:tile.id)]
-            coarse[tile.id] = g
-            let node = SCNNode(geometry:g); node.categoryBitMask = 1; node.name = tile.id
-            nodes[tile.id] = node; scene.rootNode.addChildNode(node)
+            if coarse[tile.id] !== g { coarse[tile.id] = g; applied.removeValue(forKey:tile.id) }
         }
         for (_, label) in labels { label.removeFromSuperview() }; labels = []
-        for place in source.places.filter({ $0.kind == "peak" }).prefix(80) {
+        labelPositions = [:]
+        let focus = model?.center ?? source.bounds.center
+        for place in source.places.filter({ $0.kind == "peak" }).sorted(by: { $0.coordinate.distance(to:focus) < $1.coordinate.distance(to:focus) }).prefix(80) {
+            var position = local(place.coordinate); position.y += 15
+            labelPositions[place.id] = position
             let label = UILabel(); label.text = place.name; label.font = .systemFont(ofSize: 12, weight: .semibold)
             label.textColor = UIColor(white: 0.16, alpha: 1); label.backgroundColor = UIColor(white: 1,alpha: 0.78)
             label.layer.cornerRadius = 4; label.clipsToBounds = true; label.isUserInteractionEnabled = false
             label.sizeToFit(); label.bounds.size.width += 12; label.bounds.size.height += 6; addSubview(label); labels.append((place,label))
         }
     }
-    override func layoutSubviews() { super.layoutSubviews(); updateLabels() }
+    private func enqueueTerrain(_ ids: [String]) {
+        for id in ids where queuedUploads.insert(id).inserted { uploadQueue.append(id) }
+        guard uploadNotification == nil else { return }
+        uploadTerrain()
+    }
+    private func uploadTerrain() {
+        uploadNotification = nil
+        guard let model, let scene else { return }
+        let began = CACurrentMediaTime()
+        var count = 0
+        SCNTransaction.begin(); SCNTransaction.animationDuration = 0
+        while let id = uploadQueue.popLast() {
+            queuedUploads.remove(id)
+            guard let fallback = coarse[id], let prepared = model.preparedTile(id) else { continue }
+            if applied[id] != prepared.request || nodes[id] == nil {
+                let geometry = prepared.geometry ?? fallback
+                geometry.materials = [material(prepared.image,tileID:id)]
+                let node: SCNNode
+                if let old = nodes[id] { node = old }
+                else { node = SCNNode(); node.categoryBitMask = 1; node.name = id; nodes[id] = node; scene.rootNode.addChildNode(node) }
+                node.geometry = geometry; applied[id] = prepared.request
+                if prepared.geometry != nil { fallback.materials = [] }
+            }
+            count += 1
+            if count >= 24 || CACurrentMediaTime()-began >= 0.004 { break }
+        }
+        SCNTransaction.commit(); scheduleLabels()
+        if !uploadQueue.isEmpty {
+            let next = DispatchWorkItem { [weak self] in self?.uploadTerrain() }
+            uploadNotification = next
+            DispatchQueue.main.asyncAfter(deadline:.now()+1.0/60,execute:next)
+        }
+    }
+    override func layoutSubviews() { super.layoutSubviews(); labelsDirty = true; updateLabels() }
     private func updateCamera(notify: Bool = true) {
         guard let source else { return }
         // The camera is independent of residency. Moving toward missing data
         // requests it; it never snaps back to a storage rectangle.
         distance = min(flightLink == nil ? 26000 : 300000,max(170,distance))
         cameraNode.camera?.zFar=max(60000,Double(distance)*2)
-        // A narrow-FOV overhead camera is far away even when its footprint is small.
-        // Keep atmospheric fade beyond the ground during that projection change.
-        let remaining = max(2000,(model?.loadedRadius ?? 8000) - (model?.windowDisplacement(from:coordinate(target)) ?? 0))
-        let horizon = min(24000,remaining*0.9)
-        scene?.fogStartDistance = flightLink == nil ? horizon*0.65 : max(horizon*0.65,Double(distance))
-        scene?.fogEndDistance = flightLink == nil ? horizon : max(horizon,Double(distance)+horizon)
+        let atmosphere = WorldAtmosphere.range(cameraDistance:Double(distance))
+        scene?.fogStartDistance = atmosphere.start; scene?.fogEndDistance = atmosphere.end
         var eye = target + distance * SIMD3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
         let point = coordinate(eye)
         if source.bounds.contains(point) { eye.y = max(eye.y,height(point)+25) }
@@ -210,12 +237,24 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         scheduleLabels()
         guard notify else { return }
         model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
-        let center = coordinate(target), range = Double(distance), originID = source.id
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.scene != nil, self.source?.id == originID else { return }
-            self.model?.update(center: center, distance: range)
-            if range > 12000 && self.flightLink == nil { self.beginExit() }
+        // Coalesce navigation work while keeping the actual camera at gesture
+        // rate. A single queued update always consumes the latest pose.
+        guard cameraNotification == nil else { return }
+        let notification = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.cameraNotification = nil
+            guard self.scene != nil, let pose = self.model?.cameraPose else { return }
+            self.model?.update(center:pose.target,distance:pose.distanceMeters)
+            if self.distance > 12000 && self.flightLink == nil { self.beginExit() }
         }
+        cameraNotification = notification
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:notification)
+    }
+    func cancelCameraNotification() {
+        cameraNotification?.cancel(); cameraNotification = nil
+        labelNotification?.cancel(); labelNotification = nil
+        uploadNotification?.cancel(); uploadNotification = nil
+        uploadQueue = []; queuedUploads = []
     }
     func stopFlight() {
         flightLink?.invalidate();flightLink=nil;flightEntrySpan=nil;flightExitPose=nil
@@ -269,23 +308,37 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         distance=Float(pose.distance);pitch=Float(pose.pitch);yaw=Float(pose.yaw);cameraNode.camera?.fieldOfView=CGFloat(pose.fieldOfView)
         updateCamera(notify:false)
     }
-    private func scheduleLabels() { setNeedsDisplay() }
+    private func scheduleLabels() {
+        labelsDirty = true; setNeedsDisplay()
+        guard labelNotification == nil else { return }
+        let next = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.labelNotification = nil; self.lastLabelUpdate = 0; self.updateLabels()
+        }
+        labelNotification = next
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:next)
+    }
     nonisolated func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
         // Project only after SceneKit has adopted the new camera transform.
         DispatchQueue.main.async { [weak self] in self?.updateLabels() }
     }
     private func updateLabels() {
-        guard scene != nil, source != nil else { return }
+        guard scene != nil, labelsDirty, CACurrentMediaTime()-lastLabelUpdate >= 0.1 else { return }
+        labelsDirty = false; lastLabelUpdate = CACurrentMediaTime()
         var occupied: [CGRect] = []
-        for (place,label) in labels.sorted(by: { $0.0.coordinate.distance(to: coordinate(target)) < $1.0.coordinate.distance(to: coordinate(target)) }) {
-            var p = local(place.coordinate); p.y += 15
+        for (place,label) in labels.sorted(by: {
+            simd_length_squared((labelPositions[$0.0.id] ?? .zero)-target) < simd_length_squared((labelPositions[$1.0.id] ?? .zero)-target)
+        }) {
+            guard let p = labelPositions[place.id] else { continue }
             let screen = projectPoint(SCNVector3(p)); let frame = CGRect(x: CGFloat(screen.x)-label.bounds.width/2,y: CGFloat(screen.y)-label.bounds.height-5,width:label.bounds.width,height:label.bounds.height)
             let visible = screen.z > 0 && screen.z < 1 && bounds.insetBy(dx: 12,dy: 12).contains(frame) && !occupied.contains(where: { $0.intersects(frame.insetBy(dx:-8,dy:-6)) }) && occupied.count < 12
-            label.isHidden = !visible; label.frame = frame; if visible { occupied.append(frame) }
+            if label.isHidden == visible { label.isHidden = !visible }
+            if visible { if label.frame != frame { label.frame = frame }; occupied.append(frame) }
         }
     }
     private func updateRouteOverlay() {
         guard let source, let device = device ?? MTLCreateSystemDefaultDevice() else { return }
+        if routePoints.isEmpty && routeSegments.isEmpty && routeWaypoints.isEmpty && routeOverlays.isEmpty { return }
         let paths = (routeSegments.isEmpty ? [routePoints] : routeSegments).map { $0.map(\.coordinate) }
         let tiles = WorldRouteOverlay.build(source:source,paths:paths,waypoints:routeWaypoints.map { $0.point.coordinate })
         routeOverlays = tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }

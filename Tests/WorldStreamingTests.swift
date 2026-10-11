@@ -39,6 +39,13 @@ import SceneKit
                 try check(background.geometries[id] === nextBackground.geometries[id],"Existing terrain geometry is reused")
             }
         }
+        let index = WorldTileIndex(tiles:next.tiles)
+        for tile in next.tiles {
+            for point in [tile.mesh.bounds.center,tile.mesh.bounds.point(u:0,v:0),tile.mesh.bounds.point(u:1,v:1)] {
+                try check(index.tile(at:point)?.id == next.tiles.first(where: { $0.mesh.bounds.contains(point) })?.id,"Spatial lookup matches terrain selection at centres and shared corners")
+            }
+        }
+        try check(index.tile(at:GeoPoint(latitude:0,longitude:0)) == nil,"No terrain invented outside the index")
         let adaptiveBytes = next.tiles.filter { nextBackground.meshes[$0.id] != nil }.reduce(Int64(0)) { $0 + ($1.background?.residentBytes ?? 0) }
         try check(adaptiveBytes <= WorldWindow.backgroundBudget,"One background memory budget for every region")
         let requests = WorldWorkingSet.requests(source:next,center:shifted,distance:2000)

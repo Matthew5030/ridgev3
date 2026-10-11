@@ -44,10 +44,19 @@ enum WorldRouteOverlay {
             return SIMD4(p.x,p.y,q.x,q.y)
         } }
         let markers=waypoints.filter(\.isValid).map(position)
+        guard !segments.isEmpty || !markers.isEmpty else { return [:] }
+        var routeMin = SIMD2<Float>(repeating:.infinity), routeMax = SIMD2<Float>(repeating:-.infinity)
+        for line in segments {
+            routeMin = simd_min(routeMin,simd_min(SIMD2(line.x,line.y),SIMD2(line.z,line.w)))
+            routeMax = simd_max(routeMax,simd_max(SIMD2(line.x,line.y),SIMD2(line.z,line.w)))
+        }
+        for marker in markers { routeMin = simd_min(routeMin,marker); routeMax = simd_max(routeMax,marker) }
         var result:[String:Tile]=[:]
         for tile in source.tiles {
             let origin=position(tile.mesh.bounds.point(u:0,v:0))
             let extent=position(tile.mesh.bounds.point(u:1,v:1))-origin
+            guard origin.x-reach <= routeMax.x, origin.y-reach <= routeMax.y,
+                  origin.x+extent.x+reach >= routeMin.x, origin.y+extent.y+reach >= routeMin.y else { continue }
             var lines=[[SIMD4<Float>]](repeating:[],count:side*side)
             var dots=[[SIMD4<Float>]](repeating:[],count:side*side)
             func bins(_ a:SIMD2<Float>,_ b:SIMD2<Float>,add:(Int)->Void) {

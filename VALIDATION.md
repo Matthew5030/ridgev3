@@ -166,3 +166,20 @@ Validation:
 - Installed and successfully launched `Bilella-Works.ridge-v3` on Matthew's iPad Pro (`00008103-00120919018A001E`) with `RIDGE_LOCAL_TEST_SERVER=http://Matthews-MacBook-Pro.local:8787`. Saved routes/data were preserved.
 
 Remaining physical-device validation: pan repeatedly out of and back into Snowdon, rotate/tilt while the surroundings load, add route waypoints across the former square boundary, and verify an explicitly saved area with the server unavailable. Network loss retains the current scene and offers Retry; terrain outside cached/source coverage cannot be fabricated. No claim of a measured iPad frame-rate or peak-memory guarantee is made by these Mac tests.
+
+## Stable atmosphere and bounded scene updates — 11 October 2026
+
+The moving-window update introduced loading-dependent fog and expanded the amount of work performed on the main thread. Fog now follows one gentle camera-distance rule during both entry and normal gestures: it starts at least 20 km from the camera (or camera distance + 16 km) and fades across 60 km. It no longer closes in when the camera approaches the loaded boundary. This does not create terrain outside available coverage.
+
+Scene updates consume changed tile IDs instead of scanning the entire window on every prepared tile. Geometry/material attachment is queued nearest-first on a new window, with a batch stopping after 24 tiles or 4 ms of CPU work and yielding between batches. This is a CPU scheduling budget, not a GPU frame-time guarantee. Peak world positions are cached, label layout is limited to roughly 10 Hz, elevation queries use a geographic index, and loader notifications coalesce to the latest camera pose every 150 ms without throttling the camera itself. Empty routes skip overlay work; route bounds exclude irrelevant tiles before bin allocation.
+
+Profiling also exposed a 3.51-second main-thread hang while accessibility inspection traversed thousands of SceneKit descendants. The terrain is now a single accessible map element. A subsequent 30-second simulator Time Profiler capture, including zoom-button interaction and accessibility reads, contained no potential-hang records. Coordinate drags returned successfully but did not establish that continuous touch panning was exercised correctly; this capture is not a physical-device FPS measurement. Local traces: `/tmp/ridge-fog-perf-profile.trace` (before accessibility fix) and `/tmp/ridge-fog-perf-fixed2.trace` (after).
+
+Validation:
+- Camera/atmosphere suite: PASS 1,992 checks, including clear nearby terrain throughout entry and no flight/gesture fog discontinuity.
+- Streaming suite: PASS 1,595 checks, including spatial lookup agreement at tile centres/shared corners, memory budgets, geometry retention and routing. First 366-tile window: 4.95 s; shifted 367-tile window: 2.15 s (Mac/LAN).
+- Route overlay suite: PASS 9,468 checks and 5,071 corridor samples; 4 px near/far width, depth occlusion and clearing verified.
+- Simulator and signed iOS Debug builds succeeded. Simulator Snowdon terrain and zoom controls were visually checked.
+- Installed the signed build on Matthew's M1 iPad Pro, preserving app data. Automatic launch was blocked because the iPad was locked; open Ridge manually to test it.
+
+Remaining: sustained physical-device pan/rotate/pinch, particularly while the horizon grows, plus GPU/frame-time and thermal measurements. Thousands of resident scene nodes still carry rendering cost. No pack regeneration, Cloudflare changes or server deployment were needed.

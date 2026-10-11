@@ -361,3 +361,24 @@ actor WorldSourceStore {
         }
     }
 }
+
+/// Geographic lookup shared by the camera and label placement. Small buckets
+/// avoid scanning thousands of resident chunks for every elevation query.
+struct WorldTileIndex {
+    private var cells: [Int:[WorldTile]] = [:]
+    init(tiles: [WorldTile]) {
+        for tile in tiles {
+            let b = tile.mesh.bounds
+            for y in Self.cell(b.minLatitude)...Self.cell(b.maxLatitude) {
+                for x in Self.cell(b.minLongitude)...Self.cell(b.maxLongitude) {
+                    cells[y*100_000+x,default:[]].append(tile)
+                }
+            }
+        }
+    }
+    private static func cell(_ value: Double) -> Int { Int(floor((value+180)*100)) }
+    func tile(at point: GeoPoint) -> WorldTile? {
+        guard point.isValid else { return nil }
+        return cells[Self.cell(point.latitude)*100_000+Self.cell(point.longitude)]?.first { $0.mesh.bounds.contains(point) }
+    }
+}
