@@ -10,9 +10,12 @@ import SwiftUI
 @main
 struct ridge_v3App: App {
     init() {
+        UserDefaults.standard.register(defaults: [
+            "ridge.mapSourceMode": WorldLibrary.defaultMode,
+            "ridge.localMapServer": WorldLibrary.defaultLocalServer
+        ])
         #if DEBUG
-        // A development install can select a LAN library once, without changing
-        // production defaults or overriding later choices in Settings.
+        // An explicit development launch can select a different LAN library.
         if let address = ProcessInfo.processInfo.environment["RIDGE_LOCAL_TEST_SERVER"],
            let root = try? WorldLibrary.root(mode: "local", local: address) {
             UserDefaults.standard.set(root.absoluteString, forKey: "ridge.localMapServer")

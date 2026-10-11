@@ -2,6 +2,8 @@ import Foundation
 
 /// Cloud and LAN publish the same relative catalogue; geography chooses a source.
 enum WorldLibrary {
+    static let defaultMode = "local"
+    static let defaultLocalServer = "http://Matthews-MacBook-Pro.local:8787/world/"
     static let cloud = "https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev/pilot-2026-10-07/"
     static func root(mode: String, local: String) throws -> URL {
         if mode != "local" { return URL(string: cloud)! }

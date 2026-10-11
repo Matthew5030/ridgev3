@@ -4,8 +4,8 @@ import UniformTypeIdentifiers
 struct WorldExploreView: View {
     @Bindable var store: AppStore
     @Bindable var world: WorldModel
-    @AppStorage("ridge.mapSourceMode") private var mapMode = "cloud"
-    @AppStorage("ridge.localMapServer") private var localMapServer = ""
+    @AppStorage("ridge.mapSourceMode") private var mapMode = WorldLibrary.defaultMode
+    @AppStorage("ridge.localMapServer") private var localMapServer = WorldLibrary.defaultLocalServer
     @State private var visibleBounds: GeoBounds?
     private var connectionID: String { mapMode + "|" + (mapMode == "local" ? localMapServer : "") }
     @Environment(\.scenePhase) private var phase

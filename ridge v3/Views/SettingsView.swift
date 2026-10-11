@@ -6,9 +6,9 @@ struct SettingsView: View {
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
     @State private var sourceError: String?
-    @AppStorage("ridge.mapSourceMode") private var mapMode = "cloud"
-    @AppStorage("ridge.localMapServer") private var localMapServer = ""
-    @State private var selectedMapMode = "cloud"
+    @AppStorage("ridge.mapSourceMode") private var mapMode = WorldLibrary.defaultMode
+    @AppStorage("ridge.localMapServer") private var localMapServer = WorldLibrary.defaultLocalServer
+    @State private var selectedMapMode = WorldLibrary.defaultMode
     @AppStorage("ridge.downloadServer") private var serverAddress = ""
     @State private var worldAddressDraft = ""
     private var sourceHasChanges: Bool {

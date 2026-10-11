@@ -351,3 +351,8 @@ The transfer can still take time on a slow server. This change makes it an expli
 
 - Changed region lettering from medium system sans to regular system serif with slightly wider tracking. Uses the platform's built-in font; no bundled font or network dependency. Short names, geographic fitting, continuous zoom and fading remain unchanged.
 - Signed iOS Debug build and `git diff --check` passed. Rendered production overlays at phone/iPad widths and inspected the phone regional view for fit and legibility. No new tests for this one-line visual change.
+
+## 2026-10-11 — Default local Mac map server
+
+- Fresh installs now default to Local network with `http://Matthews-MacBook-Pro.local:8787/world/`, shared between app startup, Explore and Settings. Registered defaults preserve subsequently saved source choices. The existing explicit debug-launch override can apply the same source to the current iPad installation.
+- Confirmed the Mac's Bonjour hostname, healthy server response, and HTTP 200 catalogue with 2,531 source sections through the default URL. Signed iOS Debug build and `git diff --check` passed. No new tests for this configuration-only change; no server data or Cloudflare settings changed.
