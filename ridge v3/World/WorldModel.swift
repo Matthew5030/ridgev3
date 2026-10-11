@@ -4,6 +4,9 @@ import CoreGraphics
 
 @MainActor @Observable final class WorldModel {
     @ObservationIgnored var cameraPose: TerrainCameraPose?
+    var distantTerrain: WorldDistantTerrain?
+    @ObservationIgnored private let distantStore = WorldDistantTerrainStore()
+    @ObservationIgnored private var distantLoad: Task<Void,Never>?
     var source: WorldSource?
     var overview: WorldOverview?
     var backdrop: WorldBackdrop?
@@ -56,7 +59,7 @@ import CoreGraphics
     @ObservationIgnored private var reduceDetailUntil = Date.distantPast
 
     func configure(mode: String, local: String) async {
-        cancelRegionLoad(); generation += 1; let token = generation
+        cancelRegionLoad(); distantLoad?.cancel(); distantLoad=nil; distantTerrain=nil; generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; failed = []; tiles = [:]; previewPages = [:]
         tilesByID = [:]; changedTileIDs = []
         source = nil; overview = nil; backdrop = nil; preview = nil; previewBounds = nil; routeTerrain = nil
@@ -90,6 +93,7 @@ import CoreGraphics
             coverageMessage = catalog == nil ? nil : "Detailed terrain isn’t available here yet. You can keep browsing the overview."
             return false
         }
+        loadDistantTerrain(around:point,frame:source?.frame ?? region.bounds)
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
         let radius = WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)
         guard WorldWindow.needsUpdate(center:point,radius:radius+3000,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
@@ -147,6 +151,18 @@ import CoreGraphics
             }
         }
         return ready
+    }
+    private func loadDistantTerrain(around point: GeoPoint,frame:GeoBounds) {
+        guard distantLoad == nil, distantTerrain == nil || distantTerrain!.center.distance(to:point) > 20000 else { return }
+        distantLoad = Task { [weak self] in
+            guard let self else { return }
+            defer { if !Task.isCancelled { distantLoad=nil } }
+            do {
+                let next = try await distantStore.build(center:point,frame:frame)
+                guard !Task.isCancelled else { return }
+                distantTerrain=next
+            } catch { if !Task.isCancelled { NSLog("Ridge distant terrain: %@",error.localizedDescription) } }
+        }
     }
     @ObservationIgnored private var windowCenter: GeoPoint?
     @ObservationIgnored private var windowRadius = 0.0

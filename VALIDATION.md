@@ -201,3 +201,9 @@ Validation:
 Remaining performance work: physical-device frame-time measurements under sustained movement, distinguishing GPU/scene submission cost from additions arriving late. The full horizon still consists of thousands of independent terrain nodes, and network/cold vector preparation can still fall behind fast travel. These changes do not establish that all lag has been eliminated. Cloudflare remains untouched and no data regeneration was required.
 
 Installed and successfully launched this build on Matthew’s M1 iPad Pro (`00008103-00120919018A001E`) with the saved local-network server. App data was preserved.
+
+## Local distant terrain foundation — 11 October 2026
+
+Added a bundled coarse elevation surface using checksum-verified `uk-coarse-background-v2` source heights. The builder samples onto the actual 48-cell partition grid and preserves no-data markers and provenance. The 674 pages plus index add 3,433,134 bytes. Distant context uses a bounded 9 × 9 partition window, one 2048² texture drawn from the existing bundled atlas and one mesh element. It does not depend on the download server or provide routing coverage. Fine tiles cut out only matching coarse cells once their scene nodes exist; partial/unmatched geographic cells cannot punch holes. Context refreshes after 20 km of travel.
+
+`sh Tools/test_world_context.sh`: PASS 939 checks, including every height-file checksum, exact alignment with real published fine tiles, mask removal, bounded texture/geometry and missing/partial coverage. Native Mac preparation: 0.50 s; geometry sources + indices: 10,702,368 bytes, plus the 16 MiB base texture and GPU mipmaps. Simulator Debug build passed. Visual/device validation follows with progressive streaming integration; this checkpoint alone does not establish seam or motion quality.
