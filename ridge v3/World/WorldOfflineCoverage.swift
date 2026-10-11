@@ -58,6 +58,33 @@ enum WorldOfflineCoverage {
             }
         }.map(\.bounds)
     }
+    /// Coalesce saved tiles for the atlas fill. Admission still uses the exact
+    /// receipts; drawing a whole region should not submit 100,000 rectangles
+    /// every time the user moves the map. Holes remain holes.
+    static func displayBounds(_ bounds:[GeoBounds]) -> [GeoBounds] {
+        struct Span:Hashable { let lo:Int64;let hi:Int64 }
+        let scale=100_000_000.0
+        func q(_ value:Double)->Int64 { Int64((value*scale).rounded()) }
+        func merged(_ spans:[Span])->[Span] {
+            var result:[Span]=[]
+            for span in spans.sorted(by: { $0.lo<$1.lo }) {
+                if let last=result.last,span.lo<=last.hi {
+                    result[result.count-1]=Span(lo:last.lo,hi:max(last.hi,span.hi))
+                } else { result.append(span) }
+            }
+            return result
+        }
+        var rows:[Span:[Span]]=[:]
+        for b in bounds where b.isValid {
+            rows[Span(lo:q(b.minLatitude),hi:q(b.maxLatitude)),default:[]].append(Span(lo:q(b.minLongitude),hi:q(b.maxLongitude)))
+        }
+        var columns:[Span:[Span]]=[:]
+        for (row,spans) in rows { for span in merged(spans) { columns[span,default:[]].append(row) } }
+        return columns.flatMap { column,spans in merged(spans).map { row in
+            GeoBounds(minLatitude:Double(row.lo)/scale,minLongitude:Double(column.lo)/scale,
+                      maxLatitude:Double(row.hi)/scale,maxLongitude:Double(column.hi)/scale)
+        } }
+    }
     /// Tiles use one aligned geographic grid. Sweep collinear edge intervals so
     /// neighbours (including partial shared edges) disappear and saves join up.
     static func outline(_ bounds: [GeoBounds]) -> [Edge] {

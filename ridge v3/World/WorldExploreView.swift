@@ -19,6 +19,7 @@ struct WorldExploreView: View {
     @State private var export: GPXDocument?
     @State private var exporting = false
     @State private var showWaypoints = false
+    @State private var showRegionPacks = false
     @State private var editWaypoint: RouteWaypoint?
     @State private var renaming = false
     @State private var routeName = ""
@@ -36,7 +37,7 @@ struct WorldExploreView: View {
             } else {
                 OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: world.drawingDownload && !world.isSavingOffline,
                     selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: world.downloadError == nil,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, onWorldTap: visit, worldOfflineBounds:world.offlineBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:dragging ? [] : world.downloadPlan?.edges ?? [],
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, onWorldTap: visit, worldOfflineBounds:world.offlineDisplayBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:dragging ? [] : world.downloadPlan?.edges ?? [],
                     worldDownloadTiles:dragging ? [] : world.downloadPlan?.bounds ?? [],
                     worldCompletedTiles:world.completedDownloadTiles,worldActiveTiles:world.activeDownloadTiles,
                     worldDownloading:world.isSavingOffline,onSelectionFinished: { bounds in
@@ -52,8 +53,8 @@ struct WorldExploreView: View {
                         TextField("Find a place", text: $query).autocorrectionDisabled().focused($searchFocused)
                         if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") } }
                     }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
-                    Button(action:chooseDownload) { Label("Download",systemImage:"arrow.down.circle").font(.subheadline.weight(.medium)).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) }
-                        .disabled(world.catalog == nil || world.isSavingOffline)
+                    Button { searchFocused=false;showRegionPacks=true } label: { Label("Download",systemImage:"arrow.down.circle").font(.subheadline.weight(.medium)).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) }
+                        .disabled(world.catalog == nil)
                     control("slider.horizontal.3", "Settings") { store.showSettings = true }
                 }
                 if !query.isEmpty {
@@ -111,6 +112,16 @@ struct WorldExploreView: View {
                 if showsDownloadBoundary { downloadBoundaryCard }
                 Spacer()
                 if world.downloadCenter != nil { downloadSelectionCard }
+                if let pack=world.downloadRegion,world.isSavingOffline || world.checkingDownload || world.regionComplete || world.downloadError != nil {
+                    Button { showRegionPacks=true } label: {
+                        HStack(spacing:10) {
+                            Image(systemName:world.regionComplete ? "checkmark.circle.fill" : "arrow.down.circle")
+                            Text(world.regionComplete ? "\(pack.name) saved" : world.checkingDownload ? "Checking \(pack.name)…" : world.isSavingOffline ? "\(pack.name) · \(world.regionSaved)/\(world.regionTotal) sections" : "\(pack.name) · Download paused")
+                                .font(.subheadline).multilineTextAlignment(.leading)
+                            Spacer();Image(systemName:"chevron.right")
+                        }.padding(14).frame(maxWidth:500).background(RidgeTheme.paper,in:RoundedRectangle(cornerRadius:12))
+                    }.buttonStyle(.plain)
+                }
                 if let phase=world.downloadPhase { preparationCard(phase) }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
@@ -149,11 +160,15 @@ struct WorldExploreView: View {
             if let bounds = visibleBounds, !world.in3D { viewportChanged(bounds) }
         }
         .onAppear { world.resume(); store.isWorldBrowsing=true; if let terrain=world.routeTerrain { store.activeTerrain=terrain }; if let point=store.worldRouteFocus {visit(point);store.worldRouteFocus=nil} }
-        .onDisappear { world.suspend() }
+        .onDisappear { world.suspend();UIApplication.shared.isIdleTimerDisabled=false }
+        .onChange(of:world.isSavingOffline) { _, saving in UIApplication.shared.isIdleTimerDisabled=saving && world.downloadRegion != nil }
         .onChange(of:phase) { _, value in
             // System permission sheets briefly make the app inactive. They must
             // not cancel the connection whose permission is being requested.
-            if value == .background { world.suspend() }
+            if value == .background {
+                if world.downloadRegion != nil && (world.isSavingOffline || world.checkingDownload) { world.pauseRegionDownload() }
+                world.suspend()
+            }
             else if value == .active {
                 if world.catalog == nil && !world.isLoading {
                     Task {
@@ -165,6 +180,14 @@ struct WorldExploreView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for:UIApplication.didReceiveMemoryWarningNotification)) { _ in world.memoryWarning() }
         .onChange(of:store.worldRouteFocus) { _, point in if let point { visit(point);store.worldRouteFocus=nil } }
+        .sheet(isPresented:$showRegionPacks) {
+            WorldRegionPacksView(world:world,chooseCustom: {
+                showRegionPacks=false;chooseDownload()
+            },explore: { pack in
+                showRegionPacks=false;world.cancelDownload();world.suspend();world.in3D=false
+                focus=AtlasFocus(point:pack.bounds.center,scale:1,bounds:pack.bounds,animated:true,exactViewport:true)
+            })
+        }
         .sheet(isPresented:$showWaypoints) { WaypointsSheet(store:store).presentationDetents([.medium,.large]) }
         .fileExporter(isPresented:$exporting,document:export,contentType:.ridgeGPX,defaultFilename:store.activeRoute?.name ?? "Route") { result in if case .failure(let e)=result { store.errorMessage=e.localizedDescription } }
         .confirmationDialog("Waypoint",isPresented:Binding(get:{editWaypoint != nil},set:{if !$0 {editWaypoint=nil}})) {

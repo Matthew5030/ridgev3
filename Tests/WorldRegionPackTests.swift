@@ -9,6 +9,16 @@ import Foundation
             while active() && Date()<deadline { try await Task.sleep(nanoseconds:10_000_000) }
             try check(!active(),"Operation timed out")
         }
+        var grid:[GeoBounds]=[]
+        for y in 0..<100 { for x in 0..<100 {
+            let latitude=50.0+Double(y)*0.01,longitude=Double(x)*0.01
+            grid.append(GeoBounds(minLatitude:latitude,minLongitude:longitude,maxLatitude:latitude+0.01,maxLongitude:longitude+0.01))
+        } }
+        try check(WorldOfflineCoverage.displayBounds(grid).count==1,"A full saved region draws one fill instead of 10,000 tiles")
+        let hole=grid[5050],withHole=grid.filter { $0 != hole }
+        let displayed=WorldOfflineCoverage.displayBounds(withHole)
+        try check(!displayed.contains { $0.contains(hole.center) },"Display merging preserves undownloaded holes")
+        try check(withHole.allSatisfy { tile in displayed.contains { $0.contains(tile.center) } },"Display merging preserves every saved tile")
         let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("ridge-region-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }

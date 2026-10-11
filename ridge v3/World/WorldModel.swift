@@ -48,6 +48,7 @@ import CoreGraphics
     var pending = 0
     var offlineMessage: String?
     var offlineBounds: [GeoBounds] = []
+    var offlineDisplayBounds: [GeoBounds] = []
     var offlineEdges: [WorldOfflineCoverage.Edge] = []
     var isSavingOffline = false
     var isConnectingDownload = false
@@ -60,10 +61,10 @@ import CoreGraphics
         let cache=WorldOfflineCoverage.cache(cacheURL)
         let value=await Task.detached(priority:.utility) {
             let bounds=WorldOfflineCoverage.savedBounds(at:cache)
-            return (bounds,WorldOfflineCoverage.outline(bounds))
+            return (bounds,WorldOfflineCoverage.outline(bounds),WorldOfflineCoverage.displayBounds(bounds))
         }.value
         guard ticket==offlineRefresh else { return }
-        offlineBounds=value.0;offlineEdges=value.1
+        offlineBounds=value.0;offlineEdges=value.1;offlineDisplayBounds=value.2
     }
     var requestFocus: GeoPoint?
     var catalog: WorldCatalog?
@@ -99,7 +100,7 @@ import CoreGraphics
         source = nil; overview = nil; backdrop = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
         cancelDownload(); offlineMessage=nil;downloadedDestination=nil
-        offlineBounds=[];offlineEdges=[]
+        offlineBounds=[];offlineEdges=[];offlineDisplayBounds=[]
         await reloadOfflineCoverage()
         guard generation==token else { return }
         files = WorldLandscapeStore(cacheURL:cacheURL); navigationDestination = nil
