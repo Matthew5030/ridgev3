@@ -25,9 +25,6 @@ actor WorldLandscapeStore {
     }
     private var residentBackdrop = WorldBackdrop(geometries:[:],meshes:[:])
     private var residentPages: [String:WorldPreparedTile] = [:]
-    func preview(source: WorldSource, backdrop: WorldBackdrop, pages: [String:WorldPreparedTile]) throws -> CGImage {
-        try WorldPreview.render(source:source,backdrop:backdrop,tiles:pages)
-    }
     func snapshot() -> Snapshot { Snapshot(parts:parts,backdrop:residentBackdrop,pages:residentPages) }
 
     /// Build only newly exposed pieces. A candidate owns its state until the

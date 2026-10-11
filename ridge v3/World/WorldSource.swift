@@ -398,7 +398,9 @@ actor WorldSourceStore {
     }
     /// Fetch at most six files at a time. Geometry and image work stays serial.
     private func prefetch(_ assets: [WorldMapAsset]) async throws {
-        guard !base.isFileURL else { return }
+        // Offline rendering reads and verifies each asset when it uses it.
+        // Prefetching cannot download here and would read/hash every file twice.
+        guard allowsNetwork, !base.isFileURL else { return }
         try await withThrowingTaskGroup(of: Void.self) { group in
             var next = 0
             for _ in 0..<min(6, assets.count) {

@@ -10,8 +10,6 @@ import CoreGraphics
     var source: WorldSource?
     var overview: WorldOverview?
     var backdrop: WorldBackdrop?
-    var preview: CGImage?
-    var previewBounds: GeoBounds?
     var streaming = false
     var loadedRadius = 0.0
     @ObservationIgnored private var loadedCenter: GeoPoint?
@@ -92,7 +90,7 @@ import CoreGraphics
         cancelRegionLoad(); distantLoad?.cancel(); distantLoad=nil; distantTerrain=nil; generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; failed = []; tiles = [:]; previewPages = [:]
         tilesByID = [:]; changedTileIDs = []
-        source = nil; overview = nil; backdrop = nil; preview = nil; previewBounds = nil; routeTerrain = nil
+        source = nil; overview = nil; backdrop = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
         cancelDownload(); offlineMessage=nil;downloadedDestination=nil
         offlineBounds=[];offlineEdges=[]
@@ -132,8 +130,10 @@ import CoreGraphics
             return false
         }
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
-        let radius = WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)
-        guard WorldWindow.needsUpdate(center:point,radius:radius+3000,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
+        // Enter with the complete nearby window. Only grow the distant horizon
+        // once the user is in 3D; atlas callbacks must not restart that wait.
+        let radius = in3D ? WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)+3000 : 8000
+        guard WorldWindow.needsUpdate(center:point,radius:radius,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
             if ready { coverageMessage = nil }
             return ready
         }
@@ -145,7 +145,7 @@ import CoreGraphics
         }
         guard Date() >= retryAfter else { return ready }
         let initial = source == nil
-        let requestedRadius = WorldWindow.nextRadius(desired:radius+3000,loaded:loadedRadius)
+        let requestedRadius = WorldWindow.nextRadius(desired:radius,loaded:loadedRadius)
         let oldFiles = files
         let frame = source?.frame ?? region.bounds
         let sessionID = source?.id ?? region.id
@@ -155,6 +155,7 @@ import CoreGraphics
         selectionGeneration += 1; let ticket = selectionGeneration
         loadingRegionID = region.id; windowCenter = point; windowRadius = requestedRadius
         isLoading = initial; streaming = true; message = nil
+        preparedWindowTiles.removeAll(keepingCapacity:true)
         downloadPhase = !in3D ? "Preparing downloaded terrain" : nil
         regionLoad = Task { [weak self] in
             guard let self else { return }
@@ -166,12 +167,10 @@ import CoreGraphics
                 next.id = sessionID
                 try Task.checkCancellation()
                 guard ticket == selectionGeneration else { return }
-                // Only the first entry needs a rendered atlas preview. Window
-                // shifts retain it with its original geographic bounds.
-                let image = initial ? try await candidate.preview(source:next,backdrop:background,pages:pages) : preview
-                guard ticket == selectionGeneration, !Task.isCancelled else { return }
-                if initial { previewBounds = next.bounds }
-                install(next,elevation:elevation,graph:graph,background:background,image:image,pages:pages,files:candidate)
+                // The atlas already has textured relief. Rendering a second
+                // full SceneKit scene just for its snapshot delayed 3D entry
+                // and duplicated geometry uploads at the memory peak.
+                install(next,elevation:elevation,graph:graph,background:background,pages:pages,files:candidate)
                 loadedCenter = point; loadedRadius = requestedRadius
                 if let destination = navigationDestination, hasCoverage(destination) {
                     requestFocus = destination; navigationDestination = nil
@@ -194,7 +193,12 @@ import CoreGraphics
         return ready
     }
     private func receiveAddition(_ metadata: WorldSource, elevation: WorldOverview, background: WorldBackdrop, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore, ticket: Int) {
-        guard ticket==selectionGeneration, var current=source, var visible=backdrop else { return }
+        guard ticket==selectionGeneration else { return }
+        if !in3D {
+            preparedWindowTiles.formUnion(pages.keys)
+            downloadPhase = "Preparing terrain · \(preparedWindowTiles.count) of \(metadata.tiles.count) tiles"
+        }
+        guard var current=source, var visible=backdrop else { return }
         // Additions become usable immediately; retire old coverage only when the
         // replacement window finishes. Routing is swapped at that final commit.
         let additions=metadata.tiles.filter { pages[$0.id] != nil }
@@ -222,11 +226,12 @@ import CoreGraphics
     }
     @ObservationIgnored private var windowCenter: GeoPoint?
     @ObservationIgnored private var windowRadius = 0.0
+    @ObservationIgnored private var preparedWindowTiles = Set<String>()
     func pauseDownload() { cancelRegionLoad();cancelDownload() }
-    private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, image: CGImage?, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore) {
+    private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore) {
         generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
         refreshOfflineCoverage()
-        files = candidate; source = next; overview = elevation; backdrop = background; preview = image
+        files = candidate; source = next; overview = elevation; backdrop = background
         tilesByID = Dictionary(uniqueKeysWithValues:next.tiles.map { ($0.id,$0) })
         changedTileIDs.removeAll(keepingCapacity:true)
         // All windows use the same frame, so overlapping meshes, images and
@@ -256,8 +261,8 @@ import CoreGraphics
         else if loadingRegionID != nil { navigationDestination = point }
     }
     func update(center: GeoPoint, distance: Double) {
-        guard let source else { return }
         self.center = center; self.distance = distance
+        guard in3D, let source else { return }
         if navigationDestination == nil { browse(center) }
         if let previous = policyCenter, previous.distance(to: center) < 140, abs(distance / max(1,policyDistance) - 1) < 0.22 { pump(); return }
         self.center = center; self.distance = distance

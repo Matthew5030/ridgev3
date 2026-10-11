@@ -36,7 +36,7 @@ struct WorldExploreView: View {
             } else {
                 OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: world.drawingDownload && !world.isSavingOffline,
                     selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: world.downloadError == nil,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.previewBounds, worldPreview:world.preview, onWorldTap: visit, worldOfflineBounds:world.offlineBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:dragging ? [] : world.downloadPlan?.edges ?? [],
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, onWorldTap: visit, worldOfflineBounds:world.offlineBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:dragging ? [] : world.downloadPlan?.edges ?? [],
                     worldDownloadTiles:dragging ? [] : world.downloadPlan?.bounds ?? [],
                     worldCompletedTiles:world.completedDownloadTiles,worldActiveTiles:world.activeDownloadTiles,
                     worldDownloading:world.isSavingOffline,onSelectionFinished: { bounds in
