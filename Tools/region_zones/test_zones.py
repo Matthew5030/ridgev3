@@ -1,9 +1,10 @@
 import json
 import unittest
+import re
 from pathlib import Path
 from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
-from build_zones import split
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -50,24 +51,30 @@ class DownloadZonesTests(unittest.TestCase):
                 label = box(b['minLongitude'], b['minLatitude'], b['maxLongitude'], b['maxLatitude'])
                 self.assertTrue(footprint.covers(label), zone['id'])
 
-    def test_park_boundaries_auditable_and_compass_names_match(self):
+    def test_simple_areas_and_independent_park_downloads(self):
         self.assertEqual(len(self.index['boundarySources']), 15)
+        self.assertEqual(len(self.index['parks']), 15)
         for source in self.index['boundarySources']:
             self.assertEqual(source['source'], 'OpenStreetMap')
             self.assertEqual(len(source['sha256']), 64)
-        parks = {}
-        for zone in self.index['regions']:
-            if zone.get('parkID'):
-                parks.setdefault(zone['parkID'], []).append(zone)
-        for ident, zones in parks.items():
-            if len(zones) == 1:
-                self.assertLessEqual(len(zones[0]['cells']), 24)
-                continue
-            members = [c for z in zones for c in z['cells']]
-            quadrants = split(members)
-            for z in zones:
-                suffix = z['id'].removeprefix(ident+'-')
-                self.assertEqual({c['id'] for c in z['cells']}, {c['id'] for c in quadrants[suffix]})
+        areas = self.index['regions']
+        self.assertEqual(len({z['name'] for z in areas}),len(areas))
+        for zone in areas:
+            self.assertLessEqual(len(zone['mapLabel'].split('\n')),2)
+            b = unary_union([box(c['bounds']['minLongitude'], c['bounds']['minLatitude'], c['bounds']['maxLongitude'], c['bounds']['maxLatitude']) for c in zone['cells']])
+            # Full inland blocks remain rectangular. Coastal remnants may join
+            # an adjacent block, but are never cut into park-shaped leftovers.
+            bins=set()
+            for c in zone['cells']:
+                x,y,col,row=map(int,re.search(r'x(\d+)-y(\d+)-c(\d+)-r(\d+)',c['id']).groups())
+                bins.add(((x*3+col//16)//5,(y*3+row//16)//5))
+            if len(zone['cells'])==25 and len(bins)==1:
+                self.assertAlmostEqual(b.area,b.envelope.area,places=10)
+        ids = {c['id'] for z in areas for c in z['cells']}
+        for park in self.index['parks']:
+            self.assertEqual(park['id'],park['parkID'])
+            self.assertTrue(set(c['id'] for c in park['cells']).issubset(ids))
+            self.assertEqual(len(park['cells']),len({c['id'] for c in park['cells']}))
 
 
 if __name__ == '__main__':

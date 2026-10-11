@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Build selectable zones from existing OSM park boundaries and source cells.
 
-No map assets are rebuilt. Sections intersecting park boundaries
-go to the park with greatest overlap. Margins follow the section grid; these
-are download areas, not legal park boundaries. Each source has one owner.
+No map assets are rebuilt. Compact areas partition source sections; national
+parks are separate grouped downloads sharing the same cached assets. Selection
+shapes follow the coastline without carving out missing terrain tiles.
 Requires shapely (also used by the terrain pipeline).
 """
 import argparse
 import hashlib
 import json
 import math
+import re
+from collections import defaultdict, Counter
 from pathlib import Path
 from shapely.geometry import box, shape, Polygon, Point
 from shapely.ops import unary_union
@@ -96,81 +98,100 @@ def build(grid, source_root):
         assert geometry.is_valid, ident
         geometries.append(geometry)
         provenance.append(dict(id=ident, sha256=hashlib.sha256(raw).hexdigest(), **feature['properties']))
-    ownership, park_cells = {}, [[] for _ in PARKS]
+    # Map areas are compact blocks of existing source sections, independent
+    # of park boundaries. Park downloads are a separate, overlapping index;
+    # their shared assets are already deduplicated by the downloader.
+    parks = []
+    for (ident, name, label, folder, art), geometry in zip(PARKS, geometries):
+        members = [c for c in cells.values() if geometry.intersection(rectangle(c)).area > 1e-12]
+        parks.append(dict(id='park-'+ident, name=name, mapLabel=label.replace('\n', ' '),
+            parkID='park-'+ident, parkName=name, artwork=art,
+            subtitle='National park · includes map sections along the boundary',
+            cells=sorted(members,key=lambda c:c['id'])))
+    land = unary_union([Polygon(r).buffer(0) for r in json.loads(Path('ridge v3/Resources/RidgeData.bundle/atlas.json').read_text())['land']])
+    groups = defaultdict(list)
     for cell in cells.values():
-        polygon = rectangle(cell)
-        intersections = [g.intersection(polygon).area if g.intersects(polygon) else 0 for g in geometries]
-        if max(intersections) > 1e-12:
-            owner = max(range(len(PARKS)), key=lambda i: intersections[i])
-            ownership[cell['id']] = owner
-            park_cells[owner].append(cell)
-    zones = []
-    def add(ident, name, label, cells, **metadata):
-        zones.append(dict(id=ident, name=name, mapLabel=label,
-            cells=sorted(cells, key=lambda c:c['id']), **metadata))
-    for (ident, name, label, folder, art), members in zip(PARKS, park_cells):
-        assert members, ident
-        group = 'park-'+ident
-        metadata = dict(parkID=group, parkName=name, artwork=art,
-            subtitle='National park area · includes map sections along the boundary')
-        # Large parks get four smaller choices; compact parks remain one tap.
-        if len(members) > 24:
-            quadrants = split(members)
-            for suffix, direction, short in DIRECTIONS:
-                if quadrants[suffix]:
-                    add(group+'-'+suffix, name+' · '+direction, label+'\n'+short, quadrants[suffix], **metadata)
-        else:
-            add(group, name, label, members, **metadata)
-    short_labels = {'eryri-anglesey': 'NORTH\nWALES', 'south-lakes': 'SOUTH\nCUMBRIA',
-        'north-lakes': 'NORTH\nCUMBRIA', 'peak-district': 'PEAK\nFRINGES',
-        'bannau-mid-wales': 'MID\nWALES', 'pembrokeshire-ceredigion':'WEST\nWALES',
-        'yorkshire-dales':'DALES\nFRINGES', 'cairngorms':'HIGHLAND\nFRINGES',
-        'north-york-moors':'MOOR\nFRINGES', 'broads-east-coast':'EAST\nCOAST'}
-    names = {'eryri-anglesey':'North Wales coast', 'south-lakes':'South Cumbria',
-        'north-lakes':'North Cumbria', 'peak-district':'Peak District surroundings',
-        'yorkshire-dales':'Dales surroundings', 'cairngorms':'Cairngorms surroundings',
-        'north-york-moors':'North York Moors surroundings'}
-    for ident, members in surroundings.items():
-        remaining = [c for c in members if c['id'] not in ownership]
-        if not remaining:
+        x,y,col,row = map(int,re.search(r'x(\d+)-y(\d+)-c(\d+)-r(\d+)',cell['id']).groups())
+        groups[((x*3+col//16)//5, (y*3+row//16)//5)].append(cell)
+    footprints = {key:unary_union([rectangle(c) for c in group]).intersection(land) for key,group in groups.items()}
+    # A tiny coastal remnant belongs with a neighbour instead of becoming an
+    # awkward standalone sliver. Large inland areas retain straight boundaries.
+    for key in sorted(list(groups)):
+        if key not in groups or not 0 < footprints[key].area < 0.008:
             continue
-        name = names.get(ident, area_names[ident])
-        label = short_labels.get(ident, name.upper().replace(' & ', '\n& ').replace(' ', '\n'))
-        if len(remaining) > 24:
-            for suffix, direction, short in DIRECTIONS:
-                part = split(remaining)[suffix]
-                if part:
-                    add('area-'+ident+'-'+suffix, name+' · '+direction, label+'\n'+short, part,
-                        subtitle='Surrounding countryside & coast', artwork='countryside')
+        neighbours = [k for k in groups if abs(k[0]-key[0])+abs(k[1]-key[1])==1 and footprints[k].area>=0.008]
+        if not neighbours:
+            continue
+        neighbour = min(neighbours,key=lambda k:(footprints[key].distance(footprints[k]),len(groups[k]),k))
+        groups[neighbour] += groups.pop(key)
+        footprints[neighbour] = footprints[neighbour].union(footprints.pop(key))
+    owners = {cell['id']:ident for ident,members in surroundings.items() for cell in members}
+    aliases = {
+        'eryri-anglesey':'N WALES', 'clwyd-berwyn':'CLWYD', 'south-lakes':'S CUMBRIA', 'north-lakes':'N CUMBRIA',
+        'peak-district':'DERBYSHIRE', 'bannau-mid-wales':'MID WALES', 'pembrokeshire-ceredigion':'W WALES',
+        'skye-wester-ross':'SKYE & ROSS', 'outer-hebrides':'HEBRIDES', 'caithness-moray':'CAITHNESS',
+        'argyll-islay':'ARGYLL', 'mull-small-isles':'MULL', 'lomond-trossachs':'LOMOND', 'fife-lothians':'LOTHIANS',
+        'scottish-borders':'BORDERS', 'fermanagh-sperrins':'SPERRINS', 'antrim-down':'ANTRIM',
+        'tyne-wear-durham':'DURHAM', 'north-pennines':'PENNINES', 'yorkshire-dales':'DALES',
+        'yorkshire-wolds':'WOLDS', 'north-york-moors':'MOORS', 'central-midlands':'MIDLANDS',
+        'trent-valley':'TRENT', 'fens-cambridgeshire':'FENS', 'suffolk-west-norfolk':'SUFFOLK',
+        'broads-east-coast':'E COAST', 'severn-cotswolds':'COTSWOLDS', 'shropshire-marches':'MARCHES',
+        'surrey-south-downs':'SURREY', 'london-weald':'LONDON', 'kent-east-sussex':'KENT',
+        'somerset-west-dorset':'SOMERSET', 'cornwall-scilly':'CORNWALL'}
+    zones = []
+    for (x,y),members in sorted(groups.items()):
+        footprint = footprints[(x,y)]
+        regional = Counter(owners[c['id']] for c in members).most_common(1)[0][0]
+        overlaps = [g.intersection(footprint).area for g in geometries]
+        park = max(range(len(PARKS)),key=lambda i:overlaps[i]) if max(overlaps)>0 else None
+        # Name an area for a park only when the park occupies a substantial part.
+        if park is not None and overlaps[park] >= footprint.area*0.2:
+            ident,name,label,folder,art = PARKS[park]
+            family='park-'+ident; reference=geometries[park].bounds
+            metadata=dict(parkID=family,parkName=name,artwork=art)
         else:
-            add('area-'+ident, name, label, remaining, subtitle='Surrounding countryside & coast', artwork='countryside')
-    assigned = [cell['id'] for z in zones for cell in z['cells']]
-    assert len(set(assigned)) == len(assigned) == len(cells)
-    assert set(assigned) == set(cells)
-    return dict(schemaVersion=2, description='Park-first download zones. Source sections have one owner; park margins follow the section grid.',
-                boundarySources=provenance, regions=zones)
+            family=regional;name=area_names[regional];label=aliases.get(regional,name.upper())
+            reference=unary_union([rectangle(c) for c in surroundings[regional]]).bounds
+            metadata=dict(artwork='countryside')
+            # Still offer the relevant whole park from an area touching its edge.
+            if park is not None:
+                metadata.update(parkID='park-'+PARKS[park][0],parkName=PARKS[park][1])
+        area = unary_union([rectangle(c) for c in members])
+        cx,cy = area.centroid.x,area.centroid.y
+        west,south,east,north = reference
+        horizontal = 'W' if cx<west+(east-west)*0.38 else 'E' if cx>west+(east-west)*0.62 else ''
+        vertical = 'S' if cy<south+(north-south)*0.38 else 'N' if cy>south+(north-south)*0.62 else ''
+        direction=vertical+horizontal or 'CENTRAL'
+        zones.append(dict(id=f'area-{x}-{y}',name=name,mapLabel=label.replace('\n',' '),
+            cells=sorted(members,key=lambda c:c['id']),subtitle='Map area · clipped at the coast',
+            family=family,direction=direction,**metadata))
+    # Compass names stay short and unique within a familiar geographic family.
+    names = Counter((z['name'],z['direction']) for z in zones)
+    seen = Counter()
+    long_directions={'NW':'North West','NE':'North East','SW':'South West','SE':'South East','N':'North','S':'South','E':'East','W':'West','CENTRAL':'Central'}
+    for zone in zones:
+        zone.pop('family')
+        key=(zone['name'],zone['direction']); seen[key]+=1
+        number=f' {seen[key]}' if names[key]>1 else ''
+        zone['name']+=' · '+long_directions[zone['direction']]+number
+        zone['mapLabel']+='\n'+zone.pop('direction')+number
+    assigned=[c['id'] for z in zones for c in z['cells']]
+    assert len(set(assigned))==len(assigned)==len(cells)
+    return dict(schemaVersion=3,description='Compact coastal map areas with separate national park downloads.',
+                boundarySources=provenance,regions=zones,parks=parks)
 
 
 def add_map_footprints(result, source_root, atlas_path):
-    """Keep download ownership unchanged; map shapes omit ocean and tile gaps.
+    """Coastal selection shapes, deliberately independent of fine tile gaps.
 
-    Published partial sections use their real terrain tile footprints. Unpublished
-    land stays selectable and dashed, rather than falsely becoming available.
+    Downloading still uses the published manifest's actual terrain tiles.
     The bundled atlas supplies the same Natural Earth coastline as the base map.
     """
     raw = atlas_path.read_bytes()
     land = unary_union([Polygon(r).buffer(0) for r in json.loads(raw)['land']])
-    catalog = json.loads((source_root/'world-v1-2026-10-04/catalog.json').read_text())
-    sources = {s['id']: s for s in catalog['sources']}
-    partial = {}
-    for source in sources.values():
-        if source['tileCount'] < 256:
-            manifest = json.loads((source_root/'world-v1-2026-10-04'/source['path']).read_text())
-            assert len(manifest['tiles']) == source['tileCount']
-            partial[source['id']] = unary_union([rectangle(t['mesh']) for t in manifest['tiles']])
     removed = 0
-    for zone in result['regions']:
-        blocks = [partial.get(c['id'], rectangle(c)) for c in zone['cells']]
+    for zone in result['regions']+result['parks']:
+        blocks = [rectangle(c) for c in zone['cells']]
         raw_area = unary_union(blocks)
         clipped = raw_area.intersection(land)
         polygons = [clipped] if clipped.geom_type == 'Polygon' else [g for g in getattr(clipped, 'geoms', []) if g.geom_type == 'Polygon']
@@ -206,9 +227,9 @@ def add_map_footprints(result, source_root, atlas_path):
         assert best is not None, zone['id']
         zone['labelBounds'] = best
     result['mapFootprintSource'] = dict(atlasSHA256=hashlib.sha256(raw).hexdigest(),
-        coastline='Bundled Natural Earth atlas', partialSections=len(partial),
-        description='Land-clipped source coverage; partial sections use actual mesh tile bounds. Storage membership is unchanged.')
-    print(f'Clipped map footprints: {len(partial)} partial sections; {removed:.2f} square degrees of ocean/gaps omitted')
+        coastline='Bundled Natural Earth atlas',
+        description='Coastal geographic selection areas. Individual missing terrain tiles do not cut holes in the selection map.')
+    print(f'Coastal selection shapes: {removed:.2f} square degrees of sea omitted')
 
 
 def main():

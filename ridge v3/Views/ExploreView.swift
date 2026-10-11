@@ -835,7 +835,11 @@ struct OfflineAtlasView: View {
     private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat,opacity:Double)] {
         let viewport=CGRect(origin:.zero,size:size)
         return worldRegions.compactMap { region in
-            let appearance=region.labelAppearance(at:Double(scale))
+            // A selected whole park is an overlay, not another area label
+            // competing with the names on the map beneath it.
+            guard region.id != region.pack.parkID else { return nil }
+            var appearance=region.labelAppearance(at:Double(scale))
+            if region.id==selectedWorldRegion { appearance=(max(18,appearance.size),1) }
             guard appearance.opacity>0 else { return nil }
             let anchor=screen(region.labelPoint,size:size),fontSize=CGFloat(appearance.size)
             let lines=region.label.split(separator:"\n")
@@ -866,7 +870,7 @@ struct OfflineAtlasView: View {
     }
     private func downloadFootprint(size:CGSize)->Path? {
         guard let selectedWorldRegion else { return nil }
-        let regions=worldRegions.filter { $0.id==selectedWorldRegion || $0.pack.parkID==selectedWorldRegion }
+        let regions=worldRegions.filter { $0.id==selectedWorldRegion }
         guard !regions.isEmpty,regions.allSatisfy({ $0.pack.mapShapes != nil }) else { return nil }
         var path=Path()
         for region in regions { path.addPath(regionPath(region,size:size)) }
@@ -876,7 +880,7 @@ struct OfflineAtlasView: View {
         guard !worldRegions.isEmpty else { return }
         let viewport=CGRect(origin:.zero,size:size)
         for region in worldRegions {
-            let selected=region.id==selectedWorldRegion || (selectedWorldRegion != nil && region.pack.parkID==selectedWorldRegion),available = !region.available.isEmpty
+            let selected=region.id==selectedWorldRegion,available = !region.available.isEmpty
             let color:Color=region.downloadState == .saved ? RidgeTheme.forest
                 : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
             guard rectangle(region.pack.bounds,size:size).intersects(viewport) else { continue }

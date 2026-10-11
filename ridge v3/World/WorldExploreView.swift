@@ -34,7 +34,7 @@ struct WorldExploreView: View {
     }
     private var regionCandidates:[WorldRegionMapOverlay] {
         guard !world.in3D,!query.trimmingCharacters(in:.whitespaces).isEmpty else { return [] }
-        let areas=parkMaps+regionMaps.filter { $0.pack.parkID == nil || $0.id == $0.pack.parkID }
+        let areas=parkMaps+regionMaps
         return Array(areas.filter { $0.pack.name.localizedCaseInsensitiveContains(query) }.prefix(3))
     }
     var body: some View {
@@ -51,7 +51,7 @@ struct WorldExploreView: View {
                     worldActiveTiles:world.regionTileProgress.active,
                     worldDownloading:world.isSavingOffline,
                     worldSavedDownloadFills:world.regionTileProgress.savedFills,
-                    worldRegions:regionMaps,selectedWorldRegion:world.downloadRegion?.id,onRegionTap:selectRegion)
+                    worldRegions:regionMaps+parkMaps.filter { $0.id==world.downloadRegion?.id },selectedWorldRegion:world.downloadRegion?.id,onRegionTap:selectRegion)
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
@@ -143,10 +143,11 @@ struct WorldExploreView: View {
         }
         .task(id:"\(connectionID)|\(world.catalog?.revision ?? "")|\(world.offlineCoverageRevision)") {
             do {
-                let packs=try WorldRegionPack.load().filter { $0.mapShapes?.isEmpty != true },catalog=world.catalog,saved=world.offlineBounds
+                let library=try WorldRegionPack.loadLibrary(),catalog=world.catalog,saved=world.offlineBounds
+                let packs=library.areas.filter { $0.mapShapes?.isEmpty != true }
                 let (overlays,parks)=await Task.detached(priority:.userInitiated) {
                     (WorldRegionMapOverlay.make(packs:packs,catalog:catalog,offline:saved),
-                     WorldRegionMapOverlay.make(packs:WorldRegionPack.wholeParks(in:packs),catalog:catalog,offline:saved))
+                     WorldRegionMapOverlay.make(packs:library.parks,catalog:catalog,offline:saved))
                 }.value
                 guard !Task.isCancelled else { return }
                 regionMaps=overlays;parkMaps=parks;regionMapError=nil

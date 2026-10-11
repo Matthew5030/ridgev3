@@ -89,40 +89,32 @@ struct WorldRegionPack: Identifiable, Sendable {
         let sources=sources(in:catalog)
         return Set(cells.filter { cell in sources.contains { cell.bounds.contains($0.bounds.center) } }.map(\.id))
     }
-    /// Larger parks have small selectable areas, plus an optional whole-park
-    /// selection using the exact same files and saved-state accounting.
-    static func wholeParks(in packs:[Self])->[Self] {
-        Dictionary(grouping:packs.filter { $0.parkID != nil },by: { $0.parkID! }).compactMap { id,parts in
-            guard parts.count>1,let first=parts.first else { return nil }
-            return Self(id:id,name:first.parkName ?? first.name,subtitle:first.subtitle,
-                        landmark:first.parkName ?? first.name,cells:parts.flatMap(\.cells).sorted { $0.id<$1.id },
-                        mapShapes:parts.allSatisfy { $0.mapShapes != nil } ? parts.flatMap { $0.mapShapes! } : nil,
-                        parkID:id,parkName:first.parkName,artwork:first.artwork)
-        }.sorted { $0.id<$1.id }
-    }
-    static func load(url: URL? = nil) throws -> [WorldRegionPack] {
+    struct Library { let areas:[WorldRegionPack];let parks:[WorldRegionPack] }
+    static func load(url:URL? = nil) throws -> [WorldRegionPack] { try loadLibrary(url:url).areas }
+    static func loadLibrary(url: URL? = nil) throws -> Library {
         struct Zone: Decodable {
             let id:String;let name:String;let subtitle:String;let mapLabel:String
             let parkID:String?;let parkName:String?;let artwork:String?;let cells:[Cell]
             let mapShapes:[MapShape]?;let labelBounds:GeoBounds?
         }
-        struct Index: Decodable { let schemaVersion:Int;let regions:[Zone] }
+        struct Index: Decodable { let schemaVersion:Int;let regions:[Zone];let parks:[Zone] }
         guard let url = url ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json")
             ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json",subdirectory:"Resources") else {
             throw RidgeError.message("The region list is missing from this build.")
         }
         let index=try JSONDecoder().decode(Index.self,from:Data(contentsOf:url))
         let cells=index.regions.flatMap(\.cells)
-        guard index.schemaVersion==2,!index.regions.isEmpty,
+        guard index.schemaVersion==3,!index.regions.isEmpty,
               Set(index.regions.map(\.id)).count==index.regions.count,
               Set(cells.map(\.id)).count==cells.count else { throw RidgeError.message("Invalid download zones.") }
-        return try index.regions.map { zone in
-            guard !zone.cells.isEmpty,zone.cells.allSatisfy({ $0.bounds.isValid }) else {
+        func convert(_ zone:Zone) throws -> WorldRegionPack {
+            guard !zone.cells.isEmpty,Set(zone.cells.map(\.id)).count==zone.cells.count,zone.cells.allSatisfy({ $0.bounds.isValid }) else {
                 throw RidgeError.message("A region has an invalid map boundary.")
             }
             return Self(id:zone.id,name:zone.name,subtitle:zone.subtitle,landmark:zone.parkName ?? zone.name,
                         cells:zone.cells,mapShapes:zone.mapShapes,labelBounds:zone.labelBounds,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
         }
+        return try Library(areas:index.regions.map(convert),parks:index.parks.map(convert))
     }
 }
 
@@ -334,45 +326,25 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         available=WorldOfflineCoverage.displayBounds(sources.map(\.bounds))
         totalTileCount=sources.reduce(0) { $0+$1.tileCount }
         labelPoint=cells.min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }!.center
-        if let labelBounds=pack.labelBounds {
-            labelPoint=labelBounds.center
-            labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:[labelBounds])
-        } else if pack.mapShapes == nil {
-            labelFontScale=Self.fittedLabelScale(label,anchor:labelPoint,fills:fills)
-        } // No label is placed over an empty sea footprint.
-    }
-    /// Fit once in projected map coordinates, independent of camera/selection.
-    /// Every zoom then uses the same footprint, so adjacent labels cannot swap
-    /// priority or change size in discrete fitting steps during a gesture.
-    private static func fittedLabelScale(_ label:String,anchor:GeoPoint,fills:[GeoBounds])->Double {
-        func projected(_ p:GeoPoint)->CGPoint {
-            let latitude=min(85,max(-85,p.latitude)) * .pi/180
-            return CGPoint(x:(p.longitude+180)/360,y:(1-log(tan(latitude)+1/cos(latitude)) / .pi)/2)
-        }
-        let origin=projected(anchor)
-        let rectangles=fills.map { bounds -> CGRect in
-            let a=projected(.init(latitude:bounds.maxLatitude,longitude:bounds.minLongitude))
-            let b=projected(.init(latitude:bounds.minLatitude,longitude:bounds.maxLongitude))
-            return CGRect(x:a.x-origin.x,y:a.y-origin.y,width:b.x-a.x,height:b.y-a.y)
-        }
-        let lines=label.split(separator:"\n")
-        let width=Double(lines.map(\.count).max() ?? 1)*0.72+0.5,height=Double(lines.count)*1.2+0.4
-        let extent=rectangles.reduce(CGRect.null) { $0.union($1) }
-        var low=0.0,high=min(extent.width/width,extent.height/height)
-        for _ in 0..<28 {
-            let font=(low+high)/2
-            let rect=CGRect(x:-width*font/2,y:-height*font/2,width:width*font,height:height*font)
-            let covered=rectangles.reduce(0.0) { total,part in
-                let intersection=part.intersection(rect)
-                return total+(intersection.isNull ? 0 : intersection.width*intersection.height)
+        if let labelBounds=pack.labelBounds { labelPoint=labelBounds.center }
+        if pack.mapShapes?.isEmpty != true {
+            let bounds=pack.bounds
+            func y(_ latitude:Double)->Double {
+                let radians=min(85,max(-85,latitude)) * .pi/180
+                return (1-log(tan(radians)+1/cos(radians)) / .pi)/2
             }
-            if covered>=rect.width*rect.height*(1-1e-8) { low=font } else { high=font }
+            // Visibility follows the area on screen, not whether a large text
+            // rectangle can be squeezed into an irregular bit of coastline.
+            let width=(bounds.maxLongitude-bounds.minLongitude)/360
+            let height=abs(y(bounds.maxLatitude)-y(bounds.minLatitude))
+            labelFontScale=max(width,height)/6
         }
-        return low*0.92
     }
     func labelAppearance(at scale:Double)->(size:Double,opacity:Double) {
-        let size=min(40,max(0,scale*labelFontScale))
-        let t=min(1,max(0,(size-16)/8))
+        guard labelFontScale>0 else { return (0,0) }
+        let footprint=max(0,scale*labelFontScale)
+        let size=min(24,max(15,footprint))
+        let t=min(1,max(0,(footprint-5)/4))
         return (size,t*t*(3-2*t))
     }
     /// Receipt bounds are already verified against local pinned files. Index
@@ -397,14 +369,19 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         var counts:[String:Int]=[:]
         for bounds in Set(offline) {
             let point=bounds.center,key=Bucket(x:Int(floor(point.longitude)),y:Int(floor(point.latitude)))
-            guard let owner=buckets[key]?.first(where: { $0.source.bounds.contains(point) }) else { continue }
-            let count=counts[owner.source.id,default:0]
-            guard count<owner.source.tileCount else { continue }
-            counts[owner.source.id]=count+1
-            result[owner.pack].savedTileCount+=1
-            let target=result[owner.pack].pack.bounds.center
-            if result[owner.pack].savedPoint.map({ point.distance(to:target)<$0.distance(to:target) }) ?? true {
-                result[owner.pack].savedPoint=point
+            let owners=buckets[key]?.filter { $0.source.bounds.contains(point) } ?? []
+            guard let source=owners.first?.source else { continue }
+            let count=counts[source.id,default:0]
+            guard count<source.tileCount else { continue }
+            counts[source.id]=count+1
+            // A saved source can contribute to a map area and more than one
+            // park download. Count it once in each matching selection.
+            for index in Set(owners.filter { $0.source.id==source.id }.map(\.pack)) {
+                result[index].savedTileCount+=1
+                let target=result[index].pack.bounds.center
+                if result[index].savedPoint.map({ point.distance(to:target)<$0.distance(to:target) }) ?? true {
+                    result[index].savedPoint=point
+                }
             }
         }
         return result

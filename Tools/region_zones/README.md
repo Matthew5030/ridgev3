@@ -1,17 +1,45 @@
-# Park download zones
+# Download areas and park groups
 
-The app loads `ridge v3/Resources/uk-download-zones.json`. This replaces the old
-44 broad regions with 216 selectable areas: compact parks, compass quarters of
-larger parks, and smaller surrounding countryside/coast areas. A split park also
-has a whole-park selection in its inspector and in map search.
+The app loads `ridge v3/Resources/uk-download-zones.json` (schema 3). The map
+shows compact, roughly rectangular areas clipped to the coastline. National
+parks are separate grouped downloads, available in search and from the area
+inspector. Selecting a whole park highlights its footprint without changing the
+underlying area layout.
 
-The areas reference existing `world-*` sources; no terrain or map rebuild is
-required. SHA-addressed saved files and per-source receipts remain compatible.
-No server publication or cloud enablement is part of this change.
+## Area geometry
+
+Each original publication cell contains 3 × 3 source sections. Sections are
+collected into blocks of 5 × 5, typically around 35–40 km across. Tiny coastal
+remnants join a neighbouring block instead of becoming standalone slivers.
+There are 279 area definitions, of which 244 have land footprints. Empty offshore
+areas are hidden. Every published source remains in exactly one map area.
+
+Map shapes use the bundled Natural Earth coastline. Individual missing terrain
+tiles do not carve holes into the selection map: these are geographic download
+areas, not survey-coverage polygons. Availability and byte estimates still come
+from the connected server's published catalogue. Downloads only request files
+that actually exist in each manifest.
+
+## Park downloads and saved files
+
+The 15 park groups independently select source sections touching their existing
+OSM boundary. They do not inherit entire rectangular areas, which would add
+unnecessary surrounding countryside. Boundary sections may be shared by parks;
+SHA-addressed files are reused, and saved-state counting supports overlapping
+groups. Coverage, routes and cached downloads are not rebuilt or invalidated.
+
+## Labels
+
+Area names use a geographic name and a compass suffix, at most two lines. Full
+names remain in the inspector. Label anchors are computed on land, but visibility
+is based on the area's screen size rather than trying to fit the entire text in
+a thin coastline fragment. Labels scale smoothly from 15 to 24 points; the selected
+area's name is always shown. At country scale, labels fade to avoid a wall of text.
+Thin single borders remain; there is no white border casing.
 
 ## Reproduce
 
-From the repository root, with the terrain pipeline's Shapely dependency:
+With the terrain pipeline's Shapely dependency, from the repository root:
 
 ```sh
 python3 Tools/region_zones/build_zones.py --source-root '/Volumes/MLB_EXT_4TB/Ridge Sources'
@@ -19,50 +47,7 @@ python3 -m unittest discover -s Tools/region_zones -p 'test_*.py'
 sh Tools/test_world_region_packs.sh
 ```
 
-Inputs are the original `uk-pack-regions.json` background grid, the 15 existing
-`*-adaptive-0p5/boundary.geojson` park boundaries, and the published world
-catalogue. Boundary provenance and file SHA-256s are retained in the new index.
-`surrounding-areas.json` preserves the previous geographic band definitions.
-
-Each old grid cell is divided into the existing 3 × 3 source sections (16 × 16
-terrain tiles each), using the same latitude interpolation as `batch_world.py`.
-All published source IDs and bounds must match before an index is written.
-
-Sections touching a park go to that park; if two parks touch the same section,
-the greater polygon overlap wins. Remaining sections retain their old geographic
-group, divided into compass quarters. Groups of 24 sections or fewer stay whole.
-The resulting 6,066 cells include unpublished coverage; availability still comes
-from the connected server catalogue. No additional Scottish coverage is implied.
-
-These are approximate download footprints, not legal park boundaries. A section
-can contain countryside outside a park, and a shared boundary section has a single
-owner. Keeping whole source sections preserves routes, cache reuse and the fast
-catalogue-only size offer without another server format or asset reprocessing.
-
-October 2026 catalogue upper estimates (terrain + maps + routing):
-
-| Area | NW | NE | SW | SE |
-| --- | ---: | ---: | ---: | ---: |
-| Eryri | 440 MB | 252 MB | 304 MB | 375 MB |
-| Lake District | 291 MB | 215 MB | 194 MB | 208 MB |
-| Peak District | 309 MB | 138 MB | 164 MB | 142 MB |
-
-Actual transfer skips verified saved files. Whole-park selection is the union of
-its smaller areas, never a separate duplicate pack.
-
-## Display footprints
-
-Storage membership and the map outline are deliberately separate. The generator
-clips each zone to the bundled atlas's Natural Earth land polygons. For the 445
-partially populated published sections it also reads `world.json` and unions the
-actual small terrain-tile bounds, so gaps and coastal tile edges are retained.
-Unpublished land stays in the outline and uses the existing unavailable state.
-Four entirely offshore, unpublished zones have empty footprints and are omitted
-from the map/search. No published download files are removed or renamed.
-
-`mapShapes` contains polygon rings, including holes. Drawing, hit testing and
-animated download fills use these shapes; sea taps select nothing. `labelBounds`
-is an interior rectangle computed offline, keeping labels off the water with no
-runtime coastline fitting or network requests. Coastlines have the precision of
-the existing bundled atlas, not a new survey dataset. Thin single strokes replace
-the previous double borders with white casing.
+Inputs: the original `uk-pack-regions.json` grid, `surrounding-areas.json` naming
+bands, 15 existing `*-adaptive-0p5/boundary.geojson` files, the published world
+catalogue, and the bundled atlas. Boundary provenance and file SHA-256s are
+included in the output. No server publication or cloud enablement is required.

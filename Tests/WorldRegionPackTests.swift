@@ -47,14 +47,15 @@ actor RegionTransferAudit {
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("ridge-region-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
-        let packs=try WorldRegionPack.load(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
-        try check(packs.count==216,"Park areas and smaller surrounding regions")
-        try check(Set(packs.compactMap(\.parkID)).count==15,"All fifteen prepared park boundaries have selectable areas")
-        let wholeParks=WorldRegionPack.wholeParks(in:packs)
+        let library=try WorldRegionPack.loadLibrary(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
+        let packs=library.areas
+        try check((200...350).contains(packs.count),"Compact map areas, including empty offshore bins hidden by the view")
+        let wholeParks=library.parks
+        try check(wholeParks.count==15,"All fifteen national parks remain grouped downloads")
         for whole in wholeParks {
-            let parts=packs.filter { $0.parkID==whole.id }
-            try check(parts.count>1 && Set(whole.cells.map(\.id))==Set(parts.flatMap(\.cells).map(\.id)),"Whole park is exactly the union of its smaller areas")
-            try check(Set(whole.sources(in:catalog).map(\.id))==Set(parts.flatMap { $0.sources(in:catalog) }.map(\.id)),"Whole park uses the same source files without extra surrounding regions")
+            try check(whole.id==whole.parkID && !whole.cells.isEmpty,"Park download has an independent footprint")
+            let ids=whole.sources(in:catalog).map(\.id)
+            try check(Set(ids).count==ids.count,"Park download does not repeat shared source sections")
         }
         let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
         for overlay in overlays {
@@ -68,10 +69,13 @@ actor RegionTransferAudit {
             for step in 1...400 {
                 let current=overlay.labelAppearance(at:Double(step)*0.12/overlay.labelFontScale)
                 try check(current.size>=previous.size && current.opacity>=previous.opacity,"Zoom label size and opacity are monotonic")
-                try check(current.size-previous.size<0.121 && current.opacity-previous.opacity<0.023,"No discrete fitting or visibility jumps")
+                try check(current.size-previous.size<0.121 && current.opacity-previous.opacity<0.046,"No discrete fitting or visibility jumps")
                 previous=current
             }
-            try check(previous.size==40 && previous.opacity==1,"Large labels settle at their maximum size")
+            try check(previous.size==24 && previous.opacity==1,"Large labels settle at their maximum size")
+            let readable=overlay.labelAppearance(at:16/overlay.labelFontScale)
+            try check(readable.size>=15 && readable.opacity==1,"Every area name is fully visible once the area spans 96 points")
+            try check(overlay.label.split(separator:"\n").count<=2,"Area labels use at most two short lines")
             try check(WorldRegionMapOverlay.at(overlay.labelPoint,in:overlays)?.id==overlay.id,"Region labels are anchored inside their region")
             for cell in overlay.pack.cells {
                 let hit=WorldRegionMapOverlay.at(cell.bounds.center,in:overlays)
@@ -96,20 +100,20 @@ actor RegionTransferAudit {
         })
         try check(Set(cells)==expectedCells,"Subdivision retains all source sections, including unpublished areas")
         try check(Set(packs.map(\.id)).count==packs.count,"Every smaller pack has a stable unique ID")
-        try check(packs.filter { $0.id.hasPrefix("area-fermanagh-sperrins") || $0.id.hasPrefix("area-antrim-down") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
-        let northern=packs.filter { $0.id.hasPrefix("area-aberdeenshire") }
+        try check(packs.filter { $0.name.hasPrefix("Fermanagh") || $0.name.hasPrefix("Antrim") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
+        let northern=packs.filter { $0.name.hasPrefix("Aberdeenshire") }
         try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Partial Scotland coverage is distinguishable from a full region")
         let regions=[catalog.sources[0],catalog.sources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })
         try check(fixture.bounds.widthMeters>24_000,"Region fixture exceeds the custom-area size limit")
         let started=Date()
-        let eryri=packs.first { $0.id=="park-eryri-nw" }!
+        let eryri=packs.first { $0.contains(.init(latitude:53.0685,longitude: -4.0763)) }!
         let allEryri=wholeParks.first { $0.id=="park-eryri" }!
         let eryriSize=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)!
         let wholeSize=WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root)!
-        try check(eryriSize.bytes<wholeSize.bytes/2 && eryriSize.parts.count<20,"North-west Eryri is a much smaller download than the whole park")
+        try check(eryriSize.bytes<wholeSize.bytes && eryriSize.parts.count<=25,"A compact Eryri map area is smaller than the whole park")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.0685,longitude: -4.0763),in:overlays)?.pack.parkID=="park-eryri","Yr Wyddfa selects an Eryri park area")
-        try check(WorldRegionMapOverlay.at(.init(latitude:53.30,longitude: -4.35),in:overlays)?.pack.parkID==nil,"Anglesey is separate from the Eryri download")
+        try check(WorldRegionMapOverlay.at(.init(latitude:53.30,longitude: -4.35),in:overlays)?.id != eryri.id,"Anglesey is a separate map area")
         let quick=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)
         let offerSeconds=Date().timeIntervalSince(started)
         try check(quick?.isEstimate==true && quick?.parts.isEmpty==false,"Real Eryri region offers catalogue size immediately")
@@ -144,6 +148,9 @@ actor RegionTransferAudit {
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
         try check(model.offlineBounds.count==plan.tileCount,"All regional tiles become usable in normal exploration")
         let receipts=WorldOfflineCoverage.savedBounds(at:cache)
+        let overlapping=WorldRegionPack(id:"overlapping-park",name:"Overlapping park",subtitle:"",landmark:"",cells:fixture.cells)
+        let overlappingStates=WorldRegionMapOverlay.make(packs:[fixture,overlapping],catalog:catalog,offline:receipts)
+        try check(overlappingStates.allSatisfy { $0.savedTileCount==plan.tileCount && $0.downloadState == .saved },"Shared files update saved state in both area and park selections")
         let savedOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:catalog,offline:receipts+receipts)[0]
         try check(savedOverlay.downloadState == .saved && savedOverlay.savedTileCount==plan.tileCount,"Fully saved region is green; overlapping receipts are not double counted")
         let unsavedOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:catalog,offline:[])[0]
