@@ -236,3 +236,9 @@ Validation:
 - Hosted source test against the local Snowdon server: PASS real terrain/vector loading, path routing, completed save receipts, exclusion of ordinary cache, and recovery of older pinned saves after deleting the receipt file.
 - `sh Tools/test_world_context.sh /tmp/ridge-offline-boundary-qa`: PASS 942 checks plus two real-terrain SceneKit boundary snapshots. The test uses a synthetic saved extent solely to preview the annotation. Corrected premultiplied-alpha blending after the first snapshot exposed an overly bright ribbon; final images show a subtle fading line/curtain.
 - Final simulator and signed device Debug builds passed. Physical-device motion/visibility remains a user trial, not a claimed performance measurement. No pack regeneration or Cloudflare changes.
+
+## Saved coverage on the 2D map — 11 October 2026
+
+The world atlas now receives the same completed offline bounds and merged perimeter as the 3D curtain. It fills saved coverage once with a light amber tint and draws only the combined perimeter, using a 2.5-point amber stroke with a light contrast halo. Stroke widths stay constant while zooming, and drawing is clipped/cullable to the viewport. The map card includes a matching “Saved offline” key, or “No areas saved offline” when none are recorded. Removed the old green preview rectangle/“3D terrain” marker so a prepared terrain preview is not mistaken for offline coverage. Preview imagery, camera gestures, streaming, and the 3D transition remain in place.
+
+Simulator and signed iOS Debug builds passed; diff whitespace checks passed. Launched the simulator and visually verified the empty saved-area state on the UK overview. This is presentation of the already-tested saved-area union; no download, receipt or mesh policy changed. A populated-area device visual check remains for the user trial.

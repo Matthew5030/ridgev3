@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum RidgeTheme {
+    static let offlineBoundary = Color(red:0.66,green:0.43,blue:0.16)
     static let paper = Color(red: 0.96, green: 0.97, blue: 0.965)
     static let panel = Color(red: 0.995, green: 0.997, blue: 0.993)
     static let ink = Color(red: 0.12, green: 0.20, blue: 0.18)

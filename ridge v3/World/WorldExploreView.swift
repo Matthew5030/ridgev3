@@ -35,7 +35,7 @@ struct WorldExploreView: View {
             } else {
                 OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: false,
                     selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: false,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.previewBounds, worldPreview:world.preview, onWorldTap: visit)
+                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, worldCoverage: world.previewBounds, worldPreview:world.preview, onWorldTap: visit, worldOfflineBounds:world.offlineBounds, worldOfflineEdges:world.offlineEdges)
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
@@ -86,6 +86,16 @@ struct WorldExploreView: View {
                                 Text("\(catalog.sources.count.formatted()) map areas available")
                                     .font(.caption).foregroundStyle(RidgeTheme.muted)
                             }
+                            if world.offlineBounds.isEmpty {
+                                Text("No areas saved offline").font(.caption).foregroundStyle(RidgeTheme.muted)
+                            } else {
+                                HStack(spacing:8) {
+                                    RoundedRectangle(cornerRadius:2).fill(RidgeTheme.offlineBoundary.opacity(0.12))
+                                        .overlay(RoundedRectangle(cornerRadius:2).strokeBorder(RidgeTheme.offlineBoundary,lineWidth:2))
+                                        .frame(width:22,height:14).accessibilityHidden(true)
+                                    Text("Saved offline").font(.caption.weight(.medium))
+                                }.accessibilityLabel("Amber outlines show maps saved offline")
+                            }
                             if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps") }
                         }.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                         Spacer()
@@ -94,7 +104,7 @@ struct WorldExploreView: View {
                 Spacer()
                 if world.in3D && world.nearOfflineBoundary {
                     HStack(spacing:12) {
-                        Image(systemName:"arrow.down.circle").foregroundStyle(Color(red:0.66,green:0.43,blue:0.16))
+                        Image(systemName:"arrow.down.circle").foregroundStyle(RidgeTheme.offlineBoundary)
                         VStack(alignment:.leading,spacing:3) {
                             Text(world.insideOfflineArea ? "End of offline map" : "Outside your offline map").font(.subheadline.weight(.medium))
                             Text("You can keep exploring while connected.").font(.caption).foregroundStyle(RidgeTheme.muted)

@@ -440,6 +440,8 @@ struct OfflineAtlasView: View {
     private var maximumScale: Double { onWorldTap != nil || worldCoverage != nil ? 16_000_000 : 4_000_000 }
     var worldPreview: CGImage? = nil
     var onWorldTap: ((GeoPoint) -> Void)? = nil
+    var worldOfflineBounds: [GeoBounds] = []
+    var worldOfflineEdges: [WorldOfflineCoverage.Edge] = []
     // The callback identifies the world flow even before its terrain source opens.
     private var usesWorldStyle: Bool { onWorldTap != nil || worldCoverage != nil }
     private let verticalOffset: CGFloat = 0
@@ -485,15 +487,10 @@ struct OfflineAtlasView: View {
                     } else {
                         context.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.12)))
                     }
-                    if rect.width < 180 { context.stroke(Path(rect),with:.color(RidgeTheme.forest.opacity(0.7)),lineWidth:1) }
-                    if rect.width < 45 {
-                        let p=CGPoint(x:rect.midX,y:rect.midY)
-                        context.fill(Path(ellipseIn:CGRect(x:p.x-5,y:p.y-5,width:10,height:10)),with:.color(RidgeTheme.forest))
-                        let label=context.resolve(Text("3D terrain").font(.system(size:12,weight:.semibold)).foregroundStyle(RidgeTheme.forest))
-                        context.draw(label,at:CGPoint(x:p.x+10,y:p.y),anchor:.leading)
-                    }
+
                 }
                 drawAreas(context: &context, size: size)
+                drawWorldOfflineCoverage(context: &context, size: size)
                 if let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawSelection(context: &context, size: size)
                 }
@@ -760,13 +757,30 @@ struct OfflineAtlasView: View {
             context.stroke(Path(rect), with: .color(RidgeTheme.muted.opacity(0.3)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
         }
     }
+    private func drawWorldOfflineCoverage(context: inout GraphicsContext, size: CGSize) {
+        guard !worldOfflineBounds.isEmpty else { return }
+        let viewport=CGRect(origin:.zero,size:size)
+        // Fill the union once. Shared saved tiles must never become a grid or
+        // darken where downloads overlap. The outline is the same as in 3D.
+        var fill=Path(), outline=Path()
+        for bounds in worldOfflineBounds {
+            let rect=rectangle(bounds,size:size)
+            if rect.intersects(viewport) { fill.addRect(rect) }
+        }
+        context.fill(fill,with:.color(RidgeTheme.offlineBoundary.opacity(0.10)),style:FillStyle(eoFill:false))
+        for edge in worldOfflineEdges {
+            let a=screen(edge.start,size:size),b=screen(edge.end,size:size)
+            let extent=CGRect(x:min(a.x,b.x),y:min(a.y,b.y),width:max(1,abs(a.x-b.x)),height:max(1,abs(a.y-b.y)))
+            guard extent.insetBy(dx:-4,dy:-4).intersects(viewport) else { continue }
+            outline.move(to:a);outline.addLine(to:b)
+        }
+        // Screen-space widths stay legible at UK scale and when zoomed in.
+        context.stroke(outline,with:.color(RidgeTheme.paper.opacity(0.95)),style:StrokeStyle(lineWidth:5,lineCap:.round,lineJoin:.round))
+        context.stroke(outline,with:.color(RidgeTheme.offlineBoundary),style:StrokeStyle(lineWidth:2.5,lineCap:.round,lineJoin:.round))
+    }
     private func drawPlaces(_ atlas: AtlasData, context: inout GraphicsContext, size: CGSize) {
         guard scale > 1200 else { return }
         var occupied = clusters(size: size).map { clusterLabelRect($0, size: size).insetBy(dx: -5, dy: -5) }
-        if let worldCoverage {
-            let rect=rectangle(worldCoverage,size:size)
-            if rect.width<45 { occupied.append(CGRect(x:rect.midX-10,y:rect.midY-14,width:145,height:28)) }
-        }
         let detailPlaces = entries.filter { cellsAreVisible($0, size: size) }.flatMap { $0.manifest.places }.sorted { ($0.elevation ?? 0) > ($1.elevation ?? 0) }
         var seen: Set<String> = []
         for place in detailPlaces + atlas.places {
