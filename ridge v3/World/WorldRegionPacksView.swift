@@ -74,14 +74,14 @@ struct RegionLandscape:View {
             let rock=Color(red:0.34,green:0.48,blue:0.43),grass=Color(red:0.66,green:0.72,blue:0.54)
             context.fill(Path(CGRect(origin:.zero,size:size)),with:.color(sky))
             context.fill(Path(ellipseIn:CGRect(x:w*0.77,y:h*0.13,width:h*0.23,height:h*0.23)),with:.color(Color(red:0.96,green:0.90,blue:0.69)))
-            let coastal=["east-anglia","south-east","south-west"].contains(pack.id)
+            let coastal=["east-anglia","south-east","south-west"].contains(pack.artworkID)
             if coastal {
                 polygon([(0,0.59),(0.2,0.57),(0.43,0.62),(0.7,0.55),(1,0.59),(1,1),(0,1)],far)
             } else {
                 polygon([(0,0.62),(0.14,0.43),(0.26,0.54),(0.40,0.30),(0.53,0.50),(0.7,0.36),(0.88,0.54),(1,0.43),(1,1),(0,1)],far)
             }
             let profile:[(Double,Double)]
-            switch pack.id {
+            switch pack.artworkID {
             case "north-scotland": profile=[(0,0.83),(0.22,0.65),(0.34,0.63),(0.4,0.3),(0.44,0.16),(0.48,0.35),(0.5,0.63),(0.63,0.55),(0.7,0.38),(0.74,0.68),(1,0.89)]
             case "west-highlands": profile=[(0,0.85),(0.17,0.64),(0.36,0.27),(0.57,0.24),(0.61,0.35),(0.70,0.41),(0.74,0.63),(1,0.85)]
             case "lowlands": profile=[(0,0.91),(0.2,0.6),(0.3,0.36),(0.43,0.68),(0.54,0.42),(0.65,0.71),(0.79,0.48),(1,0.85)]
@@ -97,13 +97,13 @@ struct RegionLandscape:View {
             if coastal {
                 let sea=Color(red:0.48,green:0.68,blue:0.71)
                 polygon([(0,0.72),(0.25,0.69),(0.5,0.74),(0.8,0.66),(1,0.7),(1,1),(0,1)],sea)
-                if pack.id=="east-anglia" {
+                if pack.artworkID=="east-anglia" {
                     polygon([(0,0.7),(0.62,0.68),(0.35,0.86),(0,0.88)],grass)
                     polygon([(0.66,0.49),(0.79,0.49),(0.82,0.77),(0.64,0.77)],Color(red:0.87,green:0.83,blue:0.69))
                     polygon([(0.64,0.5),(0.73,0.38),(0.81,0.5)],rock)
                     var sails=Path();sails.move(to:point(0.58,0.31));sails.addLine(to:point(0.86,0.68));sails.move(to:point(0.86,0.31));sails.addLine(to:point(0.58,0.68))
                     context.stroke(sails,with:.color(.white.opacity(0.85)),lineWidth:3)
-                } else if pack.id=="south-east" {
+                } else if pack.artworkID=="south-east" {
                     polygon([(0,0.38),(0.18,0.43),(0.29,0.36),(0.43,0.43),(0.53,0.38),(0.64,0.46),(0.71,0.42),(0.83,0.51),(0.82,0.63),(0.68,0.66),(0.49,0.75),(0.28,0.83),(0,0.92)],Color(red:0.94,green:0.92,blue:0.82))
                     polygon([(0,0.36),(0.18,0.41),(0.29,0.34),(0.43,0.41),(0.53,0.36),(0.64,0.44),(0.71,0.40),(0.83,0.49),(0.71,0.46),(0.52,0.40),(0.27,0.40),(0,0.40)],grass)
                 } else {

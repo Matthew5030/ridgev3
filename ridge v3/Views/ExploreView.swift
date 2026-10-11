@@ -825,13 +825,16 @@ struct OfflineAtlasView: View {
         let viewport=CGRect(origin:.zero,size:size).insetBy(dx:8,dy:8)
         var result:[(region:WorldRegionMapOverlay,rect:CGRect)]=[]
         // Fixed screen sizes keep labels readable and let drawing and hit tests
-        // share exactly the same layout. Offset colliding labels with leaders.
-        for region in worldRegions {
+        // share exactly the same layout. Prefer the selection, and reveal
+        // smaller regions as you zoom rather than moving labels across the UK.
+        for region in worldRegions.sorted(by: { ($0.id==selectedWorldRegion ? 0 : 1, $0.id) < ($1.id==selectedWorldRegion ? 0 : 1, $1.id) }) {
+            let extent=rectangle(region.pack.bounds,size:size)
+            guard region.id==selectedWorldRegion || (extent.width>=40 && extent.height>=28) else { continue }
             let anchor=screen(region.labelPoint,size:size)
             guard viewport.contains(anchor) else { continue }
             let height:CGFloat=region.label.contains("\n") ? 38 : 28
-            let width:CGFloat=region.id=="northern-ireland" ? 112 : 106
-            let offsets:[CGPoint]=[.zero,CGPoint(x:0,y:-42),CGPoint(x:0,y:42),CGPoint(x:-112,y:0),CGPoint(x:112,y:0),CGPoint(x:0,y:84),CGPoint(x:0,y:-84)]
+            let width:CGFloat=120
+            let offsets:[CGPoint]=[.zero,CGPoint(x:0,y:-24),CGPoint(x:0,y:24)]
             let candidates=offsets.map { offset in
                 CGRect(x:min(viewport.maxX-width,max(viewport.minX,anchor.x-width/2+offset.x)),
                        y:min(viewport.maxY-height,max(viewport.minY,anchor.y-height/2+offset.y)),width:width,height:height)

@@ -24,7 +24,7 @@ import Foundation
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
         let packs=try WorldRegionPack.load(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-pack-regions.json"))
-        try check(packs.count==11,"Eleven named regions")
+        try check(packs.count==44,"Forty-four smaller named regions")
         let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
         for overlay in overlays {
             try check(WorldRegionMapOverlay.at(overlay.labelPoint,in:overlays)?.id==overlay.id,"Region labels are anchored inside their region")
@@ -39,8 +39,13 @@ import Foundation
         try check(Set(members).count==members.count && Set(members)==Set(catalog.sources.map(\.id)),"Every current source assigned exactly once")
         let cells=packs.flatMap(\.cells).map(\.id)
         try check(Set(cells).count==cells.count,"Preset map cells do not overlap")
-        try check(packs.first { $0.id=="northern-ireland" }!.sources(in:catalog).isEmpty,"Unpublished Northern Ireland is explicitly unavailable")
-        let northern=packs.first { $0.id=="north-scotland" }!
+        struct OriginalGrid:Decodable { struct Region:Decodable { let cells:[WorldRegionPack.Cell] };let regions:[Region] }
+        let gridURL=URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-pack-regions.json")
+        let original=try JSONDecoder().decode(OriginalGrid.self,from:Data(contentsOf:gridURL))
+        try check(Set(cells)==Set(original.regions.flatMap(\.cells).map(\.id)),"Subdivision retains every original cell, including unpublished areas")
+        try check(Set(packs.map(\.id)).count==44,"Every smaller pack has a stable unique ID")
+        try check(packs.filter { ["fermanagh-sperrins","antrim-down"].contains($0.id) }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
+        let northern=packs.first { $0.id=="aberdeenshire" }!
         try check(northern.coveredCells(in:catalog).count<northern.cells.count,"Partial Scotland coverage is distinguishable from a full region")
         let regions=[catalog.sources[0],catalog.sources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })

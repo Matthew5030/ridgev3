@@ -319,7 +319,7 @@ struct WorldExploreView: View {
                 Button("Done",action:endDownloadSelection).disabled(world.isSavingOffline)
             }
             HStack {
-                Text(downloadMode == .regions ? "Tap a named region to download its maps." : "Choose around a place, or draw an area.")
+                Text(downloadMode == .regions ? "Tap a region to download. Zoom in for more names." : "Choose around a place, or draw an area.")
                     .font(.caption).foregroundStyle(RidgeTheme.muted)
                 Spacer(minLength:4)
                 if downloadMode == .regions { Button("All regions") { if !world.isSavingOffline { world.cancelDownload() };focusAllRegions() }.font(.caption.weight(.semibold)) }

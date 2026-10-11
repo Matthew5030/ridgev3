@@ -9,6 +9,22 @@ struct WorldRegionPack: Identifiable, Sendable {
     let subtitle: String
     let landmark: String
     let cells: [Cell]
+    var artworkID:String {
+        switch id {
+        case "skye-wester-ross": return "north-scotland"
+        case "lochaber", "cairngorms", "sutherland": return "west-highlands"
+        case "galloway", "scottish-borders", "lomond-trossachs": return "lowlands"
+        case "fermanagh-sperrins", "antrim-down": return "northern-ireland"
+        case "south-lakes", "north-lakes", "yorkshire-dales", "north-pennines": return "lakes-dales"
+        case "north-york-moors", "northumberland": return "north-east"
+        case "peak-district", "shropshire-marches": return "midlands"
+        case "eryri-anglesey", "clwyd-berwyn", "bannau-mid-wales": return "wales"
+        case "broads-east-coast": return "east-anglia"
+        case "surrey-south-downs", "kent-east-sussex": return "south-east"
+        case "wessex": return "south-west"
+        default: return "countryside"
+        }
+    }
     var bounds: GeoBounds {
         GeoBounds(minLatitude:cells.map { $0.bounds.minLatitude }.min()!,minLongitude:cells.map { $0.bounds.minLongitude }.min()!,
                   maxLatitude:cells.map { $0.bounds.maxLatitude }.max()!,maxLongitude:cells.map { $0.bounds.maxLongitude }.max()!)
@@ -29,25 +45,51 @@ struct WorldRegionPack: Identifiable, Sendable {
         }
         let index=try JSONDecoder().decode(Index.self,from:Data(contentsOf:url))
         guard index.schemaVersion == 1 else { throw RidgeError.message("Unsupported region list.") }
-        let definitions: [(String,String,String,String,[String])] = [
-            ("north-scotland","Northern Highlands & Isles","Skye, the far north, Orkney & Shetland","The Old Man of Storr",["northern-isles","north-west-scotland","north-east-scotland"]),
-            ("west-highlands","Highlands & West Coast","Lochaber, Cairngorms, Argyll & the islands","Ben Nevis",["central-highlands","argyll-western-isles"]),
-            ("lowlands","Lowlands & Borders","Loch Lomond, the central belt & southern hills","The Eildon Hills",["central-scotland","southern-scotland"]),
-            ("northern-ireland","Northern Ireland","The Mournes, Antrim & the Sperrins","The Mourne Mountains",["northern-ireland"]),
-            ("lakes-dales","Lakes & Dales","Cumbria, the Yorkshire Dales & North Pennines","Scafell Pike",["cumbria","dales-north-pennines"]),
-            ("north-east","North East & Yorkshire","Northumberland, the coast & North York Moors","Roseberry Topping",["north-east-england","north-east-yorkshire"]),
-            ("midlands","Peak District & Midlands","The Peaks, Welsh borders & Cotswolds","Stanage Edge",["peak-district-midlands","marches-cotswolds"]),
-            ("wales","Wales","Eryri, the Cambrians & Bannau Brycheiniog","Yr Wyddfa",["north-wales","mid-south-wales"]),
-            ("east-anglia","East Anglia","The Broads, fens & east coast","The Norfolk Broads",["east-anglia"]),
-            ("south-east","South East","The Downs, Weald, London & Kent","The Seven Sisters",["south-east"]),
-            ("south-west","South West","Dorset, Somerset, Devon & Cornwall","Durdle Door",["central-south","devon-cornwall"])
+        // Geographic bands split the original publication grid into smaller
+        // presets. Split on cell centres, never through a source or asset.
+        struct Division {
+            let group:String
+            let latitude:Bool
+            let cuts:[Double]
+            let names:[(String,String)]
+        }
+        let divisions:[Division] = [
+            .init(group:"northern-isles",latitude:true,cuts:[59.6],names:[("orkney","Orkney"),("shetland","Shetland")]),
+            .init(group:"north-west-scotland",latitude:false,cuts:[-6.1, -4.9],names:[("outer-hebrides","Outer Hebrides"),("skye-wester-ross","Skye & Wester Ross"),("sutherland","Sutherland")]),
+            .init(group:"north-east-scotland",latitude:true,cuts:[57.5],names:[("aberdeenshire","Aberdeenshire"),("caithness-moray","Caithness & Moray")]),
+            .init(group:"central-highlands",latitude:false,cuts:[-4.1],names:[("lochaber","Lochaber"),("cairngorms","Cairngorms")]),
+            .init(group:"argyll-western-isles",latitude:true,cuts:[56.2],names:[("argyll-islay","Argyll & Islay"),("mull-small-isles","Mull & Small Isles")]),
+            .init(group:"central-scotland",latitude:false,cuts:[-3.7],names:[("lomond-trossachs","Lomond & Trossachs"),("fife-lothians","Fife & Lothians")]),
+            .init(group:"southern-scotland",latitude:false,cuts:[-3.7],names:[("galloway","Galloway"),("scottish-borders","Scottish Borders")]),
+            .init(group:"northern-ireland",latitude:false,cuts:[-6.7],names:[("fermanagh-sperrins","Fermanagh & Sperrins"),("antrim-down","Antrim & Down")]),
+            .init(group:"north-east-england",latitude:true,cuts:[55.1],names:[("tyne-wear-durham","Tyne, Wear & Durham"),("northumberland","Northumberland")]),
+            .init(group:"cumbria",latitude:true,cuts:[54.5],names:[("south-lakes","South Lakes"),("north-lakes","North Lakes")]),
+            .init(group:"dales-north-pennines",latitude:true,cuts:[54.0],names:[("yorkshire-dales","Yorkshire Dales"),("north-pennines","North Pennines")]),
+            .init(group:"north-east-yorkshire",latitude:true,cuts:[53.8],names:[("yorkshire-wolds","Yorkshire Wolds"),("north-york-moors","North York Moors")]),
+            .init(group:"peak-district-midlands",latitude:true,cuts:[52.55, 53.0],names:[("central-midlands","Central Midlands"),("trent-valley","Trent Valley"),("peak-district","Peak District")]),
+            .init(group:"north-wales",latitude:false,cuts:[-3.7],names:[("eryri-anglesey","Eryri & Anglesey"),("clwyd-berwyn","Clwyd & Berwyn")]),
+            .init(group:"mid-south-wales",latitude:false,cuts:[-4.2],names:[("pembrokeshire-ceredigion","Pembrokeshire & Ceredigion"),("bannau-mid-wales","Bannau & Mid Wales")]),
+            .init(group:"east-anglia",latitude:false,cuts:[0.0, 0.8],names:[("fens-cambridgeshire","Fens & Cambridgeshire"),("suffolk-west-norfolk","Suffolk & West Norfolk"),("broads-east-coast","Broads & East Coast")]),
+            .init(group:"marches-cotswolds",latitude:true,cuts:[52.05],names:[("severn-cotswolds","Severn & Cotswolds"),("shropshire-marches","Shropshire & Marches")]),
+            .init(group:"south-east",latitude:false,cuts:[-0.4, 0.65],names:[("surrey-south-downs","Surrey & South Downs"),("london-weald","London & Weald"),("kent-east-sussex","Kent & East Sussex")]),
+            .init(group:"central-south",latitude:false,cuts:[-2.3],names:[("somerset-west-dorset","Somerset & West Dorset"),("wessex","Wessex")]),
+            .init(group:"devon-cornwall",latitude:false,cuts:[-4.5],names:[("cornwall-scilly","Cornwall & Scilly"),("devon","Devon")]),
         ]
-        guard Set(definitions.flatMap { $0.4 }) == Set(index.regions.map(\.id)),
-              definitions.flatMap({ $0.4 }).count == index.regions.count else { throw RidgeError.message("The region groups do not match the map grid.") }
-        return try definitions.map { id,name,subtitle,landmark,groups in
-            let cells=index.regions.filter { groups.contains($0.id) }.flatMap(\.cells)
-            guard !cells.isEmpty,cells.allSatisfy({ $0.bounds.isValid }) else { throw RidgeError.message("A region has an invalid map boundary.") }
-            return WorldRegionPack(id:id,name:name,subtitle:subtitle,landmark:landmark,cells:cells)
+        guard Set(divisions.map(\.group)) == Set(index.regions.map(\.id)),
+              divisions.count == index.regions.count else { throw RidgeError.message("The region groups do not match the map grid.") }
+        return try divisions.flatMap { division -> [WorldRegionPack] in
+            let cells=index.regions.first { $0.id==division.group }!.cells
+            var bands=Array(repeating:[Cell](),count:division.names.count)
+            for cell in cells {
+                let center=cell.bounds.center
+                let coordinate=division.latitude ? center.latitude : center.longitude
+                bands[division.cuts.filter { coordinate >= $0 }.count].append(cell)
+            }
+            return try division.names.enumerated().map { offset,definition in
+                let (id,name)=definition,cells=bands[offset]
+                guard !cells.isEmpty,cells.allSatisfy({ $0.bounds.isValid }) else { throw RidgeError.message("A region has an invalid map boundary.") }
+                return WorldRegionPack(id:id,name:name,subtitle:"Approximate map area · follows the tile grid",landmark:name,cells:cells)
+            }
         }
     }
 }
@@ -126,17 +168,13 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let labelPoint:GeoPoint
     var id:String { pack.id }
     var label:String {
-        switch id {
-        case "north-scotland": return "North Highlands\n& Isles"
-        case "west-highlands": return "Highlands &\nWest Coast"
-        case "lowlands": return "Lowlands\n& Borders"
-        case "northern-ireland": return "Northern Ireland"
-        case "lakes-dales": return "Lakes & Dales"
-        case "north-east": return "North East\n& Yorkshire"
-        case "midlands": return "Peak District\n& Midlands"
-        case "east-anglia": return "East Anglia"
-        default: return pack.name
-        }
+        let words=pack.name.split(separator:" ")
+        guard pack.name.count>16,words.count>1 else { return pack.name }
+        let split=(1..<words.count).min { a,b in
+            abs(words[..<a].joined(separator:" ").count-words[a...].joined(separator:" ").count)
+                < abs(words[..<b].joined(separator:" ").count-words[b...].joined(separator:" ").count)
+        }!
+        return words[..<split].joined(separator:" ")+"\n"+words[split...].joined(separator:" ")
     }
     init(pack:WorldRegionPack,catalog:WorldCatalog?) {
         self.pack=pack
