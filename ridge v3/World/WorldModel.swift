@@ -48,6 +48,8 @@ import CoreGraphics
     var pending = 0
     var offlineMessage: String?
     var offlineBounds: [GeoBounds] = []
+    var offlineCoverageRevision = 0
+    var requestedDownloadPoint:GeoPoint?
     var offlineDisplayBounds: [GeoBounds] = []
     var offlineEdges: [WorldOfflineCoverage.Edge] = []
     var isSavingOffline = false
@@ -64,7 +66,7 @@ import CoreGraphics
             return (bounds,WorldOfflineCoverage.outline(bounds),WorldOfflineCoverage.displayBounds(bounds))
         }.value
         guard ticket==offlineRefresh else { return }
-        offlineBounds=value.0;offlineEdges=value.1;offlineDisplayBounds=value.2
+        offlineBounds=value.0;offlineEdges=value.1;offlineDisplayBounds=value.2;offlineCoverageRevision += 1
     }
     var requestFocus: GeoPoint?
     var catalog: WorldCatalog?
@@ -99,7 +101,7 @@ import CoreGraphics
         tilesByID = [:]; changedTileIDs = []
         source = nil; overview = nil; backdrop = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
-        cancelDownload(); offlineMessage=nil;downloadedDestination=nil
+        cancelDownload(); offlineMessage=nil;downloadedDestination=nil;requestedDownloadPoint=nil
         offlineBounds=[];offlineEdges=[];offlineDisplayBounds=[]
         await reloadOfflineCoverage()
         guard generation==token else { return }
@@ -133,7 +135,7 @@ import CoreGraphics
         loadDistantTerrain(around:point,frame:source?.frame ?? region.bounds)
         guard hasCoverage(point) else {
             coverageMessage="This area isn’t downloaded. Download it to explore and plan routes here."
-            if !in3D && downloadCenter == nil { offerDownload(at:point) }
+            if !in3D { requestedDownloadPoint=point }
             return false
         }
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
@@ -263,7 +265,7 @@ import CoreGraphics
     /// Search within 3D waits for the destination landscape before flying there.
     func visit(_ point: GeoPoint) {
         navigationDestination = nil
-        if !hasCoverage(point) { offerDownload(at:point);return }
+        if !hasCoverage(point) { requestedDownloadPoint=point;return }
         if browse(point) { requestFocus = point }
         else if loadingRegionID != nil { navigationDestination = point }
     }

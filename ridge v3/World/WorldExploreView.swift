@@ -14,13 +14,12 @@ struct WorldExploreView: View {
     @State private var atlasRequest: UUID?
     @State private var mapSize=CGSize(width:768,height:1024)
     @State private var focus = AtlasFocus(point: GeoPoint(latitude: 54.2, longitude: -3.4), scale: 7400, bounds: GeoBounds(minLatitude:49.8,minLongitude:-8.3,maxLatitude:59.4,maxLongitude:2.0))
-    @State private var selection: GeoBounds?
-    @State private var dragging = false
     @State private var export: GPXDocument?
     @State private var exporting = false
     @State private var showWaypoints = false
-    private enum DownloadMode:String { case custom,regions }
-    @State private var downloadMode:DownloadMode?
+    @State private var exploring = false
+    @State private var didFitRegions = false
+    @State private var explorePoint:GeoPoint?
     @State private var regionMaps:[WorldRegionMapOverlay]=[]
     @State private var regionMapError:String?
     @State private var editWaypoint: RouteWaypoint?
@@ -38,15 +37,10 @@ struct WorldExploreView: View {
                 WorldScene(model: world, route: store.activeRoute?.points ?? [], segments: store.activeRoute?.segments.map(\.points) ?? [], waypoints: store.activeRoute?.waypoints ?? [], command: store.camera,
                     onTap: tapped, onAtlas: leaveWorld, atlasRequest:atlasRequest).ignoresSafeArea(edges: .bottom)
             } else {
-                OfflineAtlasView(atlas: store.atlas, entries: [], savedEntries: [], focus: focus, selecting: world.drawingDownload && !world.isSavingOffline,
-                    selectedBounds: $selection, draggingSelection: $dragging, admittedBounds: nil, selectionAllowed: world.downloadError == nil,
-                    requiredBounds: nil, route: [], routeSegments: [], onViewport: viewportChanged, onWorldTap: visit, worldOfflineBounds:world.offlineDisplayBounds, worldOfflineEdges:world.offlineEdges, worldDownloadEdges:dragging ? [] : world.downloadPlan?.edges ?? [],
-                    worldDownloadTiles:dragging ? [] : world.downloadPlan?.bounds ?? [],
-                    worldCompletedTiles:world.completedDownloadTiles,worldActiveTiles:world.activeDownloadTiles,
-                    worldDownloading:world.isSavingOffline,onSelectionFinished: { bounds in
-                        world.offerDownload(at:bounds.center,selection:bounds)
-                    },worldRegions:downloadMode == .regions ? regionMaps : [],selectedWorldRegion:world.downloadRegion?.id,
-                    onRegionTap:downloadMode == .regions ? selectRegion : nil)
+                OfflineAtlasView(atlas:store.atlas,entries:[],savedEntries:[],focus:focus,selecting:false,
+                    selectedBounds:.constant(nil),draggingSelection:.constant(false),admittedBounds:nil,selectionAllowed:false,
+                    requiredBounds:nil,route:[],routeSegments:[],onViewport:viewportChanged,onWorldTap:visit,
+                    worldRegions:regionMaps,selectedWorldRegion:world.downloadRegion?.id,onRegionTap:selectRegion)
                     .ignoresSafeArea(edges: .bottom)
             }
             VStack(spacing: 10) {
@@ -57,11 +51,9 @@ struct WorldExploreView: View {
                         TextField("Find a place", text: $query).autocorrectionDisabled().focused($searchFocused)
                         if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") } }
                     }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
-                    Button(action:beginDownload) { Label("Download",systemImage:"arrow.down.circle").font(.subheadline.weight(.medium)).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) }
-                        .disabled(world.catalog == nil)
                     control("slider.horizontal.3", "Settings") { store.showSettings = true }
                 }
-                if !world.in3D,downloadMode != nil || world.downloadCenter != nil { downloadModeBar }
+                if !world.in3D { regionMapBar }
                 if !query.isEmpty {
                     VStack(alignment:.leading,spacing:0) {
                         ForEach(candidates) { place in Button { visit(place.coordinate) } label: {
@@ -86,56 +78,27 @@ struct WorldExploreView: View {
                                 Button("Downloaded maps",systemImage:"map") { atlasRequest=UUID() }
                             } label: { Image(systemName:"ellipsis").frame(width:42,height:42).background(.regularMaterial,in:Circle()) }
                         }
-                    } else if world.downloadCenter == nil && downloadMode == nil {
-                        VStack(alignment:.leading,spacing:10) {
-                            Text("Explore the mountains").font(.headline)
-                            Text("Choose a place and download its map. Then explore in 3D without a connection.").font(.subheadline)
-                            Text(mapMode == "cloud" ? "Cloud · Snowdon pilot coverage" : "Local network")
-                                .font(.caption.weight(.semibold)).foregroundStyle(RidgeTheme.muted)
-                            if mapMode == "local", let host = world.libraryRoot?.host {
-                                Text(host).font(.caption).foregroundStyle(RidgeTheme.muted)
-                            }
-                            if let catalog = world.catalog {
-                                Text("\(catalog.sources.count.formatted()) map areas available")
-                                    .font(.caption).foregroundStyle(RidgeTheme.muted)
-                            }
-                            if world.offlineBounds.isEmpty {
-                                Text("No areas saved offline").font(.caption).foregroundStyle(RidgeTheme.muted)
-                            } else {
-                                HStack(spacing:8) {
-                                    RoundedRectangle(cornerRadius:2).fill(RidgeTheme.offlineBoundary.opacity(0.12))
-                                        .overlay(RoundedRectangle(cornerRadius:2).strokeBorder(RidgeTheme.offlineBoundary,lineWidth:2))
-                                        .frame(width:22,height:14).accessibilityHidden(true)
-                                    Text("Saved offline").font(.caption.weight(.medium))
-                                }.accessibilityLabel("Amber outlines show maps saved offline")
-                            }
-                            if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps") }
-                        }.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
-                        Spacer()
                     }
                 }
                 if showsDownloadBoundary { downloadBoundaryCard }
                 Spacer()
-                if world.downloadCenter != nil { downloadSelectionCard }
-                if downloadMode == .regions,let pack=world.downloadRegion {
+                if !world.in3D,let pack=world.downloadRegion {
                     ScrollView {
-                        WorldRegionDownloadCard(world:world,pack:pack) {
-                            endDownloadSelection()
-                            focus=AtlasFocus(point:pack.bounds.center,scale:1,bounds:pack.bounds,animated:true,exactViewport:true)
+                        VStack(alignment:.trailing,spacing:0) {
+                            Button { world.cancelDownload();explorePoint=nil } label: {
+                                Image(systemName:"xmark").padding(12)
+                            }.accessibilityLabel("Close region").disabled(world.isSavingOffline)
+                            WorldRegionDownloadCard(world:world,pack:pack,
+                                saved:regionMaps.first { $0.id==pack.id },explore: { openRegion(pack) })
                         }
-                    }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(340,mapSize.height*0.43))
+                    }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(380,mapSize.height*0.46))
                         .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
-                } else if let pack=world.downloadRegion,world.isSavingOffline || world.regionComplete || world.downloadError != nil {
-                    Button(action:beginDownload) {
-                        Label(world.regionComplete ? "\(pack.name) saved" : "\(pack.name) download",systemImage:"arrow.down.circle")
-                            .font(.subheadline).padding(14).background(RidgeTheme.paper,in:RoundedRectangle(cornerRadius:12))
-                    }.buttonStyle(.plain)
                 }
                 if let phase=world.downloadPhase { preparationCard(phase) }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
-                if downloadMode == nil, world.downloadCenter == nil, !showsDownloadBoundary, let message = world.coverageMessage { Text(message).font(.caption).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
+                if world.downloadRegion == nil, !showsDownloadBoundary, let message = world.coverageMessage { Text(message).font(.caption).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
                 if let message = world.offlineMessage {
                     HStack { Text(message).font(.caption);Spacer();Button("OK") { world.offlineMessage=nil } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -149,26 +112,23 @@ struct WorldExploreView: View {
         .animation(.easeInOut(duration:0.25),value:world.in3D)
         .foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
         .task(id:connectionID) {
+            exploring=false;didFitRegions=false
             store.worldTerrain = nil
             await world.configure(mode: mapMode, local: localMapServer)
             if let bounds = visibleBounds { viewportChanged(bounds) }
         }
-        .task(id:world.catalog?.revision) {
+        .task(id:"\(connectionID)|\(world.catalog?.revision ?? "")|\(world.offlineCoverageRevision)") {
             do {
-                let packs=try WorldRegionPack.load(),catalog=world.catalog
-                let overlays=await Task.detached(priority:.userInitiated) { packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) } }.value
+                let packs=try WorldRegionPack.load(),catalog=world.catalog,saved=world.offlineBounds
+                let overlays=await Task.detached(priority:.userInitiated) { WorldRegionMapOverlay.make(packs:packs,catalog:catalog,offline:saved) }.value
                 guard !Task.isCancelled else { return }
                 regionMaps=overlays;regionMapError=nil
-                if downloadMode == .regions,world.downloadRegion == nil { focusAllRegions() }
+                if !didFitRegions,!world.in3D,!exploring { didFitRegions=true;focusAllRegions() }
+                if world.catalog != nil,let point=store.worldRouteFocus { openPlace(point);store.worldRouteFocus=nil }
             } catch { regionMapError=error.localizedDescription }
         }
-        .onChange(of:world.downloadCenter) { _, point in
-            if point != nil && world.in3D { atlasRequest=UUID() } else { previewDownload() }
-        }
-        .onChange(of:world.downloadRadius) { _, _ in previewDownload() }
-        .onChange(of:world.in3D) { _, value in if !value { previewDownload() } }
-        .onChange(of:world.downloadedDestination) { _, point in
-            if let point { downloadMode=nil;world.downloadedDestination=nil;visit(point) }
+        .onChange(of:world.requestedDownloadPoint) { _,point in
+            if let point { world.requestedDownloadPoint=nil;showRegion(at:point) }
         }
         .onChange(of:world.streaming) { _, streaming in
             if !streaming,!world.in3D,let bounds=visibleBounds { viewportChanged(bounds) }
@@ -177,7 +137,7 @@ struct WorldExploreView: View {
             if let terrain = world.routeTerrain { store.worldTerrain = terrain; store.activeTerrain = terrain; store.isWorldBrowsing = true }
             if let bounds = visibleBounds, !world.in3D { viewportChanged(bounds) }
         }
-        .onAppear { if downloadMode == nil { world.resume() }; store.isWorldBrowsing=true; if let terrain=world.routeTerrain { store.activeTerrain=terrain }; if let point=store.worldRouteFocus {visit(point);store.worldRouteFocus=nil} }
+        .onAppear { if world.in3D { world.resume() }; store.isWorldBrowsing=true; if let terrain=world.routeTerrain { store.activeTerrain=terrain } }
         .onDisappear { world.suspend();UIApplication.shared.isIdleTimerDisabled=false }
         .onChange(of:world.isSavingOffline) { _, saving in UIApplication.shared.isIdleTimerDisabled=saving && world.downloadRegion != nil }
         .onChange(of:phase) { _, value in
@@ -193,11 +153,11 @@ struct WorldExploreView: View {
                         await world.configure(mode: mapMode, local: localMapServer)
                         if let bounds = visibleBounds { viewportChanged(bounds) }
                     }
-                } else if downloadMode == nil { world.resume() }
+                } else if world.in3D { world.resume() }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for:UIApplication.didReceiveMemoryWarningNotification)) { _ in world.memoryWarning() }
-        .onChange(of:store.worldRouteFocus) { _, point in if let point { visit(point);store.worldRouteFocus=nil } }
+        .onChange(of:store.worldRouteFocus) { _, point in if let point,world.catalog != nil,!regionMaps.isEmpty { openPlace(point);store.worldRouteFocus=nil } }
         .sheet(isPresented:$showWaypoints) { WaypointsSheet(store:store).presentationDetents([.medium,.large]) }
         .fileExporter(isPresented:$exporting,document:export,contentType:.ridgeGPX,defaultFilename:store.activeRoute?.name ?? "Route") { result in if case .failure(let e)=result { store.errorMessage=e.localizedDescription } }
         .confirmationDialog("Waypoint",isPresented:Binding(get:{editWaypoint != nil},set:{if !$0 {editWaypoint=nil}})) {
@@ -213,7 +173,7 @@ struct WorldExploreView: View {
         }
     }
     private var showsDownloadBoundary: Bool {
-        world.in3D && world.downloadCenter == nil && (world.nearOfflineBoundary || !world.insideOfflineArea)
+        world.in3D && (world.nearOfflineBoundary || !world.insideOfflineArea)
     }
     private var downloadBoundaryCard: some View {
         let inside=world.insideOfflineArea
@@ -233,7 +193,7 @@ struct WorldExploreView: View {
                 }
             }
             Button {
-                if available { chooseDownload() } else { atlasRequest=UUID() }
+                showRegion(at:world.center)
             } label: {
                 HStack {
                     Image(systemName:available ? "arrow.down.circle" : "map")
@@ -254,97 +214,50 @@ struct WorldExploreView: View {
     private func preparationCard(_ phase: String) -> some View {
         HStack(spacing:12) {
             ProgressView();Text(phase).font(.subheadline)
-            Spacer();Button("Cancel") { world.pauseDownload() }
+            Spacer();Button("Cancel") { exploring=false;world.pauseDownload() }
         }.padding(16).frame(maxWidth:500).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }
-    private var downloadSelectionCard: some View {
-        VStack(alignment:.leading,spacing:12) {
-            HStack {
-                Text(world.isSavingOffline ? (world.downloadPlan?.bytes == 0 ? "Opening saved map" : "Downloading new tiles") : "Download this area").font(.headline)
-                Spacer()
-                Button(world.isSavingOffline ? "Cancel download" : "Cancel") { selection=nil;world.cancelDownload() }
-            }
-            if !world.isSavingOffline {
-                Picker("Select an area",selection:Binding(get:{world.drawingDownload},set:{ enabled in
-                    selection=nil;world.setDrawingDownload(enabled)
-                })) {
-                    Text("Around a place").tag(false);Text("Draw area").tag(true)
-                }.pickerStyle(.segmented)
-                if world.drawingDownload {
-                    Text("Drag a rectangle, or tap two opposite corners. Drag the corners to resize. Two fingers move the map.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                    if let selection { Text(String(format:"%.1f × %.1f km",selection.widthMeters/1000,selection.depthMeters/1000)).font(.caption.monospacedDigit()) }
-                } else {
-                Text("Tap the map to move the area. Size is the distance across.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                Picker("Area size",selection:Binding(get:{Int(world.downloadRadius)},set:{ radius in
-                    if let point=world.downloadCenter { world.offerDownload(at:point,radius:Double(radius)) }
-                })) {
-                    Text("8 km").tag(4000);Text("16 km").tag(8000);Text("24 km").tag(12000)
-                }.pickerStyle(.segmented)
-                }
-            }
-            if world.checkingDownload { ProgressView("Checking download size…") }
-            else if let plan=world.downloadPlan {
-                if world.isSavingOffline {
-                    if world.isConnectingDownload { ProgressView("Connecting to map server…") }
-                    else if plan.bytes == 0 { ProgressView("Opening saved map…") }
-                    else {
-                        ProgressView(value:Double(world.downloadedBytes),total:Double(plan.bytes))
-                        Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.caption.monospacedDigit())
-                    }
-                    HStack(spacing:8) {
-                        Image(systemName:"square.grid.3x3.fill").foregroundStyle(RidgeTheme.forest)
-                        Text("\(world.completedDownloadTiles.count) of \(plan.bounds.count) tiles ready").monospacedDigit()
-                    }.font(.subheadline).accessibilityLabel("\(world.completedDownloadTiles.count) of \(plan.bounds.count) tiles ready")
-                    Text("Amber tiles are loading. Green ticks mean ready. 3D opens when the whole area is saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                } else {
-                    Text(plan.bytes == 0 ? "This area is already on your device" : "\(RidgeTheme.bytes(plan.bytes)) of new data").font(.subheadline.weight(.medium))
-                    Text("\(plan.readyBounds.count) tiles already on device · \(plan.bounds.count-plan.readyBounds.count) to download").font(.caption).foregroundStyle(RidgeTheme.muted)
-                    Button(world.downloadError != nil ? "Resume download" : plan.bytes == 0 ? "Open in 3D" : "Download and open in 3D") { world.downloadAndOpen() }
-                        .buttonStyle(.borderedProminent).foregroundStyle(.white).disabled(dragging)
-                }
-            }
-            if let error=world.downloadError {
-                Text(error).font(.caption)
-                if world.downloadPlan == nil { Button("Retry") { if let point=world.downloadCenter { world.offerDownload(at:point,selection:world.downloadSelection) } } }
-            }
-        }.padding(16).frame(maxWidth:500).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
-    }
-    private var downloadModeBar:some View {
+    private var regionMapBar:some View {
         VStack(alignment:.leading,spacing:8) {
             HStack(spacing:12) {
-                Picker("Download mode",selection:Binding(get:{downloadMode ?? .custom},set:setDownloadMode)) {
-                    Text("Custom").tag(DownloadMode.custom)
-                    Text("Regions").tag(DownloadMode.regions)
-                }.pickerStyle(.segmented).disabled(world.isSavingOffline)
-                Button("Done",action:endDownloadSelection).disabled(world.isSavingOffline)
+                statusKey("Downloaded",color:RidgeTheme.forest,symbol:"checkmark.circle.fill")
+                statusKey("Part saved",color:RidgeTheme.offlineBoundary,symbol:"circle.lefthalf.filled")
+                statusKey("Not saved",color:RidgeTheme.muted,symbol:"arrow.down.circle")
+                Spacer(minLength:0)
+                Button { if !world.isSavingOffline { world.cancelDownload() };exploring=false;world.cancelRegionLoad();focusAllRegions() } label: {
+                    Image(systemName:"globe.europe.africa")
+                }.accessibilityLabel("Show all regions")
             }
-            HStack {
-                Text(downloadMode == .regions ? "Tap a region to download. Zoom in for more names." : "Choose around a place, or draw an area.")
-                    .font(.caption).foregroundStyle(RidgeTheme.muted)
-                Spacer(minLength:4)
-                if downloadMode == .regions { Button("All regions") { if !world.isSavingOffline { world.cancelDownload() };focusAllRegions() }.font(.caption.weight(.semibold)) }
-            }
-            if let regionMapError,downloadMode == .regions { Text(regionMapError).font(.caption) }
-        }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
+            if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps").font(.caption) }
+            else { Text("Tap a region · dashed outlines are unavailable").font(.caption).foregroundStyle(RidgeTheme.muted) }
+            if let regionMapError { Text(regionMapError).font(.caption) }
+        }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }
-    private func beginDownload() {
-        searchFocused=false;query=""
-        downloadMode=world.downloadCenter != nil ? .custom : .regions
-        world.cancelRegionLoad()
+    private func statusKey(_ title:String,color:Color,symbol:String)->some View {
+        Label(title,systemImage:symbol).font(.caption2.weight(.medium)).foregroundStyle(color)
+    }
+    private func showRegion(at point:GeoPoint) {
+        exploring=false
+        if let overlay=WorldRegionMapOverlay.at(point,in:regionMaps) { selectRegion(overlay.pack);explorePoint=point }
         if world.in3D { atlasRequest=UUID() }
-        else if downloadMode == .regions { focusAllRegions() }
     }
-    private func setDownloadMode(_ mode:DownloadMode) {
-        guard !world.isSavingOffline else { return }
-        if mode == .custom { chooseDownload() }
-        else {
-            selection=nil;world.cancelDownload();world.cancelRegionLoad();downloadMode = .regions
-            focusAllRegions()
-        }
+    private func openRegion(_ pack:WorldRegionPack) {
+        let overlay=regionMaps.first { $0.id==pack.id }
+        let point=explorePoint.flatMap { world.hasCoverage($0) ? $0 : nil } ?? overlay?.savedPoint
+            ?? world.offlineBounds.filter { tile in pack.cells.contains { $0.bounds.contains(tile.center) } }
+                .min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }?.center
+        guard let point else { return }
+        world.cancelDownload();openPlace(point)
     }
-    private func endDownloadSelection() {
+    private func openPlace(_ point:GeoPoint) {
         guard !world.isSavingOffline else { return }
-        downloadMode=nil;selection=nil;world.cancelDownload()
+        query="";searchFocused=false
+        guard world.hasCoverage(point) else { showRegion(at:point);return }
+        if world.in3D { world.visit(point);return }
+        exploring=true;world.cancelDownload()
+        let bounds=WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))
+        focus=AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
+        viewportChanged(bounds)
     }
     private func focusAllRegions() {
         guard !regionMaps.isEmpty else { return }
@@ -356,6 +269,7 @@ struct WorldExploreView: View {
     }
     private func selectRegion(_ pack:WorldRegionPack) {
         guard !world.isSavingOffline else { return }
+        exploring=false;explorePoint=nil;world.cancelRegionLoad()
         query="";searchFocused=false
         if world.downloadRegion?.id != pack.id { world.offerRegionDownload(pack) }
         let bounds=pack.bounds
@@ -364,19 +278,6 @@ struct WorldExploreView: View {
         let center=GeoPoint(latitude:bounds.center.latitude-span/111_000*0.12,longitude:bounds.center.longitude)
         let viewport=WorldCameraTransition.viewport(center:center,span:span,aspect:Double(mapSize.width/max(1,mapSize.height)))
         focus=AtlasFocus(point:center,scale:1,bounds:viewport,animated:true,exactViewport:true)
-    }
-    private func chooseDownload() {
-        guard !world.isSavingOffline else { return }
-        downloadMode = .custom
-        searchFocused=false
-        let point=world.in3D ? world.center : visibleBounds?.center ?? focus.point
-        if world.in3D { atlasRequest=UUID() }
-        selection=nil;world.cancelDownload();world.offerDownload(at:point)
-    }
-    private func previewDownload() {
-        guard !world.in3D,!world.drawingDownload,let point=world.downloadCenter else { return }
-        let bounds=WorldCameraTransition.viewport(center:point,span:world.downloadRadius*2.7,aspect:Double(mapSize.width/max(1,mapSize.height)))
-        focus=AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
     }
     private var routeBar: some View {
         VStack(spacing:10) {
@@ -420,24 +321,12 @@ struct WorldExploreView: View {
     }
     private func visit(_ point:GeoPoint) {
         guard !world.isSavingOffline else { return }
-        query = "";searchFocused=false
-        if downloadMode == .regions {
-            if let region=WorldRegionMapOverlay.at(point,in:regionMaps) { selectRegion(region.pack) }
-            return
-        }
-        if downloadMode == .custom,world.downloadCenter == nil { world.offerDownload(at:point);return }
-        if world.downloadCenter != nil { if !world.drawingDownload { world.offerDownload(at:point) };return }
-        if world.in3D {
-            world.visit(point)
-            return
-        }
-        let bounds = WorldCameraTransition.viewport(center:point,span:3500,aspect:Double(mapSize.width/max(1,mapSize.height)))
-        focus = AtlasFocus(point:point,scale:1,bounds:bounds,animated:true,exactViewport:true)
-        viewportChanged(bounds)
+        if world.in3D && world.hasCoverage(point) { openPlace(point) }
+        else { showRegion(at:point) }
     }
     private func viewportChanged(_ bounds:GeoBounds) {
         visibleBounds = bounds
-        guard !world.in3D,downloadMode == nil,world.downloadCenter == nil else { return }
+        guard !world.in3D,exploring,world.downloadRegion == nil else { return }
         guard bounds.depthMeters < 7000 else { world.cancelRegionLoad(); world.coverageMessage = nil; return }
         guard world.browse(bounds.center), !world.streaming, let source = world.source, source.bounds.contains(bounds.center) else { return }
         world.center = bounds.center; world.cameraPose = nil; world.entrySpan = bounds.depthMeters
@@ -447,7 +336,8 @@ struct WorldExploreView: View {
     private func leaveWorld(_ bounds:GeoBounds) {
         focus=AtlasFocus(point:bounds.center,scale:1,bounds:bounds,exactViewport:true)
         world.suspend();atlasRequest=nil;world.in3D=false
-        if downloadMode == .regions { focusAllRegions() }
+        exploring=false
+        if let pack=world.downloadRegion { let point=explorePoint;selectRegion(pack);explorePoint=point }
     }
     private func tapped(_ point:GeoPoint) {
         if store.editing,store.movingWaypoint==nil,let waypoint=store.activeRoute?.waypoints.min(by:{$0.point.coordinate.distance(to:point)<$1.point.coordinate.distance(to:point)}),waypoint.point.coordinate.distance(to:point)<max(8,world.distance*0.007) {

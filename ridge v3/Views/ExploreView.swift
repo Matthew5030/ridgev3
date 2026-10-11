@@ -500,7 +500,7 @@ struct OfflineAtlasView: View {
 
                 }
                 drawAreas(context: &context, size: size)
-                drawWorldOfflineCoverage(context: &context, size: size)
+                if worldRegions.isEmpty { drawWorldOfflineCoverage(context: &context, size: size) }
                 var downloadOutline=Path()
                 for edge in worldDownloadEdges {
                     downloadOutline.move(to:screen(edge.start,size:size));downloadOutline.addLine(to:screen(edge.end,size:size))
@@ -535,7 +535,7 @@ struct OfflineAtlasView: View {
             }.contentShape(Rectangle())
                 .accessibilityChildren {
                     ForEach(worldRegions) { region in
-                        Button(region.pack.name) { onRegionTap?(region.pack) }
+                        Button("\(region.pack.name), \(region.statusText)") { onRegionTap?(region.pack) }
                     }
                 }
                 .overlay {
@@ -822,26 +822,20 @@ struct OfflineAtlasView: View {
         }
     }
     private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect)] {
-        let viewport=CGRect(origin:.zero,size:size).insetBy(dx:8,dy:8)
+        let viewport=CGRect(origin:.zero,size:size).insetBy(dx:12,dy:12)
         var result:[(region:WorldRegionMapOverlay,rect:CGRect)]=[]
-        // Fixed screen sizes keep labels readable and let drawing and hit tests
-        // share exactly the same layout. Prefer the selection, and reveal
-        // smaller regions as you zoom rather than moving labels across the UK.
-        for region in worldRegions.sorted(by: { ($0.id==selectedWorldRegion ? 0 : 1, $0.id) < ($1.id==selectedWorldRegion ? 0 : 1, $1.id) }) {
-            let extent=rectangle(region.pack.bounds,size:size)
-            guard region.id==selectedWorldRegion || (extent.width>=40 && extent.height>=28) else { continue }
+        // Geographic anchors never move to resolve collisions. As the map
+        // grows, more names fit; drawing and hit targets use the same layout.
+        for region in worldRegions.sorted(by: { ($0.id==selectedWorldRegion ? 0 : 1,$0.id) < ($1.id==selectedWorldRegion ? 0 : 1,$1.id) }) {
             let anchor=screen(region.labelPoint,size:size)
-            guard viewport.contains(anchor) else { continue }
-            let height:CGFloat=region.label.contains("\n") ? 38 : 28
-            let width:CGFloat=120
-            let offsets:[CGPoint]=[.zero,CGPoint(x:0,y:-24),CGPoint(x:0,y:24)]
-            let candidates=offsets.map { offset in
-                CGRect(x:min(viewport.maxX-width,max(viewport.minX,anchor.x-width/2+offset.x)),
-                       y:min(viewport.maxY-height,max(viewport.minY,anchor.y-height/2+offset.y)),width:width,height:height)
-            }
-            if let rect=candidates.first(where: { candidate in !result.contains { $0.rect.insetBy(dx:-3,dy:-3).intersects(candidate) } }) {
-                result.append((region,rect))
-            }
+            let lines=region.label.split(separator:"\n")
+            let width=CGFloat(lines.map(\.count).max() ?? 0)*7+8
+            let height=CGFloat(lines.count)*16+4
+            let extent=rectangle(region.pack.bounds,size:size)
+            guard region.id==selectedWorldRegion || (extent.width>=width*0.8 && extent.height>=height*1.2) else { continue }
+            let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
+            guard viewport.contains(rect),!result.contains(where: { $0.rect.insetBy(dx:-10,dy:-8).intersects(rect) }) else { continue }
+            result.append((region,rect))
         }
         return result
     }
@@ -850,39 +844,30 @@ struct OfflineAtlasView: View {
         let viewport=CGRect(origin:.zero,size:size)
         for region in worldRegions {
             let selected=region.id==selectedWorldRegion,available = !region.available.isEmpty
-            let color=available ? RidgeTheme.forest : RidgeTheme.muted
+            let color:Color=region.downloadState == .saved ? RidgeTheme.forest
+                : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
             var fill=Path(),outline=Path()
             for bounds in region.fills {
                 let rect=rectangle(bounds,size:size)
                 if rect.intersects(viewport) { fill.addRect(rect) }
             }
-            context.fill(fill,with:.color(color.opacity(selected ? 0.18 : 0.07)))
-            if selected {
-                var coverage=Path()
-                for bounds in region.available {
-                    let rect=rectangle(bounds,size:size)
-                    if rect.intersects(viewport) { coverage.addRect(rect) }
-                }
-                context.fill(coverage,with:.color(RidgeTheme.forest.opacity(0.3)))
-            }
+            context.fill(fill,with:.color(color.opacity(region.downloadState == .saved ? 0.30 : region.downloadState == .partial ? 0.20 : selected ? 0.14 : 0.03)))
             for edge in region.edges { outline.move(to:screen(edge.start,size:size));outline.addLine(to:screen(edge.end,size:size)) }
             context.stroke(outline,with:.color(RidgeTheme.paper.opacity(0.95)),lineWidth:selected ? 6 : 3)
             context.stroke(outline,with:.color(color.opacity(selected ? 1 : 0.65)),style:StrokeStyle(lineWidth:selected ? 3 : 1.3,dash:available ? [] : [4,3]))
         }
         for item in regionLabels(size:size) {
             let selected=item.region.id==selectedWorldRegion
-            let anchor=screen(item.region.labelPoint,size:size),rect=item.rect
-            var leader=Path();leader.move(to:anchor);leader.addLine(to:CGPoint(x:rect.midX,y:rect.midY))
-            context.stroke(leader,with:.color(RidgeTheme.forest.opacity(0.55)),lineWidth:1)
-            let path=Path(roundedRect:rect,cornerRadius:7)
-            context.fill(path,with:.color(selected ? RidgeTheme.forest : RidgeTheme.paper.opacity(0.96)))
-            context.stroke(path,with:.color(RidgeTheme.forest.opacity(0.25)),lineWidth:1)
             let lines=item.region.label.split(separator:"\n")
             for (index,line) in lines.enumerated() {
-                let text=Text(String(line)).font(.system(size:11,weight:.semibold))
-                    .foregroundStyle(selected ? Color.white : RidgeTheme.ink)
-                let y=rect.midY+(CGFloat(index)-CGFloat(lines.count-1)/2)*14
-                context.draw(text,at:CGPoint(x:rect.midX,y:y))
+                let point=CGPoint(x:item.rect.midX,y:item.rect.midY+(CGFloat(index)-CGFloat(lines.count-1)/2)*16)
+                let text=Text(String(line)).font(.system(size:12,weight:selected ? .bold : .semibold)).tracking(0.3)
+                // A fine paper halo keeps lettering legible over terrain,
+                // without turning place names into cards or floating controls.
+                for offset in [CGPoint(x:-1,y:0),CGPoint(x:1,y:0),CGPoint(x:0,y:-1),CGPoint(x:0,y:1)] {
+                    context.draw(text.foregroundStyle(RidgeTheme.paper.opacity(0.95)),at:CGPoint(x:point.x+offset.x,y:point.y+offset.y))
+                }
+                context.draw(text.foregroundStyle(RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
             }
         }
     }

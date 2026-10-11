@@ -166,6 +166,23 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let edges:[WorldOfflineCoverage.Edge]
     let available:[GeoBounds]
     let labelPoint:GeoPoint
+    enum DownloadState { case unavailable,notSaved,partial,saved }
+    var savedTileCount=0
+    var totalTileCount=0
+    var savedPoint:GeoPoint?
+    var downloadState:DownloadState {
+        if totalTileCount==0 { return .unavailable }
+        if savedTileCount==0 { return .notSaved }
+        return savedTileCount>=totalTileCount ? .saved : .partial
+    }
+    var statusText:String {
+        switch downloadState {
+        case .unavailable: return "Unavailable from this source"
+        case .notSaved: return "Not downloaded"
+        case .partial: return "Partly downloaded"
+        case .saved: return "Available maps downloaded"
+        }
+    }
     var id:String { pack.id }
     var label:String {
         let words=pack.name.split(separator:" ")
@@ -181,8 +198,44 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         let cells=pack.cells.map(\.bounds)
         fills=WorldOfflineCoverage.displayBounds(cells)
         edges=WorldOfflineCoverage.outline(cells)
-        available=WorldOfflineCoverage.displayBounds(catalog.map { pack.sources(in:$0).map(\.bounds) } ?? [])
+        let sources=catalog.map { pack.sources(in:$0) } ?? []
+        available=WorldOfflineCoverage.displayBounds(sources.map(\.bounds))
+        totalTileCount=sources.reduce(0) { $0+$1.tileCount }
         labelPoint=cells.min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }!.center
+    }
+    /// Receipt bounds are already verified against local pinned files. Index
+    /// source rectangles in degree buckets so refreshing a large saved library
+    /// doesn't scan every tile against every region on the main actor.
+    static func make(packs:[WorldRegionPack],catalog:WorldCatalog?,offline:[GeoBounds])->[Self] {
+        var result=packs.map { Self(pack:$0,catalog:catalog) }
+        guard let catalog else { return result }
+        struct Bucket:Hashable { let x:Int;let y:Int }
+        struct Owner { let source:WorldCatalog.Region;let pack:Int }
+        var buckets:[Bucket:[Owner]]=[:]
+        for (index,pack) in packs.enumerated() {
+            for source in pack.sources(in:catalog) {
+                let b=source.bounds
+                for x in Int(floor(b.minLongitude))...Int(floor(b.maxLongitude)) {
+                    for y in Int(floor(b.minLatitude))...Int(floor(b.maxLatitude)) {
+                        buckets[Bucket(x:x,y:y),default:[]].append(Owner(source:source,pack:index))
+                    }
+                }
+            }
+        }
+        var counts:[String:Int]=[:]
+        for bounds in Set(offline) {
+            let point=bounds.center,key=Bucket(x:Int(floor(point.longitude)),y:Int(floor(point.latitude)))
+            guard let owner=buckets[key]?.first(where: { $0.source.bounds.contains(point) }) else { continue }
+            let count=counts[owner.source.id,default:0]
+            guard count<owner.source.tileCount else { continue }
+            counts[owner.source.id]=count+1
+            result[owner.pack].savedTileCount+=1
+            let target=result[owner.pack].pack.bounds.center
+            if result[owner.pack].savedPoint.map({ point.distance(to:target)<$0.distance(to:target) }) ?? true {
+                result[owner.pack].savedPoint=point
+            }
+        }
+        return result
     }
     static func at(_ point:GeoPoint,in overlays:[Self])->Self? {
         overlays.sorted { $0.id<$1.id }.first { $0.pack.cells.contains { $0.bounds.contains(point) } }

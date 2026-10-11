@@ -58,6 +58,9 @@ import Foundation
         let first=WorldRegionPack(id:"first",name:"First half",subtitle:"",landmark:"",cells:[fixture.cells[0]])
         let half=try await store.plan(pack:first,catalog:catalog,root:root)
         try await store.download(half,progress: { _,_ in })
+        let partialOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:catalog,offline:WorldOfflineCoverage.savedBounds(at:cache))[0]
+        try check(partialOverlay.downloadState == .partial,"Saving one section marks a region partly downloaded")
+        try check(partialOverlay.savedPoint.map { regions[0].bounds.contains($0) } == true,"Explore partial region opens an actually saved tile")
         let remaining=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(remaining.bytes<plan.bytes && remaining.bytes>0,"Previously saved overlap reduces transfer")
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==regions[0].tileCount,"Regional receipts are visible to normal exploration")
@@ -73,6 +76,17 @@ import Foundation
         try check(model.regionComplete && model.downloadError==nil,model.downloadError ?? "Region did not finish")
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
         try check(model.offlineBounds.count==plan.tileCount,"All regional tiles become usable in normal exploration")
+        let receipts=WorldOfflineCoverage.savedBounds(at:cache)
+        let savedOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:catalog,offline:receipts+receipts)[0]
+        try check(savedOverlay.downloadState == .saved && savedOverlay.savedTileCount==plan.tileCount,"Fully saved region is green; overlapping receipts are not double counted")
+        let unsavedOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:catalog,offline:[])[0]
+        try check(unsavedOverlay.downloadState == .notSaved,"Available region without receipts is not downloaded")
+        let unknownOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:nil,offline:receipts)[0]
+        try check(unknownOverlay.downloadState == .unavailable,"No catalogue does not invent available or complete downloads")
+        let missingPoint=catalog.sources[1].bounds.center
+        model.visit(missingPoint)
+        try check(model.requestedDownloadPoint==missingPoint && model.downloadCenter==nil,"Unsaved destination requests a region instead of starting custom selection")
+        model.requestedDownloadPoint=nil
         let repeated=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(repeated.bytes==0 && repeated.totalBytes==plan.totalBytes,"Repeated regional download requires no new files")
         let custom=try await WorldDownloadStore(cacheURL:cache).plan(center:regions[0].bounds.center,radius:600,catalog:catalog,root:root)

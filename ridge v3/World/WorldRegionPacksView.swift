@@ -5,6 +5,7 @@ import SwiftUI
 struct WorldRegionDownloadCard: View {
     @Bindable var world:WorldModel
     let pack:WorldRegionPack
+    var saved:WorldRegionMapOverlay? = nil
     let explore:() -> Void
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
@@ -12,15 +13,20 @@ struct WorldRegionDownloadCard: View {
                 RegionLandscape(pack:pack,showCaption:false).frame(width:92,height:64).clipShape(RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
                 VStack(alignment:.leading,spacing:4) {
                     Text(pack.name).font(.headline)
-                    Text(pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Text(saved?.statusText ?? pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }
-            Text("Outlined: region boundary. Dark green: maps currently available.")
-                .font(.caption).foregroundStyle(RidgeTheme.muted)
+            if let saved,saved.savedTileCount>0,!world.isSavingOffline {
+                Button("Explore in 3D",systemImage:"mountain.2") { explore() }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                if saved.downloadState == .partial {
+                    Text("Opens the saved part. Download the rest to explore the whole available region.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                }
+            }
                 if world.regionComplete {
                     Label("Available maps saved",systemImage:"checkmark.circle.fill").font(.headline)
                     Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
-                    Button("Explore region") { explore() }.buttonStyle(.borderedProminent)
+                    if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent) }
                 } else if world.checkingDownload {
                     ProgressView(value:Double(world.regionChecked),total:Double(max(1,world.regionTotal)))
                     Text("Checking saved maps · \(world.regionChecked) of \(world.regionTotal) sections").font(.subheadline.monospacedDigit())
@@ -42,8 +48,12 @@ struct WorldRegionDownloadCard: View {
                             Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) already saved and reused").font(.caption)
                         }
                     }
-                    Button(plan.bytes==0 ? "Use saved maps" : "Download region") { world.downloadRegionPack() }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
+                    if plan.bytes>0 {
+                        Button("Download region") { world.downloadRegionPack() }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                    } else if saved?.savedTileCount ?? 0 == 0 {
+                        Button("Use saved maps") { world.downloadRegionPack() }.buttonStyle(.borderedProminent)
+                    }
                     Text("Saves to storage. It won’t load the whole region into 3D.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 if let error=world.downloadError {
