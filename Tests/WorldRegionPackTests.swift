@@ -25,6 +25,16 @@ import Foundation
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
         let packs=try WorldRegionPack.load(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-pack-regions.json"))
         try check(packs.count==11,"Eleven named regions")
+        let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
+        for overlay in overlays {
+            try check(WorldRegionMapOverlay.at(overlay.labelPoint,in:overlays)?.id==overlay.id,"Region labels are anchored inside their region")
+            for cell in overlay.pack.cells {
+                try check(WorldRegionMapOverlay.at(cell.bounds.center,in:overlays)?.id==overlay.id,"Map taps use the same grid partition as the download")
+            }
+        }
+        try check(WorldRegionMapOverlay.at(.init(latitude:0,longitude:0),in:overlays)==nil,"Tapping outside UK packs selects nothing")
+        let emptyOverlay=WorldRegionMapOverlay(pack:packs[0],catalog:nil)
+        try check(emptyOverlay.available.isEmpty && !emptyOverlay.fills.isEmpty,"Missing catalogue cannot invent downloadable coverage")
         let members=packs.flatMap { $0.sources(in:catalog).map(\.id) }
         try check(Set(members).count==members.count && Set(members)==Set(catalog.sources.map(\.id)),"Every current source assigned exactly once")
         let cells=packs.flatMap(\.cells).map(\.id)

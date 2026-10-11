@@ -115,3 +115,38 @@ actor WorldRegionDownloadStore {
         try Task.checkCancellation()
     }
 }
+
+/// Cached map geometry. Selection uses actual grid cells, never the enclosing
+/// rectangle (which can include sea or another region).
+struct WorldRegionMapOverlay: Identifiable, Sendable {
+    let pack:WorldRegionPack
+    let fills:[GeoBounds]
+    let edges:[WorldOfflineCoverage.Edge]
+    let available:[GeoBounds]
+    let labelPoint:GeoPoint
+    var id:String { pack.id }
+    var label:String {
+        switch id {
+        case "north-scotland": return "North Highlands\n& Isles"
+        case "west-highlands": return "Highlands &\nWest Coast"
+        case "lowlands": return "Lowlands\n& Borders"
+        case "northern-ireland": return "Northern Ireland"
+        case "lakes-dales": return "Lakes & Dales"
+        case "north-east": return "North East\n& Yorkshire"
+        case "midlands": return "Peak District\n& Midlands"
+        case "east-anglia": return "East Anglia"
+        default: return pack.name
+        }
+    }
+    init(pack:WorldRegionPack,catalog:WorldCatalog?) {
+        self.pack=pack
+        let cells=pack.cells.map(\.bounds)
+        fills=WorldOfflineCoverage.displayBounds(cells)
+        edges=WorldOfflineCoverage.outline(cells)
+        available=WorldOfflineCoverage.displayBounds(catalog.map { pack.sources(in:$0).map(\.bounds) } ?? [])
+        labelPoint=cells.min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }!.center
+    }
+    static func at(_ point:GeoPoint,in overlays:[Self])->Self? {
+        overlays.sorted { $0.id<$1.id }.first { $0.pack.cells.contains { $0.bounds.contains(point) } }
+    }
+}

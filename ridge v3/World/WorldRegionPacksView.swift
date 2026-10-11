@@ -1,96 +1,26 @@
 import SwiftUI
 
-struct WorldRegionPacksView: View {
+/// Inline inspector: the map stays visible and interactive while a region is
+/// checked, downloaded or paused. There is no second region browser.
+struct WorldRegionDownloadCard: View {
     @Bindable var world:WorldModel
-    let chooseCustom:() -> Void
-    let explore:(WorldRegionPack) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var packs:[WorldRegionPack]=[]
-    @State private var sourcesByPack:[String:[WorldCatalog.Region]]=[:]
-    @State private var selected:String?
-    @State private var error:String?
-
+    let pack:WorldRegionPack
+    let explore:() -> Void
     var body:some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment:.leading,spacing:22) {
-                    Text("Save a region for the next trip. Explore anywhere in it once the maps are on your device.")
-                        .font(.subheadline).foregroundStyle(RidgeTheme.muted)
-                    Button { chooseCustom() } label: {
-                        HStack(spacing:12) {
-                            Image(systemName:"crop").font(.title2)
-                            VStack(alignment:.leading,spacing:4) {
-                                Text("Choose a smaller area").font(.headline)
-                                Text("Around a place, or draw your own boundary").font(.caption).foregroundStyle(RidgeTheme.muted)
-                            }
-                            Spacer();Image(systemName:"chevron.right")
-                        }.padding(16).background(RidgeTheme.panel,in:RoundedRectangle(cornerRadius:12))
-                    }.buttonStyle(.plain).disabled(world.isSavingOffline)
-                    if let active=world.downloadRegion,world.isSavingOffline {
-                        Button { selected=active.id } label: {
-                            HStack { ProgressView();Text("Downloading \(active.name)");Spacer();Image(systemName:"chevron.right") }
-                        }.buttonStyle(.plain)
-                    }
-                    LazyVGrid(columns:[GridItem(.adaptive(minimum:280),spacing:16)],spacing:18) {
-                        ForEach(packs) { pack in
-                            let count=sourcesByPack[pack.id]?.count ?? 0
-                            Button {
-                                if world.downloadRegion?.id != pack.id || world.regionPlan == nil && !world.checkingDownload && !world.isSavingOffline {
-                                    world.offerRegionDownload(pack)
-                                }
-                                selected=pack.id
-                            } label: {
-                                VStack(alignment:.leading,spacing:0) {
-                                    RegionLandscape(pack:pack).frame(height:140).clipped()
-                                    VStack(alignment:.leading,spacing:7) {
-                                        Text(pack.name).font(.headline)
-                                        Text(pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted).fixedSize(horizontal:false,vertical:true)
-                                        HStack {
-                                            Text(count==0 ? "Not available yet" : "View pack")
-                                            Spacer();Image(systemName:count==0 ? "clock" : "arrow.down.circle")
-                                        }.font(.subheadline.weight(.medium)).padding(.top,5)
-                                    }.padding(16)
-                                }.frame(maxWidth:.infinity,alignment:.leading).background(RidgeTheme.panel)
-                                    .clipShape(RoundedRectangle(cornerRadius:14))
-                            }.buttonStyle(.plain).disabled(world.isSavingOffline && world.downloadRegion?.id != pack.id)
-                        }
-                    }
-                    Text("Packs follow the map grid, so their edges are approximate. Some regions have partial coverage; check the shaded map before downloading.")
-                        .font(.caption).foregroundStyle(RidgeTheme.muted)
-                    if let error { Text(error).foregroundStyle(RidgeTheme.orange) }
-                }.padding(20).frame(maxWidth:900).frame(maxWidth:.infinity)
-            }.background(RidgeTheme.paper).navigationTitle("Download maps")
-                .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
-                .navigationDestination(item:$selected) { id in
-                    if let pack=packs.first(where: { $0.id==id }) { detail(pack) }
+        VStack(alignment:.leading,spacing:12) {
+            HStack(spacing:12) {
+                RegionLandscape(pack:pack,showCaption:false).frame(width:92,height:64).clipShape(RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
+                VStack(alignment:.leading,spacing:4) {
+                    Text(pack.name).font(.headline)
+                    Text(pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
-        }.foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
-            .task(id:world.catalog?.revision) {
-                do {
-                    packs=try WorldRegionPack.load()
-                    if let catalog=world.catalog { sourcesByPack=Dictionary(uniqueKeysWithValues:packs.map { ($0.id,$0.sources(in:catalog)) }) }
-                    selected=world.downloadRegion?.id
-                } catch { self.error=error.localizedDescription }
             }
-    }
-    private func detail(_ pack:WorldRegionPack) -> some View {
-        ScrollView {
-            VStack(alignment:.leading,spacing:22) {
-                RegionLandscape(pack:pack).frame(height:190).clipShape(RoundedRectangle(cornerRadius:14))
-                VStack(alignment:.leading,spacing:7) {
-                    Text(pack.name).font(.title2.weight(.semibold))
-                    Text(pack.subtitle).foregroundStyle(RidgeTheme.muted)
-                }
-                if let sources=sourcesByPack[pack.id] {
-                    RegionCoverageMap(pack:pack,sources:sources).frame(height:190)
-                        .background(RidgeTheme.panel,in:RoundedRectangle(cornerRadius:12))
-                    Text("Green: maps available from your source. Pale: not available yet. The pack saves all available maps in this region.")
-                        .font(.caption).foregroundStyle(RidgeTheme.muted)
-                }
+            Text("Outlined: region boundary. Dark green: maps currently available.")
+                .font(.caption).foregroundStyle(RidgeTheme.muted)
                 if world.regionComplete {
                     Label("Available maps saved",systemImage:"checkmark.circle.fill").font(.headline)
                     Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
-                    Button("Explore region") { explore(pack) }.buttonStyle(.borderedProminent)
+                    Button("Explore region") { explore() }.buttonStyle(.borderedProminent)
                 } else if world.checkingDownload {
                     ProgressView(value:Double(world.regionChecked),total:Double(max(1,world.regionTotal)))
                     Text("Checking saved maps · \(world.regionChecked) of \(world.regionTotal) sections").font(.subheadline.monospacedDigit())
@@ -122,29 +52,7 @@ struct WorldRegionPacksView: View {
                         Button("Check remaining download") { world.offerRegionDownload(pack) }.buttonStyle(.bordered)
                     }
                 }
-            }.padding(20).frame(maxWidth:600).frame(maxWidth:.infinity)
-        }.background(RidgeTheme.paper).navigationTitle("Region pack").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
-    }
-}
-
-/// Geographic preview of the real manifest coverage, not a decorative outline.
-private struct RegionCoverageMap:View {
-    let pack:WorldRegionPack
-    let sources:[WorldCatalog.Region]
-    var body:some View {
-        Canvas { context,size in
-            let bounds=pack.bounds
-            let scale=min((size.width-30)/bounds.widthMeters,(size.height-30)/bounds.depthMeters)
-            let width=bounds.widthMeters*scale,height=bounds.depthMeters*scale
-            func rect(_ b:GeoBounds)->CGRect {
-                let a=bounds.uv(.init(latitude:b.maxLatitude,longitude:b.minLongitude))
-                let z=bounds.uv(.init(latitude:b.minLatitude,longitude:b.maxLongitude))
-                return CGRect(x:(size.width-width)/2+a.u*width,y:(size.height-height)/2+a.v*height,width:(z.u-a.u)*width,height:(z.v-a.v)*height)
-            }
-            for cell in pack.cells { context.fill(Path(rect(cell.bounds)),with:.color(RidgeTheme.forest.opacity(0.1))) }
-            for source in sources { context.fill(Path(rect(source.bounds)),with:.color(RidgeTheme.forest.opacity(0.8))) }
-        }.accessibilityLabel("Map showing available coverage in \(pack.name)")
+        }.padding(16).frame(maxWidth:500,alignment:.leading)
     }
 }
 
@@ -152,6 +60,7 @@ private struct RegionCoverageMap:View {
 /// the download picker sharp at any device size and add no photo dependency.
 struct RegionLandscape:View {
     let pack:WorldRegionPack
+    var showCaption=true
     var body:some View {
         Canvas { context,size in
             let w=size.width,h=size.height
@@ -207,8 +116,8 @@ struct RegionLandscape:View {
                 context.stroke(ridge,with:.color(.white.opacity(0.16)),lineWidth:1.5)
             }
         }.overlay(alignment:.bottomLeading) {
-            Text("Illustration · \(pack.landmark)").font(.system(size:10,weight:.medium))
-                .padding(.horizontal,8).padding(.vertical,5).background(RidgeTheme.paper.opacity(0.90),in:Capsule()).padding(10)
+            if showCaption { Text("Illustration · \(pack.landmark)").font(.system(size:10,weight:.medium))
+                .padding(.horizontal,8).padding(.vertical,5).background(RidgeTheme.paper.opacity(0.90),in:Capsule()).padding(10) }
         }.accessibilityLabel("Illustration of \(pack.landmark)")
     }
 }
