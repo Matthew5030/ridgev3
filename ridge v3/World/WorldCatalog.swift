@@ -2,6 +2,43 @@ import Foundation
 
 /// Cloud and LAN publish the same relative catalogue; geography chooses a source.
 enum WorldLibrary {
+    /// A live check, deliberately independent of the offline catalogue cache.
+    static func checkConnection(root: URL) async throws -> Int {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 12
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let request = URLRequest(url: root.appendingPathComponent("catalog.json"), cachePolicy: .reloadIgnoringLocalCacheData)
+        do {
+            let (file, response) = try await session.download(for: request)
+            defer { try? FileManager.default.removeItem(at: file) }
+            try Task.checkCancellation()
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RidgeError.message("The server responded with HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0). Check the address ends in /world/.")
+            }
+            guard try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max < 16_000_000 else {
+                throw RidgeError.message("The server returned an oversized map catalogue.")
+            }
+            let catalog = try JSONDecoder().decode(WorldCatalog.self, from: Data(contentsOf: file))
+            try catalog.validate()
+            return catalog.sources.count
+        } catch let error as URLError {
+            try Task.checkCancellation()
+            let help: String
+            switch error.code {
+            case .cannotFindHost, .dnsLookupFailed:
+                help = "The server name could not be found. Try the Mac’s Wi-Fi IP address instead of its .local name."
+            case .notConnectedToInternet:
+                help = "Check Wi-Fi and allow Local Network access for Ridge in iPad or iPhone Settings."
+            case .timedOut, .cannotConnectToHost, .networkConnectionLost:
+                help = "Keep the Mac awake with Docker running, and connect both devices to the same network."
+            default: help = "Check Wi-Fi and Local Network access for Ridge in Settings."
+            }
+            throw RidgeError.message("Cannot reach \(root.host ?? "the server"). \(help) \(error.localizedDescription) (\(error.errorCode))")
+        }
+    }
     static let defaultMode = "local"
     static let defaultLocalServer = "http://Matthews-MacBook-Pro.local:8787/world/"
     static let cloud = "https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev/pilot-2026-10-07/"

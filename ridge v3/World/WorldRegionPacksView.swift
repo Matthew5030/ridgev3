@@ -8,6 +8,7 @@ struct WorldRegionDownloadCard: View {
     var saved:WorldRegionMapOverlay? = nil
     let explore:() -> Void
     var selectWholePark:(() -> Void)? = nil
+    var retryConnection:(() -> Void)? = nil
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:12) {
@@ -30,7 +31,13 @@ struct WorldRegionDownloadCard: View {
                     Text("Opens the saved part. Download the rest to explore the whole available region.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }
-                if world.regionComplete {
+                if world.catalog == nil {
+                    if world.isLoading { ProgressView("Connecting to map server…") }
+                    else if let retryConnection {
+                        Button("Retry connection",systemImage:"arrow.clockwise",action:retryConnection)
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                    }
+                } else if world.regionComplete {
                     Label("Available maps saved",systemImage:"checkmark.circle.fill").font(.headline)
                     Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
                     if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent) }

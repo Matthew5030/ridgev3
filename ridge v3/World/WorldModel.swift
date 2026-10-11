@@ -96,26 +96,32 @@ import CoreGraphics
     @ObservationIgnored private var policyDistance = 0.0
     @ObservationIgnored private var reduceDetailUntil = Date.distantPast
 
-    func configure(mode: String, local: String) async {
+    func configure(mode: String, local: String, preservingSelection: Bool = false) async {
+        let selectedRegion = preservingSelection ? downloadRegion : nil
         cancelRegionLoad(); distantLoad?.cancel(); distantLoad=nil; distantTerrain=nil; generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; failed = []; tiles = [:]; previewPages = [:]
         tilesByID = [:]; changedTileIDs = []
         source = nil; overview = nil; backdrop = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
         cancelDownload(); offlineMessage=nil;downloadedDestination=nil;requestedDownloadPoint=nil
-        offlineBounds=[];offlineEdges=[];offlineDisplayBounds=[]
-        await reloadOfflineCoverage()
-        guard generation==token else { return }
-        files = WorldLandscapeStore(cacheURL:cacheURL); navigationDestination = nil
+        downloadRegion=selectedRegion
         catalog = nil; libraryRoot = nil; cameraPose = nil; in3D = false; message = nil; coverageMessage = nil
         retryPoint = nil; requestFocus = nil
         isLoading = true
         defer { if generation == token { isLoading = false } }
+        offlineBounds=[];offlineEdges=[];offlineDisplayBounds=[]
+        await reloadOfflineCoverage()
+        guard generation==token else { return }
+        files = WorldLandscapeStore(cacheURL:cacheURL); navigationDestination = nil
         do {
             let root = try WorldLibrary.root(mode: mode, local: local)
             let value = try await catalogs.open(root: root,preferCached:true)
             guard generation == token, !Task.isCancelled else { return }
             libraryRoot = root; catalog = value
+            // A region can be selected while the catalogue is still opening.
+            // Rebuild its card now instead of leaving a stale connection error
+            // and no download action after the server has become available.
+            if let pack=downloadRegion { offerRegionDownload(pack) }
         } catch {
             guard generation == token, !Task.isCancelled else { return }
             message = error.localizedDescription
@@ -419,7 +425,10 @@ import CoreGraphics
         guard !isSavingOffline else { return }
         cancelDownload();cancelRegionLoad()
         downloadRegion=pack;regionChecked=0;regionSaved=0;regionComplete=false
-        guard let catalog,let root=libraryRoot else { downloadError="Connect to a map source in Settings first.";return }
+        guard let catalog,let root=libraryRoot else {
+            downloadError=isLoading ? nil : "The map catalogue isn’t connected. Retry the connection or check the map source in Settings."
+            return
+        }
         regionTotal=pack.sources(in:catalog).count
         if let estimate=WorldRegionDownloadPlan.estimate(pack:pack,catalog:catalog,root:root) {
             regionPlan=estimate

@@ -38,6 +38,14 @@ actor TileProgressAudit {
         }
         let local=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         try check(local.path=="/world","Local server root")
+        let liveCount=try await WorldLibrary.checkConnection(root:local)
+        try check(liveCount==2531,"Connection test reads the live catalogue")
+        do {
+            _=try await WorldLibrary.checkConnection(root:local.appendingPathComponent("missing-library"))
+            throw RidgeError.message("Accepted missing live catalogue")
+        } catch {
+            try check(error.localizedDescription.contains("HTTP 404"),"Connection test reports wrong server paths without using cached data")
+        }
         for bad in ["", "file:///etc", "http://u:p@host", "https://host/?q=1", "http://host/#fragment"] {
             do { _=try WorldLibrary.root(mode:"local",local:bad);throw RidgeError.message("Accepted bad endpoint") }
             catch { try check(error.localizedDescription != "Accepted bad endpoint","Endpoint rejection") }
@@ -49,6 +57,17 @@ actor TileProgressAudit {
         guard let catalog=model.catalog else { throw RidgeError.message(model.message ?? "Missing catalogue") }
         let origin=GeoPoint(latitude:53.0685,longitude:-4.0763)
         try check(catalog.sources.count==2531,"Full catalogue available for choosing an area")
+        let section=catalog.region(at:origin)!
+        let selected=WorldRegionPack(id:"connection-test",name:"Connection test",subtitle:"",landmark:"",
+                                     cells:[.init(id:section.id,bounds:section.bounds)])
+        let reconnecting=WorldModel(cacheURL:cache)
+        reconnecting.offerRegionDownload(selected)
+        try check(reconnecting.regionPlan==nil && reconnecting.downloadError != nil,"Selecting before connection cannot offer an invalid download")
+        await reconnecting.configure(mode:"local",local:local.absoluteString,preservingSelection:true)
+        try check(reconnecting.downloadRegion?.id==selected.id && reconnecting.regionPlan != nil && reconnecting.downloadError==nil,
+                  "Successful reconnection restores the selected region's download action")
+        try check(!reconnecting.isSavingOffline && !reconnecting.in3D,"Reconnecting never starts a download or terrain load")
+        reconnecting.cancelDownload()
         model.distance=2000
         model.offerDownload(at:origin,radius:600)
         try await wait { model.checkingDownload }

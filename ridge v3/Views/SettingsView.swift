@@ -6,6 +6,9 @@ struct SettingsView: View {
     @State private var savedAssetBytes: Int64?
     @State private var storageError: String?
     @State private var sourceError: String?
+    @State private var connectionCheckID: UUID?
+    @State private var connectionChecking = false
+    @State private var connectionResult: String?
     @AppStorage("ridge.mapSourceMode") private var mapMode = WorldLibrary.defaultMode
     @AppStorage("ridge.localMapServer") private var localMapServer = WorldLibrary.defaultLocalServer
     @State private var selectedMapMode = WorldLibrary.defaultMode
@@ -44,11 +47,17 @@ struct SettingsView: View {
                             .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent).tint(RidgeTheme.forest)
+                    HStack {
+                        Button("Test connection") { connectionChecking=true;connectionResult=nil;connectionCheckID=UUID() }
+                            .disabled(connectionChecking)
+                        if connectionChecking { ProgressView() }
+                    }
+                    if let connectionResult { Text(connectionResult).font(.footnote).textSelection(.enabled) }
                     if sourceHasChanges {
                         Text("Tap Save to apply this source.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     }
                     if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
-                    Text("Explore loads maps as you move. Use Save area offline from the terrain menu to keep a landscape without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Text("Download a region, then zoom into it to explore in 3D. Saved terrain works without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 worldGestureSection
                 offlineSection
@@ -77,8 +86,21 @@ struct SettingsView: View {
                 .background(RidgeTheme.paper)
                 .overlay(alignment: .bottom) { Divider() }
             }
-            .onChange(of: selectedMapMode) { _, _ in sourceError = nil }
-            .onChange(of: worldAddressDraft) { _, _ in sourceError = nil }
+            .onChange(of: selectedMapMode) { _, _ in resetConnectionCheck() }
+            .onChange(of: worldAddressDraft) { _, _ in resetConnectionCheck() }
+            .task(id: connectionCheckID) {
+                guard connectionCheckID != nil else { return }
+                do {
+                    let root = try WorldLibrary.root(mode:selectedMapMode,local:worldAddressDraft)
+                    let count = try await WorldLibrary.checkConnection(root:root)
+                    try Task.checkCancellation()
+                    connectionResult="Connected to \(root.host ?? "map server"). \(count.formatted()) map sections available."
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    connectionResult=error.localizedDescription
+                }
+                connectionChecking=false
+            }
             .onAppear {
                 selectedMapMode = mapMode
                 worldAddressDraft = localMapServer.isEmpty ? serverAddress : localMapServer
@@ -97,6 +119,9 @@ struct SettingsView: View {
             }
     }
 
+    private func resetConnectionCheck() {
+        sourceError=nil;connectionCheckID=nil;connectionChecking=false;connectionResult=nil
+    }
     private func saveSourceAndDismiss() {
         // Closing unchanged settings also works when no local address has been entered yet.
         guard sourceHasChanges else { dismiss(); return }

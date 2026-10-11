@@ -113,14 +113,14 @@ struct WorldExploreView: View {
                                 saved:(regionMaps+parkMaps).first { $0.id==pack.id },explore: { openRegion(pack) },
                                 selectWholePark:parkMaps.first { $0.id==pack.parkID && $0.id != pack.id }.map { whole in
                                     { selectRegion(whole.pack) }
-                                })
+                                },retryConnection:retryConnection)
                         }
                     }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(380,mapSize.height*0.46))
                         .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                 }
                 if let phase=world.downloadPhase { preparationCard(phase) }
                 if let message = world.message {
-                    HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
+                    HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { retryConnection() } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
                 if world.downloadRegion == nil, !showsDownloadBoundary, let message = world.coverageMessage { Text(message).font(.caption).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
                 if let message = world.offlineMessage {
@@ -178,7 +178,7 @@ struct WorldExploreView: View {
             else if value == .active {
                 if world.catalog == nil && !world.isLoading {
                     Task {
-                        await world.configure(mode: mapMode, local: localMapServer)
+                        await world.configure(mode: mapMode, local: localMapServer,preservingSelection:true)
                         if let bounds = visibleBounds { viewportChanged(bounds) }
                     }
                 } else if world.in3D { world.resume() }
@@ -351,6 +351,13 @@ struct WorldExploreView: View {
         guard !world.isSavingOffline else { return }
         if world.in3D && world.hasCoverage(point) { openPlace(point) }
         else { showRegion(at:point) }
+    }
+    private func retryConnection() {
+        guard !world.isLoading else { return }
+        Task {
+            await world.configure(mode:mapMode,local:localMapServer,preservingSelection:true)
+            if let bounds=visibleBounds { viewportChanged(bounds) }
+        }
     }
     private func userViewportChanged(_ bounds:GeoBounds) {
         visibleBounds=bounds
