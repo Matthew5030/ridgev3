@@ -108,26 +108,14 @@ struct WorldExploreView: View {
                         Spacer()
                     }
                 }
+                if showsDownloadBoundary { downloadBoundaryCard }
                 Spacer()
-                if world.in3D && world.downloadCenter == nil && (world.nearOfflineBoundary || !world.insideOfflineArea) {
-                    HStack(spacing:12) {
-                        Image(systemName:"arrow.down.circle").foregroundStyle(RidgeTheme.offlineBoundary)
-                        VStack(alignment:.leading,spacing:3) {
-                            Text(world.insideOfflineArea ? "End of downloaded map" : "Area not downloaded").font(.subheadline.weight(.medium))
-                            Text("Download more terrain to explore beyond this edge.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                        }
-                        Spacer(minLength:0)
-                        Button("Download more",action:chooseDownload)
-                            .font(.subheadline.weight(.medium)).disabled(world.isSavingOffline || world.source == nil)
-                    }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
-                    .accessibilityElement(children:.contain)
-                }
                 if world.downloadCenter != nil { downloadSelectionCard }
                 if let phase=world.downloadPhase { preparationCard(phase) }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
-                if world.downloadCenter == nil, let message = world.coverageMessage { Text(message).font(.caption).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
+                if world.downloadCenter == nil, !showsDownloadBoundary, let message = world.coverageMessage { Text(message).font(.caption).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
                 if let message = world.offlineMessage {
                     HStack { Text(message).font(.caption);Spacer();Button("OK") { world.offlineMessage=nil } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -190,6 +178,45 @@ struct WorldExploreView: View {
             Button("Save") { if let route=store.activeRoute {store.renameRoute(route,to:routeName)} }
             Button("Cancel",role:.cancel) {}
         }
+    }
+    private var showsDownloadBoundary: Bool {
+        world.in3D && world.downloadCenter == nil && (world.nearOfflineBoundary || !world.insideOfflineArea)
+    }
+    private var downloadBoundaryCard: some View {
+        let inside=world.insideOfflineArea
+        let available=world.catalog?.region(at:world.center) != nil
+        return VStack(alignment:.leading,spacing:14) {
+            HStack(alignment:.top,spacing:12) {
+                Image(systemName:available ? "arrow.down.circle.fill" : "map")
+                    .font(.system(size:30,weight:.medium)).foregroundStyle(RidgeTheme.offlineBoundary)
+                    .accessibilityHidden(true)
+                VStack(alignment:.leading,spacing:6) {
+                    Text(!available ? "Detailed map unavailable" : inside ? "Approaching the edge" : "Map not downloaded")
+                        .font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                    Text(!available ? "Detailed terrain isn’t available here yet. Choose another area on the map."
+                         : inside ? "Your saved map ends nearby. Download more to keep exploring."
+                         : "This is the overview. Download this area for detailed terrain and route planning.")
+                        .font(.subheadline).fixedSize(horizontal:false,vertical:true)
+                }
+            }
+            Button {
+                if available { chooseDownload() } else { atlasRequest=UUID() }
+            } label: {
+                HStack {
+                    Image(systemName:available ? "arrow.down.circle" : "map")
+                    Text(!available ? "Choose another area" : inside ? "Download more" : "Download this area")
+                    Spacer(minLength:8)
+                    Image(systemName:"arrow.right")
+                }.font(.headline).padding(.horizontal,16).frame(minHeight:48)
+                    .frame(maxWidth:.infinity).foregroundStyle(.white)
+                    .background(RidgeTheme.forest,in:RoundedRectangle(cornerRadius:10))
+            }.buttonStyle(.plain).disabled(world.isSavingOffline)
+        }
+        .padding(18).frame(maxWidth:520,alignment:.leading)
+        .background(RidgeTheme.paper,in:RoundedRectangle(cornerRadius:14))
+        .overlay(RoundedRectangle(cornerRadius:14).strokeBorder(RidgeTheme.offlineBoundary,lineWidth:2))
+        .shadow(color:.black.opacity(0.16),radius:12,y:4)
+        .accessibilityElement(children:.contain)
     }
     private func preparationCard(_ phase: String) -> some View {
         HStack(spacing:12) {
