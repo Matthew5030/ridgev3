@@ -16,8 +16,8 @@ Ireland and mainland Europe in that rectangle retain plain coastline context.
 Only visible pages and their parents are decoded by the app, with a bounded cache.
 The 19 MB download size is not the decoded/rendering memory footprint.
 
-The current textured snapshot has **18,940 pages, 251,976,373 image bytes**
-(about 252 MB), with zooms 5–12 and semantic mapping in all 674 source sections.
+The current textured snapshot has **18,940 pages, 241,042,830 image bytes**
+(about 241 MB), with zooms 5–12 and semantic mapping in all 674 source sections.
 The app decodes only visible pages; the 96-page cache remains 24 MiB, plus the
 previous viewport during replacement. This does not add new fine 3D coverage.
 
