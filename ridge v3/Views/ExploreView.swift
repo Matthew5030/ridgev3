@@ -821,21 +821,32 @@ struct OfflineAtlasView: View {
             context.stroke(Path(rect), with: .color(RidgeTheme.muted.opacity(0.3)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
         }
     }
-    private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect)] {
+    private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat)] {
         let viewport=CGRect(origin:.zero,size:size).insetBy(dx:12,dy:12)
-        var result:[(region:WorldRegionMapOverlay,rect:CGRect)]=[]
-        // Geographic anchors never move to resolve collisions. As the map
-        // grows, more names fit; drawing and hit targets use the same layout.
+        var result:[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat)]=[]
+        // Type grows with its geographic region. Never squeeze it below a
+        // readable size, displace it, or spill into a neighbouring region.
         for region in worldRegions.sorted(by: { ($0.id==selectedWorldRegion ? 0 : 1,$0.id) < ($1.id==selectedWorldRegion ? 0 : 1,$1.id) }) {
             let anchor=screen(region.labelPoint,size:size)
+            guard viewport.contains(anchor) else { continue }
             let lines=region.label.split(separator:"\n")
-            let width=CGFloat(lines.map(\.count).max() ?? 0)*7+8
-            let height=CGFloat(lines.count)*16+4
+            let longest=CGFloat(lines.map(\.count).max() ?? 1)
             let extent=rectangle(region.pack.bounds,size:size)
-            guard region.id==selectedWorldRegion || (extent.width>=width*0.8 && extent.height>=height*1.2) else { continue }
-            let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
-            guard viewport.contains(rect),!result.contains(where: { $0.rect.insetBy(dx:-10,dy:-8).intersects(rect) }) else { continue }
-            result.append((region,rect))
+            let parts=region.fills.map { rectangle($0,size:size) }
+            var fontSize=min(40,extent.width*0.85/(longest*0.72),extent.height*0.7/(CGFloat(lines.count)*1.2))
+            while fontSize>=18 {
+                let width=longest*fontSize*0.72+8,height=CGFloat(lines.count)*fontSize*1.2+6
+                let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
+                let covered=parts.reduce(CGFloat(0)) { sum,part in
+                    let intersection=part.intersection(rect)
+                    return sum+(intersection.isNull ? 0 : intersection.width*intersection.height)
+                }
+                if viewport.contains(rect),covered>=rect.width*rect.height*0.995,
+                   !result.contains(where: { $0.rect.insetBy(dx:-8,dy:-8).intersects(rect) }) {
+                    result.append((region,rect,fontSize));break
+                }
+                fontSize-=2
+            }
         }
         return result
     }
@@ -860,8 +871,8 @@ struct OfflineAtlasView: View {
             let selected=item.region.id==selectedWorldRegion
             let lines=item.region.label.split(separator:"\n")
             for (index,line) in lines.enumerated() {
-                let point=CGPoint(x:item.rect.midX,y:item.rect.midY+(CGFloat(index)-CGFloat(lines.count-1)/2)*16)
-                let text=Text(String(line)).font(.system(size:12,weight:selected ? .bold : .semibold)).tracking(0.3)
+                let point=CGPoint(x:item.rect.midX,y:item.rect.midY+(CGFloat(index)-CGFloat(lines.count-1)/2)*item.fontSize*1.2)
+                let text=Text(String(line)).font(.system(size:item.fontSize,weight:selected ? .semibold : .medium)).tracking(0.5)
                 // A fine paper halo keeps lettering legible over terrain,
                 // without turning place names into cards or floating controls.
                 for offset in [CGPoint(x:-1,y:0),CGPoint(x:1,y:0),CGPoint(x:0,y:-1),CGPoint(x:0,y:1)] {

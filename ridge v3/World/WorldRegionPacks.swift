@@ -184,14 +184,43 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         }
     }
     var id:String { pack.id }
+    /// Short atlas lettering; the inspector retains the full pack name.
     var label:String {
-        let words=pack.name.split(separator:" ")
-        guard pack.name.count>16,words.count>1 else { return pack.name }
-        let split=(1..<words.count).min { a,b in
-            abs(words[..<a].joined(separator:" ").count-words[a...].joined(separator:" ").count)
-                < abs(words[..<b].joined(separator:" ").count-words[b...].joined(separator:" ").count)
-        }!
-        return words[..<split].joined(separator:" ")+"\n"+words[split...].joined(separator:" ")
+        switch id {
+        case "outer-hebrides": return "HEBRIDES"
+        case "skye-wester-ross": return "SKYE &\nWESTER ROSS"
+        case "caithness-moray": return "CAITHNESS\n& MORAY"
+        case "mull-small-isles": return "MULL &\nISLES"
+        case "argyll-islay": return "ARGYLL"
+        case "lomond-trossachs": return "LOMOND"
+        case "fife-lothians": return "FIFE &\nLOTHIANS"
+        case "scottish-borders": return "BORDERS"
+        case "fermanagh-sperrins": return "SPERRINS"
+        case "antrim-down": return "ANTRIM\n& DOWN"
+        case "tyne-wear-durham": return "DURHAM"
+        case "northumberland": return "NORTHUMBERLAND"
+        case "yorkshire-dales": return "DALES"
+        case "north-pennines": return "PENNINES"
+        case "north-york-moors": return "MOORS"
+        case "yorkshire-wolds": return "WOLDS"
+        case "peak-district": return "PEAKS"
+        case "central-midlands": return "MIDLANDS"
+        case "eryri-anglesey": return "ERYRI"
+        case "clwyd-berwyn": return "CLWYD &\nBERWYN"
+        case "pembrokeshire-ceredigion": return "WEST\nWALES"
+        case "bannau-mid-wales": return "MID\nWALES"
+        case "fens-cambridgeshire": return "FENS"
+        case "suffolk-west-norfolk": return "SUFFOLK"
+        case "broads-east-coast": return "BROADS"
+        case "severn-cotswolds": return "COTSWOLDS"
+        case "shropshire-marches": return "MARCHES"
+        case "surrey-south-downs": return "SOUTH\nDOWNS"
+        case "london-weald": return "LONDON &\nWEALD"
+        case "kent-east-sussex": return "KENT"
+        case "somerset-west-dorset": return "SOMERSET"
+        case "cornwall-scilly": return "CORNWALL"
+        default: return pack.name.uppercased().replacingOccurrences(of:" ",with:"\n")
+        }
     }
     init(pack:WorldRegionPack,catalog:WorldCatalog?) {
         self.pack=pack
