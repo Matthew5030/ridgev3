@@ -82,6 +82,18 @@ import AppKit
                 }
                 let seams=terrain.seams(boundaries,covered:covered);seams?.materials=[m];scene.rootNode.addChildNode(SCNNode(geometry:seams))
                 try save("detail-over-context")
+                // Synthetic saved extent on real terrain, not a claim about
+                // this machine's offline downloads. Exercise the actual shader.
+                let saved=GeoBounds(minLatitude:center.latitude-0.06,minLongitude:center.longitude-0.06,maxLatitude:center.latitude+0.06,maxLongitude:center.longitude+0.008)
+                let boundary=WorldOfflineBoundary.geometry(edges:WorldOfflineCoverage.outline([saved]),focus:center,frame:frame) { point in
+                    guard let tile=near.tiles.first(where:{$0.mesh.bounds.contains(point)}),let mesh=background.meshes[tile.id],let h=mesh.elevation(at:point) else { return 0 }
+                    return Float(h)
+                }
+                boundary?.firstMaterial?.setValue(NSValue(scnVector4:SCNVector4(target.x,target.z,1,0)),forKey:"ridgeBoundaryFocus")
+                scene.rootNode.addChildNode(SCNNode(geometry:boundary))
+                try save("offline-boundary")
+                camera.simdPosition=target+SIMD3(3000,1800,2500);WorldCameraOrientation.aim(camera,at:target)
+                try save("offline-boundary-side")
             }
         }
         print("PASS \(checks) distant terrain checks; geometry \(bytes) bytes, local preparation \(Date().timeIntervalSince(start)) s")

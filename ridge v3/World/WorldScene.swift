@@ -34,6 +34,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     private var nodes: [String: SCNNode] = [:]
     private var distantNode = SCNNode()
     private var seamNode = SCNNode()
+    private var offlineBoundaryNode = SCNNode()
+    private var offlineBoundaryEdges: [WorldOfflineCoverage.Edge] = []
+    private var offlineBoundaryCenter: GeoPoint?
     private var distantID: UUID?
     private var contextCoverage: Set<String>?
     private var contextKeys: [String:String] = [:]
@@ -127,6 +130,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             model.changedTileIDs.removeAll(keepingCapacity:true)
             enqueueTerrain(changed)
         }
+        updateOfflineBoundary(force:sourceChanged)
         if sourceChanged || route != routePoints || segments != routeSegments || waypoints != routeWaypoints { routeSegments = segments; routePoints = route; routeWaypoints = waypoints; updateRouteOverlay() }
         if lastCommand != command {
             let initial = lastCommand == nil
@@ -159,6 +163,8 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         scene.fogColor = backgroundColor; scene.fogDensityExponent = 1
         cancelCameraNotification()
         distantID=nil; distantNode.removeFromParentNode();seamNode.removeFromParentNode();distantNode=SCNNode();seamNode=SCNNode();retiringNodes=[:]; contextKeys=[:]
+        offlineBoundaryNode=SCNNode();offlineBoundaryNode.categoryBitMask=8;offlineBoundaryNode.castsShadow=false
+        scene.rootNode.addChildNode(offlineBoundaryNode);offlineBoundaryCenter=nil;offlineBoundaryEdges=[]
         self.scene = scene; nodes = [:]; coarse = [:]; applied = [:]; tileIndex = WorldTileIndex(tiles:[]); routeOverlays = [:]
         cameraNode = SCNNode(); cameraNode.camera = SCNCamera(); cameraNode.camera?.fieldOfView = 43
         cameraNode.camera?.zNear = 2; cameraNode.camera?.zFar = 60000; cameraNode.camera?.wantsHDR = false
@@ -282,6 +288,16 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
             }
         }
     }
+    private func updateOfflineBoundary(force: Bool = false) {
+        guard let model, let source else { return }
+        let focus=coordinate(target)
+        if force || offlineBoundaryEdges != model.offlineEdges || offlineBoundaryCenter == nil || offlineBoundaryCenter!.distance(to:focus)>250 {
+            offlineBoundaryEdges=model.offlineEdges;offlineBoundaryCenter=focus
+            offlineBoundaryNode.geometry=WorldOfflineBoundary.geometry(edges:offlineBoundaryEdges,focus:focus,frame:source.frame,elevation:height)
+        }
+        let visibility=max(0,min(1,(12000-distance)/4000))
+        offlineBoundaryNode.geometry?.firstMaterial?.setValue(NSValue(scnVector4:SCNVector4(target.x,target.z,visibility,0)),forKey:"ridgeBoundaryFocus")
+    }
     override func layoutSubviews() { super.layoutSubviews(); placeLabels.scale(camera:cameraNode,viewport:bounds.size); scheduleLabels() }
     private func updateCamera(notify: Bool = true) {
         guard let source else { return }
@@ -297,6 +313,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
         cameraNode.simdPosition = eye; WorldCameraOrientation.aim(cameraNode, at: target)
         placeLabels.scale(camera:cameraNode,viewport:bounds.size)
         scheduleLabels()
+        updateOfflineBoundary()
         guard notify else { return }
         model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
         // Coalesce navigation work while keeping the actual camera at gesture

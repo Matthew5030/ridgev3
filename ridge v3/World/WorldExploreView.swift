@@ -92,6 +92,19 @@ struct WorldExploreView: View {
                     }
                 }
                 Spacer()
+                if world.in3D && world.nearOfflineBoundary {
+                    HStack(spacing:12) {
+                        Image(systemName:"arrow.down.circle").foregroundStyle(Color(red:0.66,green:0.43,blue:0.16))
+                        VStack(alignment:.leading,spacing:3) {
+                            Text(world.insideOfflineArea ? "End of offline map" : "Outside your offline map").font(.subheadline.weight(.medium))
+                            Text("You can keep exploring while connected.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                        }
+                        Spacer(minLength:0)
+                        Button(world.isSavingOffline ? "Saving…" : "Save more") { world.keepOffline() }
+                            .font(.subheadline.weight(.medium)).disabled(world.isSavingOffline || world.source == nil)
+                    }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
+                    .accessibilityElement(children:.contain)
+                }
                 if world.downloadPhase != nil { downloadCard }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { Task { await world.configure(mode: mapMode, local: localMapServer); if let bounds = visibleBounds { viewportChanged(bounds) } } } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))

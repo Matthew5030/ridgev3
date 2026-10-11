@@ -182,6 +182,8 @@ actor WorldSourceStore {
         }
         var source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
         if let routing { source.graph = routing }
+        // Recover the outline of completed saves made before coverage receipts existed.
+        try? recordSavedCoverage(source.tiles, source:source)
         return source
     }
     func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
@@ -308,6 +310,24 @@ actor WorldSourceStore {
                 if next < assets.count { add(assets[next]); next += 1 }
             }
         }
+        try Task.checkCancellation()
+        try recordSavedCoverage(tiles,source:source)
+    }
+    private func recordSavedCoverage(_ tiles: [WorldTile], source: WorldSource) throws {
+        guard !base.isFileURL, !pins.isEmpty else { return }
+        var present: [String:Bool] = [:]
+        let receipts = tiles.compactMap { tile -> WorldOfflineCoverage.Receipt? in
+            let assets = [source.overview,source.graph,tile.map,
+                WorldMapAsset(file:tile.mesh.path,byteCount:tile.mesh.byteCount,sha256:tile.mesh.sha256)]
+                + [tile.background].compactMap { $0 }.map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) }
+            guard assets.allSatisfy({ asset in
+                if let value=present[asset.sha256] { return value }
+                let value=asset.sha256.count==64 && asset.sha256.allSatisfy(\.isHexDigit) && pins.contains(asset.sha256) && (try? cache.appendingPathComponent(asset.sha256).resourceValues(forKeys:[.fileSizeKey]).fileSize)==asset.byteCount
+                present[asset.sha256]=value;return value
+            }) else { return nil }
+            return .init(bounds:tile.mesh.bounds,assets:assets.map { .init(hash:$0.sha256,bytes:$0.byteCount) })
+        }
+        try WorldOfflineCoverage.record(receipts,at:cache)
     }
     /// Fetch at most six files at a time. Geometry and image work stays serial.
     private func prefetch(_ assets: [WorldMapAsset]) async throws {

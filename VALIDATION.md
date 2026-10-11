@@ -224,3 +224,15 @@ Validation:
 Still requires physical-device fast-pan/rotate and memory/frame-time measurement. A coarse surface is available without network access; detailed terrain and walkable routing still require the appropriate data. No Cloudflare changes or national detailed-pack regeneration were performed.
 
 The physical iPad reconnected during installation. The final signed build was installed and successfully launched on Matthew's M1 iPad Pro (`00008103-00120919018A001E`) using `http://Matthews-MacBook-Pro.local:8787`; app data was preserved. This confirms deployment, not a manual fast-pan performance pass.
+
+## Offline coverage boundary experiment — 11 October 2026
+
+Added a faint amber ground line and 90 m upward-fading curtain around the combined footprint of explicitly saved world terrain. Shared tile edges disappear; disconnected saves and holes retain their exposed edges. The annotation fades between 600 m and 1.8 km from the map focus and fades away at overview zoom. Only nearby segments are sampled, with a 24,000-vertex hard limit and one geometry/material. The node does not write depth, cast shadows, block movement or participate in route/camera hit tests. It respects terrain occlusion. A nearby screen-level notice says “End of offline map” or “Outside your offline map”, with the existing save action exposed as “Save more”.
+
+Completed pinned downloads now have persistent geographic receipts. Unpinned browsing cache is excluded, as are absent or truncated assets. Previously completed pins are recovered when their source manifests are opened. Coverage refresh and outline extraction run off the main actor; they do not run on every camera gesture. Moving through the boundary does not start an offline save or alter streaming policy. The existing offline saver still saves the loaded window; a new area-sizing/progress flow is outside this experiment.
+
+Validation:
+- `sh Tools/test_world_offline_boundary.sh`: PASS 17 checks for merged adjacent areas, duplicate saves, partial shared sides, holes, disconnected areas, distance/fade, persistence, unfinished/truncated/unpinned assets and bounded scene geometry.
+- Hosted source test against the local Snowdon server: PASS real terrain/vector loading, path routing, completed save receipts, exclusion of ordinary cache, and recovery of older pinned saves after deleting the receipt file.
+- `sh Tools/test_world_context.sh /tmp/ridge-offline-boundary-qa`: PASS 942 checks plus two real-terrain SceneKit boundary snapshots. The test uses a synthetic saved extent solely to preview the annotation. Corrected premultiplied-alpha blending after the first snapshot exposed an overly bright ribbon; final images show a subtle fading line/curtain.
+- Final simulator and signed device Debug builds passed. Physical-device motion/visibility remains a user trial, not a claimed performance measurement. No pack regeneration or Cloudflare changes.

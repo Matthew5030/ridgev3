@@ -31,6 +31,24 @@ import CoreGraphics
     var in3D = false
     var pending = 0
     var offlineMessage: String?
+    var offlineBounds: [GeoBounds] = []
+    var offlineEdges: [WorldOfflineCoverage.Edge] = []
+    var isSavingOffline = false
+    @ObservationIgnored private var offlineRefresh = 0
+    var nearOfflineBoundary: Bool { offlineEdges.contains { $0.distance(to:center)<1500 } }
+    var insideOfflineArea: Bool { offlineBounds.contains { $0.contains(center) } }
+    private func refreshOfflineCoverage() {
+        offlineRefresh += 1; let ticket=offlineRefresh
+        let cache=WorldOfflineCoverage.cache(cacheURL)
+        Task { [weak self] in
+            let value=await Task.detached(priority:.utility) {
+                let bounds=WorldOfflineCoverage.savedBounds(at:cache)
+                return (bounds,WorldOfflineCoverage.outline(bounds))
+            }.value
+            guard let self,ticket==offlineRefresh else { return }
+            offlineBounds=value.0;offlineEdges=value.1
+        }
+    }
     var requestFocus: GeoPoint?
     var catalog: WorldCatalog?
     var libraryRoot: URL?
@@ -64,7 +82,8 @@ import CoreGraphics
         tilesByID = [:]; changedTileIDs = []
         source = nil; overview = nil; backdrop = nil; preview = nil; previewBounds = nil; routeTerrain = nil
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
-        savingOffline?.cancel(); savingOffline = nil; offlineMessage = nil
+        savingOffline?.cancel(); savingOffline = nil; isSavingOffline=false; offlineMessage = nil
+        offlineBounds=[];offlineEdges=[];refreshOfflineCoverage()
         files = WorldLandscapeStore(cacheURL:cacheURL); navigationDestination = nil
         catalog = nil; libraryRoot = nil; cameraPose = nil; in3D = false; message = nil; coverageMessage = nil
         retryPoint = nil; requestFocus = nil
@@ -187,6 +206,7 @@ import CoreGraphics
     func pauseDownload() { cancelRegionLoad() }
     private func install(_ next: WorldSource, elevation: WorldOverview, graph: WalkingGraph, background: WorldBackdrop, image: CGImage?, pages: [String:WorldPreparedTile], files candidate: WorldLandscapeStore) {
         generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
+        refreshOfflineCoverage()
         files = candidate; source = next; overview = elevation; backdrop = background; preview = image
         tilesByID = Dictionary(uniqueKeysWithValues:next.tiles.map { ($0.id,$0) })
         changedTileIDs.removeAll(keepingCapacity:true)
@@ -285,6 +305,7 @@ import CoreGraphics
     func keepOffline() {
         guard let source, savingOffline == nil else { return }
         let store = files
+        isSavingOffline=true
         offlineMessage = "Saving terrain, maps and walking paths for offline use…"
         savingOffline = Task { [weak self] in
             do {
@@ -294,7 +315,7 @@ import CoreGraphics
             } catch {
                 if !Task.isCancelled { self?.offlineMessage = "Couldn’t finish saving this area. Check your connection and try again." }
             }
-            self?.savingOffline = nil
+            if !Task.isCancelled { self?.savingOffline = nil; self?.isSavingOffline=false; self?.refreshOfflineCoverage() }
         }
     }
 }

@@ -37,7 +37,13 @@ import CoreGraphics
             let background = try await store.backdrop(source: source, overview: overview)
             guard background.meshes.count == source.tiles.count else { throw RidgeError.message("Incomplete hosted background") }
             let backgroundSeconds = Date().timeIntervalSince(backgroundStart)
+            guard WorldOfflineCoverage.savedBounds(at:cache).isEmpty else { throw RidgeError.message("Visited cache was mislabelled as offline") }
             try await store.pin([tile], source: source)
+            guard WorldOfflineCoverage.savedBounds(at:cache)==[tile.mesh.bounds] else { throw RidgeError.message("Completed save lost its geographic outline") }
+            try FileManager.default.removeItem(at:cache.appendingPathComponent("offline-coverage.json"))
+            let reopened=WorldSourceStore(cacheURL:cache)
+            _ = try await reopened.manifest(address:address,preferCached:true)
+            guard WorldOfflineCoverage.savedBounds(at:cache)==[tile.mesh.bounds] else { throw RidgeError.message("Older pinned save did not recover its outline") }
             let pins = try JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: cache.appendingPathComponent("pins.json")))
             let required = [source.overview.sha256, source.graph.sha256, tile.map.sha256, tile.mesh.sha256] + source.tiles.compactMap { $0.background?.sha256 }
             guard required.allSatisfy(pins.contains) else { throw RidgeError.message("Offline pins incomplete") }
