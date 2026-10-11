@@ -105,6 +105,21 @@ struct WorldRegionDownloadPlan: Sendable {
     let bytes:Int64
     let totalBytes:Int64
     let tileCount:Int
+    var isEstimate=false
+
+    /// Catalogue-only offer: no section requests, disk scans or asset hashing.
+    static func estimate(pack:WorldRegionPack,catalog:WorldCatalog,root:URL)->Self? {
+        let regions=pack.sources(in:catalog)
+        guard !regions.isEmpty,regions.allSatisfy({ ($0.downloadBytes ?? 0)>0 }) else { return nil }
+        let parts=regions.map { region in
+            // Published folder sizes may predate the connected-path sidecar.
+            // Include it conservatively; duplicate/cached bytes are skipped later.
+            Part(region:region,missingBytes:region.downloadBytes!+Int64(region.routing?.byteCount ?? 0))
+        }
+        let total=parts.reduce(Int64(0)) { $0+$1.missingBytes }
+        return Self(pack:pack,root:root,parts:parts,bytes:total,totalBytes:total,
+                    tileCount:regions.reduce(0) { $0+$1.tileCount },isEstimate:true)
+    }
 }
 
 actor WorldRegionDownloadStore {
@@ -141,19 +156,27 @@ actor WorldRegionDownloadStore {
     func download(_ plan:WorldRegionDownloadPlan,progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
         // Reserve headroom for temporary files. A large offline save is a disk
         // operation; it must never allocate or prepare the whole region in RAM.
-        if plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
+        if !plan.isEstimate,plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
            capacity < plan.bytes+256*1024*1024 { throw RidgeError.message("There isn’t enough free space for this pack. Free some storage and try again.") }
         var completed:Int64=0,checkedConnection=false
         for (index,part) in plan.parts.enumerated() {
             try Task.checkCancellation()
             let (files,source)=try await open(part.region,root:plan.root)
-            if part.missingBytes>0 && !checkedConnection { try await files.checkDownloadConnection();checkedConnection=true }
+            let missing:Int64
+            if plan.isEstimate {
+                let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
+                let cached=try await files.cachedAssetHashes(for:assets)
+                missing=assets.filter { !cached.contains($0.sha256) }.reduce(0) { $0+Int64($1.byteCount) }
+                if missing>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
+                   capacity<missing+256*1024*1024 { throw RidgeError.message("There isn’t enough free space. Completed sections are kept; free some storage to continue.") }
+            } else { missing=part.missingBytes }
+            if missing>0 && !checkedConnection { try await files.checkDownloadConnection();checkedConnection=true }
             let base=completed
             try await files.pin(source.tiles,source:source,countCachedInProgress:false,coverageID:source.id,progress: { bytes in
-                await progress(min(plan.bytes,base+bytes),index)
+                await progress(plan.isEstimate ? base+bytes : min(plan.bytes,base+bytes),index)
             })
-            completed+=part.missingBytes
-            await progress(min(plan.bytes,completed),index+1)
+            completed+=missing
+            await progress(plan.isEstimate ? completed : min(plan.bytes,completed),index+1)
         }
         try Task.checkCancellation()
     }

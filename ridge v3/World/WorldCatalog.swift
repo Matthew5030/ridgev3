@@ -25,6 +25,7 @@ struct WorldCatalog: Decodable, Sendable {
         let path: String
         let bounds: GeoBounds
         let tileCount: Int
+        var downloadBytes: Int64? = nil
         var routing: WorldMapAsset? = nil
     }
     let schemaVersion: Int
@@ -36,6 +37,7 @@ struct WorldCatalog: Decodable, Sendable {
         for region in sources {
             let pieces = region.path.split(separator: "/", omittingEmptySubsequences: false)
             guard region.bounds.isValid, (1...256).contains(region.tileCount), region.id.hasPrefix("world-"),
+                  region.downloadBytes.map({ (1...64_000_000_000).contains($0) }) ?? true,
                   pieces.count == 3, pieces[0] == "sources", pieces[1] == Substring(region.id), pieces[2] == "world.json",
                   region.id.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95 }) else {
                 throw RidgeError.message("The map catalogue contains an invalid region.")

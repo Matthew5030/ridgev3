@@ -420,6 +420,11 @@ import CoreGraphics
         downloadRegion=pack;regionChecked=0;regionSaved=0;regionComplete=false
         guard let catalog,let root=libraryRoot else { downloadError="Connect to a map source in Settings first.";return }
         regionTotal=pack.sources(in:catalog).count
+        if let estimate=WorldRegionDownloadPlan.estimate(pack:pack,catalog:catalog,root:root) {
+            regionPlan=estimate
+            return
+        }
+        // Compatibility with older catalogues which have no published sizes.
         checkingDownload=true;let ticket=downloadGeneration
         let downloads=WorldRegionDownloadStore(cacheURL:cacheURL)
         downloadTask=Task { [weak self] in

@@ -34,16 +34,21 @@ struct WorldRegionDownloadCard: View {
                 } else if world.isSavingOffline,let plan=world.regionPlan {
                     if world.isConnectingDownload { ProgressView("Connecting to map server…") }
                     else {
-                        ProgressView(value:Double(world.downloadedBytes),total:Double(max(1,plan.bytes)))
-                        Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.headline.monospacedDigit())
+                        if plan.isEstimate {
+                            ProgressView(value:Double(world.regionSaved),total:Double(max(1,plan.parts.count)))
+                            Text("\(RidgeTheme.bytes(world.downloadedBytes)) downloaded").font(.headline.monospacedDigit())
+                        } else {
+                            ProgressView(value:Double(world.downloadedBytes),total:Double(max(1,plan.bytes)))
+                            Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.headline.monospacedDigit())
+                        }
                     }
                     Text("\(world.regionSaved) of \(plan.parts.count) sections saved").font(.subheadline.monospacedDigit())
                     Text("Keep Ridge open. The screen will stay awake while downloading. You can pause and continue later.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     Button("Pause download") { world.pauseRegionDownload() }.buttonStyle(.bordered)
-                } else if let plan=world.regionPlan {
+                } else if let plan=world.regionPlan,saved?.downloadState != .saved {
                     VStack(alignment:.leading,spacing:8) {
-                        Text(plan.bytes==0 ? "Maps already on your device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.title3.weight(.semibold))
-                        Text("\(RidgeTheme.bytes(plan.totalBytes)) in total · terrain, maps & walking paths").font(.subheadline).foregroundStyle(RidgeTheme.muted)
+                        Text(plan.isEstimate ? "Up to \(RidgeTheme.bytes(plan.totalBytes))" : plan.bytes==0 ? "Maps already on your device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.title3.weight(.semibold))
+                        Text(plan.isEstimate ? "Terrain, maps & walking paths. Files already saved are reused as the download runs." : "\(RidgeTheme.bytes(plan.totalBytes)) in total · terrain, maps & walking paths").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                         if plan.bytes>0,plan.totalBytes>plan.bytes {
                             Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) already saved and reused").font(.caption)
                         }

@@ -1,5 +1,14 @@
 import Foundation
 
+actor RegionTransferAudit {
+    var streamedBeforeFinalIndex=false
+    var bytes:Int64=0
+    func record(_ value:Int64,saved:Int,finalIndex:URL) {
+        bytes=value
+        if saved==0,value>0,!FileManager.default.fileExists(atPath:finalIndex.path) { streamedBeforeFinalIndex=true }
+    }
+}
+
 @main struct WorldRegionPackTests {
     @MainActor static func main() async throws {
         var checks=0
@@ -59,6 +68,13 @@ import Foundation
         let regions=[catalog.sources[0],catalog.sources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })
         try check(fixture.bounds.widthMeters>24_000,"Region fixture exceeds the custom-area size limit")
+        let started=Date()
+        let eryri=packs.first { $0.id=="eryri-anglesey" }!
+        let quick=WorldRegionDownloadPlan.estimate(pack:eryri,catalog:catalog,root:root)
+        let offerSeconds=Date().timeIntervalSince(started)
+        try check(quick?.isEstimate==true && quick?.parts.isEmpty==false,"Real Eryri region offers catalogue size immediately")
+        try check(try FileManager.default.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil).allSatisfy { !$0.pathExtension.contains("index") },"Quick offer fetches no section indexes")
+        print("Catalogue-only Eryri offer: \(offerSeconds) s, \(quick!.parts.count) sections, upper estimate \(quick!.bytes) bytes")
         let store=WorldRegionDownloadStore(cacheURL:cache)
         let plan=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(plan.parts.count==2 && plan.tileCount==regions.reduce(0) { $0+$1.tileCount },"Region plan includes every tile, beyond custom-area radius rules")
@@ -79,10 +95,11 @@ import Foundation
         await model.configure(mode:"local",local:root.absoluteString)
         model.offerRegionDownload(fixture)
         try await wait { model.checkingDownload }
-        try check(model.regionPlan?.bytes==remaining.bytes && model.source==nil,"Model shows missing bytes without rendering")
+        try check(model.regionPlan?.isEstimate==true && !model.checkingDownload && model.source==nil,"Model presents the download immediately without rendering or preflight")
         model.downloadRegionPack()
         try await wait { model.isSavingOffline }
         try check(model.regionComplete && model.downloadError==nil,model.downloadError ?? "Region did not finish")
+        try check(model.downloadedBytes==remaining.bytes,"Estimated offer still transfers only missing bytes")
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
         try check(model.offlineBounds.count==plan.tileCount,"All regional tiles become usable in normal exploration")
         let receipts=WorldOfflineCoverage.savedBounds(at:cache)
@@ -109,6 +126,23 @@ import Foundation
         var damaged=try Data(contentsOf:asset);damaged[0] ^= 1;try damaged.write(to:asset,options:.atomic)
         let repair=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(repair.bytes==Int64(tile.mesh.byteCount),"Corrupt regional asset requests only its repair")
+        model.offerRegionDownload(fixture);model.downloadRegionPack()
+        try await wait { model.isSavingOffline }
+        try check(model.regionComplete && model.downloadedBytes==Int64(tile.mesh.byteCount),"Fast download verifies saved bytes and repairs only the corrupt asset")
+        let streamingCache=cache.appendingPathComponent("streaming-proof")
+        let streamingStore=WorldRegionDownloadStore(cacheURL:streamingCache)
+        let streamed=WorldRegionDownloadPlan.estimate(pack:fixture,catalog:catalog,root:root)!
+        let lastAddress=root.appendingPathComponent(streamed.parts.last!.region.path).absoluteString
+        let lastIndex=streamingCache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(lastAddress.utf8))+".index")
+        let audit=RegionTransferAudit()
+        try await streamingStore.download(streamed) { bytes,saved in await audit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        let beforeFinal=await audit.streamedBeforeFinalIndex,actual=await audit.bytes
+        try check(beforeFinal,"Terrain starts transferring before the remaining section indexes are fetched")
+        try check(actual==plan.bytes && actual<=streamed.bytes,"Reported transfer is actual unique bytes, within the catalogue upper estimate")
+        let reuseAudit=RegionTransferAudit()
+        try await streamingStore.download(streamed) { bytes,saved in await reuseAudit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        let reusedBytes=await reuseAudit.bytes
+        try check(reusedBytes==0,"Repeating a fast-plan download transfers zero saved asset bytes")
         model.offerRegionDownload(fixture);model.pauseRegionDownload()
         try await Task.sleep(nanoseconds:100_000_000)
         try check(!model.checkingDownload && !model.isSavingOffline && model.regionPlan==nil && model.downloadError?.hasPrefix("Paused") == true,"Cancelled region check cannot publish stale results")
