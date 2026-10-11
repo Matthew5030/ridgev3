@@ -156,6 +156,29 @@ actor TileProgressAudit {
         try check(try await repeated.parts[0].files.cachedAssetHashes(for:[stampAsset]).isEmpty,"Replacing a same-size file invalidates remembered verification")
         let damagedPlan=try await repair.plan(center:shifted,radius:600,catalog:catalog,root:local)
         try check(damagedPlan.bytes==Int64(stampTile.mesh.byteCount) && !damagedPlan.readyBounds.contains(stampTile.mesh.bounds),"Damaged overlapping tiles request only their broken asset")
+        let unavailable="http://127.0.0.1:1/world/world.json"
+        let offlineIndex=cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(unavailable.utf8))+".index")
+        try JSONEncoder().encode(first.source).write(to:offlineIndex)
+        let unreachable=WorldSourceStore(cacheURL:cache)
+        _=try await unreachable.manifest(address:unavailable,preferCached:true)
+        let began=Date()
+        do {
+            try await unreachable.checkDownloadConnection()
+            throw RidgeError.message("Unreachable server accepted")
+        } catch { try check(error.localizedDescription.contains("Cannot reach 127.0.0.1"),"Dead server produces an actionable connection error") }
+        try check(Date().timeIntervalSince(began)<10,"Connection failure has a bounded wait")
+        let failedModel=WorldModel(cacheURL:cache)
+        await failedModel.configure(mode:"local",local:local.absoluteString)
+        failedModel.downloadCenter=origin
+        failedModel.downloadPlan=WorldDownloadPlan(center:origin,radius:600,selection:nil,
+            parts:[.init(source:first.source,files:unreachable,missingBytes:1)],bytes:1,
+            bounds:plan.bounds,edges:plan.edges,readyBounds:[])
+        failedModel.downloadAndOpen()
+        try check(failedModel.isConnectingDownload,"Connection checking is distinct from a 0% transfer")
+        try await wait { failedModel.isSavingOffline || failedModel.checkingDownload }
+        try check(!failedModel.isConnectingDownload && failedModel.downloadError?.contains("Cannot reach") == true,"Failed connection leaves progress and offers retry")
+        try check(failedModel.downloadCenter==origin && failedModel.activeDownloadTiles.isEmpty,"Connection failure keeps selection without fake active tiles")
+        failedModel.cancelDownload()
         model.offerDownload(at:outside,radius:600);model.cancelDownload()
         try await Task.sleep(nanoseconds:100_000_000)
         try check(model.downloadPlan==nil && !model.checkingDownload && !model.isSavingOffline,"Cancelled selection cannot publish stale work")

@@ -317,6 +317,33 @@ actor WorldSourceStore {
         try JSONEncoder().encode(merged).write(to:url,options:.atomic)
         return merged
     }
+    /// Probe the actual source, bypassing URL cache and without waiting for the
+    /// network to return. Cached catalogues must not imply a live download server.
+    func checkDownloadConnection() async throws {
+        guard !base.isFileURL else { return }
+        guard allowsNetwork else { throw RidgeError.message("This map source is offline. Choose a download source in Settings.") }
+        let configuration=URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity=false
+        configuration.timeoutIntervalForRequest=6
+        configuration.timeoutIntervalForResource=8
+        let session=URLSession(configuration:configuration)
+        defer { session.invalidateAndCancel() }
+        var request=URLRequest(url:base.appendingPathComponent("world.json"),cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:6)
+        request.httpMethod="HEAD"
+        do {
+            let (_,response)=try await session.data(for:request)
+            try Task.checkCancellation()
+            guard let http=response as? HTTPURLResponse,http.statusCode==200 else {
+                throw RidgeError.message("The download server isn’t serving this map. Check the map source in Settings and retry.")
+            }
+        } catch {
+            try Task.checkCancellation()
+            if error is URLError {
+                throw RidgeError.message("Cannot reach \(base.host ?? "the download server"). Check that the server is running and your device is connected to its network, then retry.")
+            }
+            throw error
+        }
+    }
     func pin(_ tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = [], countCachedInProgress: Bool = true, assetProgress: @Sendable (Set<String>, Set<String>) async -> Void = { _,_ in }, progress: @Sendable (Int64) async -> Void = { _ in }) async throws {
         // Keep each tile's files together so usable tiles complete throughout a download.
         var seen = Set<String>()

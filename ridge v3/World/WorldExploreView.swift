@@ -225,7 +225,8 @@ struct WorldExploreView: View {
             if world.checkingDownload { ProgressView("Checking download size…") }
             else if let plan=world.downloadPlan {
                 if world.isSavingOffline {
-                    if plan.bytes == 0 { ProgressView("Opening saved map…") }
+                    if world.isConnectingDownload { ProgressView("Connecting to map server…") }
+                    else if plan.bytes == 0 { ProgressView("Opening saved map…") }
                     else {
                         ProgressView(value:Double(world.downloadedBytes),total:Double(plan.bytes))
                         Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.caption.monospacedDigit())

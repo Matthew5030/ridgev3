@@ -46,6 +46,7 @@ import CoreGraphics
     var offlineBounds: [GeoBounds] = []
     var offlineEdges: [WorldOfflineCoverage.Edge] = []
     var isSavingOffline = false
+    var isConnectingDownload = false
     @ObservationIgnored private var offlineRefresh = 0
     var nearOfflineBoundary: Bool { offlineEdges.contains { $0.distance(to:center)<1500 } }
     var insideOfflineArea: Bool { offlineBounds.contains { $0.contains(center) } }
@@ -348,17 +349,21 @@ import CoreGraphics
     func downloadAndOpen() {
         guard let plan=downloadPlan,!isSavingOffline else { return }
         downloadGeneration+=1;let ticket=downloadGeneration
-        isSavingOffline=true;downloadedBytes=0;downloadError=nil
+        isSavingOffline=true;isConnectingDownload=plan.bytes>0;downloadedBytes=0;downloadError=nil
         let store=WorldDownloadStore(cacheURL:cacheURL)
         downloadTask=Task { [weak self] in
             do {
+                if let part=plan.parts.first(where: { $0.missingBytes>0 }) { try await part.files.checkDownloadConnection() }
+                try Task.checkCancellation()
+                guard let self,ticket==downloadGeneration else { return }
+                isConnectingDownload=false
                 try await store.download(plan,tilesProgress: { [weak self] done,active in
                     await self?.receiveTileProgress(done,active:active,ticket:ticket)
                 }) { [weak self] bytes in
                     await self?.receiveDownloadProgress(bytes,ticket:ticket)
                 }
                 try Task.checkCancellation()
-                guard let self,ticket==downloadGeneration else { return }
+                guard ticket==downloadGeneration else { return }
                 await reloadOfflineCoverage()
                 guard ticket==downloadGeneration,!Task.isCancelled else { return }
                 downloadTask=nil;isSavingOffline=false;downloadCenter=nil;downloadPlan=nil;coverageMessage=nil
@@ -367,8 +372,8 @@ import CoreGraphics
                 visit(plan.center)
             } catch {
                 guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
-                isSavingOffline=false;downloadTask=nil;activeDownloadTiles=[]
-                downloadError="The download didn’t finish. Check your connection and resume; completed files are kept."
+                isSavingOffline=false;isConnectingDownload=false;downloadTask=nil;activeDownloadTiles=[]
+                downloadError=error.localizedDescription+" Completed files are kept; retry to continue."
                 await reloadOfflineCoverage()
                 guard ticket==downloadGeneration,let catalog,let root=libraryRoot else { return }
                 checkingDownload=true
@@ -396,7 +401,7 @@ import CoreGraphics
         let wasSaving=isSavingOffline
         downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
         drawingDownload=false;downloadSelection=nil;completedDownloadTiles=[];activeDownloadTiles=[]
-        checkingDownload=false;isSavingOffline=false;downloadCenter=nil;downloadPlan=nil;downloadError=nil;downloadedBytes=0
+        checkingDownload=false;isSavingOffline=false;isConnectingDownload=false;downloadCenter=nil;downloadPlan=nil;downloadError=nil;downloadedBytes=0
         if wasSaving { refreshOfflineCoverage() }
     }
 }
