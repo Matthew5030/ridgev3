@@ -36,7 +36,15 @@ import Foundation
         try check(model.downloadPhase == nil,"No download confirmation interrupts entry")
         model.in3D = true
         model.cameraPose = TerrainCameraPose(target:origin,targetElevationMeters:300,yaw:1,pitch:0.8,distanceMeters:2000)
-        while model.streaming && Date()<deadline { try await Task.sleep(nanoseconds:20_000_000) }
+        var radii: [Double] = []
+        while model.streaming && Date()<deadline {
+            if radii.last != model.loadedRadius {
+                radii.append(model.loadedRadius)
+                print("Visible radius: \(model.loadedRadius/1000) km at \(Date().timeIntervalSince(began)) s")
+            }
+            try await Task.sleep(nanoseconds:20_000_000)
+        }
+        try check(radii.count >= 3,"Surroundings publish progressively rather than waiting for the whole horizon")
         try check(model.message == nil && !model.streaming,model.message ?? "Horizon timed out")
         print("Full horizon: \(model.source!.tiles.count) tiles, \(Date().timeIntervalSince(began)) s")
         try check(model.loadedRadius >= 16000,"Horizon grows beyond the initial entry without another gesture")

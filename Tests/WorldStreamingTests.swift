@@ -16,6 +16,15 @@ import SceneKit
         try check(WorldWindow.distance(point,to:anchor.bounds) == 0,"Containing rectangle has zero distance")
         try check(!WorldWindow.needsUpdate(center:point,radius:18000,loadedCenter:point,loadedRadius:21000),"Retention avoids repeated loads while stationary")
         try check(WorldWindow.radius(distance:12000,pitch:0.3)>WorldWindow.radius(distance:1500,pitch:1.4),"A wide low view gets more surroundings")
+        var radius = WorldWindow.nextRadius(desired:23200,loaded:0)
+        try check(radius == 8000,"Entry stays small")
+        for _ in 0..<6 {
+            let next = WorldWindow.nextRadius(desired:23200,loaded:radius)
+            try check(next-radius <= 3000 && next >= radius,"Horizon publishes in bounded growth steps")
+            radius = next
+        }
+        try check(radius == 23200,"Progressive growth still reaches the full horizon")
+        try check(WorldWindow.nextRadius(desired:20000,loaded:24000) == 20000,"Zooming in does not retain an ever-growing window")
         let first = WorldLandscapeStore(cacheURL:cache)
         let began = Date()
         let (source,_,graph,background,pages) = try await first.window(center:point,radius:5000,frame:anchor.bounds,catalog:catalog,root:root,previous:nil)

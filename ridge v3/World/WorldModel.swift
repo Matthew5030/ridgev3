@@ -92,7 +92,7 @@ import CoreGraphics
         }
         let ready = source?.tiles.contains { $0.mesh.bounds.contains(point) } == true
         let radius = WorldWindow.radius(distance:distance,pitch:cameraPose?.pitch ?? 0.85)
-        guard WorldWindow.needsUpdate(center:point,radius:radius,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
+        guard WorldWindow.needsUpdate(center:point,radius:radius+3000,loadedCenter:loadedCenter,loadedRadius:loadedRadius) else {
             if ready { coverageMessage = nil }
             return ready
         }
@@ -104,7 +104,7 @@ import CoreGraphics
         }
         guard Date() >= retryAfter else { return ready }
         let initial = source == nil
-        let requestedRadius = initial ? 8000 : radius + 3000
+        let requestedRadius = WorldWindow.nextRadius(desired:radius+3000,loaded:loadedRadius)
         let oldFiles = files
         let frame = source?.frame ?? region.bounds
         let sessionID = source?.id ?? region.id
@@ -222,8 +222,7 @@ import CoreGraphics
                 do {
                     let prepared = try await files.prepare(tile, request: request, sourceBounds: source.frame, previous:tiles[request.id])
                     guard token == generation, !Task.isCancelled else { return }
-                    let firstPage = tiles[request.id] == nil && !request.fine && wanted.contains(where: { $0.id == request.id && $0.pixels >= request.pixels })
-                    if wanted.contains(request) || firstPage { tiles[request.id] = prepared; changedTileIDs.insert(request.id); revision += 1 }
+                    if wanted.contains(request) { tiles[request.id] = prepared; changedTileIDs.insert(request.id); revision += 1 }
                 } catch {
                     guard token == generation, !Task.isCancelled else { return }
                     failed.insert(request.id); message = "Some detail is unavailable. The overview is still usable."

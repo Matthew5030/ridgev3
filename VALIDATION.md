@@ -183,3 +183,21 @@ Validation:
 - Installed the signed build on Matthew's M1 iPad Pro, preserving app data. Automatic launch was blocked because the iPad was locked; open Ridge manually to test it.
 
 Remaining: sustained physical-device pan/rotate/pinch, particularly while the horizon grows, plus GPU/frame-time and thermal measurements. Thousands of resident scene nodes still carry rendering cost. No pack regeneration, Cloudflare changes or server deployment were needed.
+
+## Terrain-attached names and nearby-detail priority — 11 October 2026
+
+Removed the UIKit peak-label cards and their separate 10 Hz screen-position loop. Peak names are now small, outlined, camera-facing planes in the terrain scene, with a summit dot and depth testing. Camera and text render together; their screen size is updated with the camera. Up to 60 candidates are retained across window updates, with at most 12 selected for display. Decluttering waits 200 ms after movement and prefers existing names, avoiding continual swaps while dragging. There is no per-frame delegate dispatch or UILabel layout. Names behind terrain can be occluded.
+
+The fine-detail queue previously generated 256 px pages for every missing tile before processing any requested fine geometry or larger page. Because every resident tile already has a textured background, this intermediate pass was unnecessary. The queue now frees larger unwanted allocations first, then completes nearby requested detail directly. Horizon raster work runs at utility priority and yields between pages.
+
+Initial horizon growth now publishes at 8 km, then in at most 3 km radius additions until the existing target plus retention margin is reached. Window shifts retain their camera frame and shared assets as before. This reduces the amount of work required before each visible addition; it is not a reduction of the final horizon or a guarantee of constant frame rate.
+
+Validation:
+- Source/residency suite: PASS 8,427 assertions, including near-before-far priority, downgrade-before-upgrade allocation, travel, map continuity and bounded geometry/texture allocations. Travel simulation completed 703 replacements.
+- Streaming suite: PASS 1,604 checks, including incremental radius growth reaching the requested horizon, overlap reuse, routing and cancellation.
+- Model integration: PASS 22 checks. A fresh-cache Snowdon run published 8 km at 10.62 s, 11 km at 19.68 s, 14 km at 28.12 s, 17 km at 45.50 s and the 5,192-tile horizon at 59.80 s. Other tests and simulator work ran concurrently, so these timings are not a controlled before/after speed comparison. They demonstrate intermediate publication; the cold full load still takes tens of seconds.
+- Simulator and signed iOS Debug builds passed. Final label contrast and attachment were visually checked around Yr Wyddfa; zoom controls work. Device Hub coordinate drag attempts did not visibly move the map, so they do not establish continuous-pan performance.
+
+Remaining performance work: physical-device frame-time measurements under sustained movement, distinguishing GPU/scene submission cost from additions arriving late. The full horizon still consists of thousands of independent terrain nodes, and network/cold vector preparation can still fall behind fast travel. These changes do not establish that all lag has been eliminated. Cloudflare remains untouched and no data regeneration was required.
+
+Installed and successfully launched this build on Matthew’s M1 iPad Pro (`00008103-00120919018A001E`) with the saved local-network server. App data was preserved.

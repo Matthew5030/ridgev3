@@ -7,6 +7,12 @@ import CoreGraphics
         let source=try JSONDecoder().decode(WorldSource.self,from:Data(contentsOf:root.appendingPathComponent("world.json")))
         try source.validate();var checks=0
         func check(_ condition:Bool,_ message:String)throws{checks+=1;if !condition{throw RidgeError.message(message)}}
+        let near = WorldTileRequest(id:"near",pixels:1024,fine:true)
+        let far = WorldTileRequest(id:"far",pixels:256,fine:false)
+        let down = WorldTileRequest(id:"down",pixels:256,fine:false)
+        try check(WorldWorkingSet.pending(wanted:[near,far],current:[:]).first == near,"Nearby detail does not wait for all distant pages")
+        try check(WorldWorkingSet.pending(wanted:[near,far],current:[near.id:near]).first == far,"Finished nearby detail makes way for surroundings")
+        try check(WorldWorkingSet.pending(wanted:[near,down],current:[down.id:.init(id:down.id,pixels:1024,fine:true)]).first == down,"Free old high-detail allocations before increasing residency")
         var maxMesh:Int64=0,maxTexture:Int64=0
         for distance in [200.0,1500,5000,10000,22000] {
             for tile in source.tiles {

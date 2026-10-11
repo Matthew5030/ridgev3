@@ -102,7 +102,7 @@ actor WorldLandscapeStore {
             func add(_ index: Int) {
                 let part = work[index]
                 let selectedTiles = selected.filter { $0.id.hasPrefix(part.source.id + "__") }
-                group.addTask {
+                group.addTask(priority:.utility) {
                     var result = WorldBackdrop(geometries:[:],meshes:[:]), maps: [String:WorldPreparedTile] = [:]
                     let originals = Dictionary(uniqueKeysWithValues:part.source.tiles.map { ($0.id,$0) })
                     var fetch = part.source
@@ -202,6 +202,11 @@ actor WorldLandscapeStore {
 enum WorldWindow {
     static let routingRadius = 12000.0
     static let movementThreshold = 2000.0
+    // Publish nearby additions regularly instead of making the first visible
+    // window wait for every tile out to the full horizon.
+    static func nextRadius(desired: Double, loaded: Double) -> Double {
+        loaded == 0 ? 8000 : min(desired,loaded+3000)
+    }
     static let backgroundBudget: Int64 = ProcessInfo.processInfo.physicalMemory >= 6*1024*1024*1024 ? 192*1024*1024 : 96*1024*1024
     static func radius(distance: Double, pitch: Float) -> Double {
         min(24000,max(16000,16000 + distance*0.6 + (pitch < 0.6 ? 2000 : 0)))

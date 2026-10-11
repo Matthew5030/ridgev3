@@ -25,7 +25,7 @@ struct WorldScene: UIViewRepresentable {
 
 /// The native renderer is deliberately independent of downloads. Nodes are
 /// replaced a tile at a time, and the camera survives every replacement.
-final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRendererDelegate {
+final class WorldSceneView: SCNView, UIGestureRecognizerDelegate {
     weak var model: WorldModel?
     var onTap: ((GeoPoint) -> Void)?
     var onAtlas: ((GeoBounds) -> Void)?
@@ -35,6 +35,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     private var tileIndex = WorldTileIndex(tiles:[])
     private var cameraNotification: DispatchWorkItem?
     private var labelNotification: DispatchWorkItem?
+    private let placeLabels = WorldPlaceLabels()
     private var uploadNotification: DispatchWorkItem?
     private var uploadQueue: [String] = []
     private var queuedUploads = Set<String>()
@@ -58,14 +59,9 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
     private var routeSegments: [[RoutePoint]] = []
     private var routeWaypoints: [RouteWaypoint] = []
     private var lastCommand: TerrainCameraCommand?
-    private var labels: [(MapPlace, UILabel)] = []
-    private var labelPositions: [String:SIMD3<Float>] = [:]
-    private var labelsDirty = true
-    private var lastLabelUpdate = 0.0
 
     init() {
         super.init(frame: .zero, options: nil)
-        delegate = self
         antialiasingMode = .multisampling4X; preferredFramesPerSecond = 60
         rendersContinuously = false; autoenablesDefaultLighting = false; backgroundColor = UIColor(red: 0.76, green: 0.86, blue: 0.91, alpha: 1)
         moveGesture = UIPanGestureRecognizer(target: self, action: #selector(panWorld(_:)))
@@ -176,18 +172,14 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             guard let g = model?.backdrop?.geometries[tile.id] else { continue }
             if coarse[tile.id] !== g { coarse[tile.id] = g; applied.removeValue(forKey:tile.id) }
         }
-        for (_, label) in labels { label.removeFromSuperview() }; labels = []
-        labelPositions = [:]
         let focus = model?.center ?? source.bounds.center
-        for place in source.places.filter({ $0.kind == "peak" }).sorted(by: { $0.coordinate.distance(to:focus) < $1.coordinate.distance(to:focus) }).prefix(80) {
-            var position = local(place.coordinate); position.y += 15
-            labelPositions[place.id] = position
-            let label = UILabel(); label.text = place.name; label.font = .systemFont(ofSize: 12, weight: .semibold)
-            label.textColor = UIColor(white: 0.16, alpha: 1); label.backgroundColor = UIColor(white: 1,alpha: 0.78)
-            label.layer.cornerRadius = 4; label.clipsToBounds = true; label.isUserInteractionEnabled = false
-            label.sizeToFit(); label.bounds.size.width += 12; label.bounds.size.height += 6; addSubview(label); labels.append((place,label))
-        }
+        let places = source.places.filter { $0.kind == "peak" }.sorted {
+            $0.coordinate.distance(to:focus) < $1.coordinate.distance(to:focus)
+        }.prefix(60)
+        placeLabels.reconcile(places:Array(places),scene:scene!,position:local)
+        scheduleLabels()
     }
+
     private func enqueueTerrain(_ ids: [String]) {
         for id in ids where queuedUploads.insert(id).inserted { uploadQueue.append(id) }
         guard uploadNotification == nil else { return }
@@ -214,14 +206,14 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
             count += 1
             if count >= 24 || CACurrentMediaTime()-began >= 0.004 { break }
         }
-        SCNTransaction.commit(); scheduleLabels()
+        SCNTransaction.commit(); setNeedsDisplay()
         if !uploadQueue.isEmpty {
             let next = DispatchWorkItem { [weak self] in self?.uploadTerrain() }
             uploadNotification = next
             DispatchQueue.main.asyncAfter(deadline:.now()+1.0/60,execute:next)
         }
     }
-    override func layoutSubviews() { super.layoutSubviews(); labelsDirty = true; updateLabels() }
+    override func layoutSubviews() { super.layoutSubviews(); placeLabels.scale(camera:cameraNode,viewport:bounds.size); scheduleLabels() }
     private func updateCamera(notify: Bool = true) {
         guard let source else { return }
         // The camera is independent of residency. Moving toward missing data
@@ -234,6 +226,7 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         let point = coordinate(eye)
         if source.bounds.contains(point) { eye.y = max(eye.y,height(point)+25) }
         cameraNode.simdPosition = eye; WorldCameraOrientation.aim(cameraNode, at: target)
+        placeLabels.scale(camera:cameraNode,viewport:bounds.size)
         scheduleLabels()
         guard notify else { return }
         model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
@@ -309,32 +302,17 @@ final class WorldSceneView: SCNView, UIGestureRecognizerDelegate, SCNSceneRender
         updateCamera(notify:false)
     }
     private func scheduleLabels() {
-        labelsDirty = true; setNeedsDisplay()
-        guard labelNotification == nil else { return }
+        setNeedsDisplay()
+        // Only placement/decluttering waits for the gesture to settle. The
+        // labels themselves are rendered with the terrain on every frame.
+        labelNotification?.cancel()
         let next = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.labelNotification = nil; self.lastLabelUpdate = 0; self.updateLabels()
+            self.labelNotification = nil
+            self.placeLabels.select(in:self,focus:self.target)
         }
         labelNotification = next
-        DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:next)
-    }
-    nonisolated func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
-        // Project only after SceneKit has adopted the new camera transform.
-        DispatchQueue.main.async { [weak self] in self?.updateLabels() }
-    }
-    private func updateLabels() {
-        guard scene != nil, labelsDirty, CACurrentMediaTime()-lastLabelUpdate >= 0.1 else { return }
-        labelsDirty = false; lastLabelUpdate = CACurrentMediaTime()
-        var occupied: [CGRect] = []
-        for (place,label) in labels.sorted(by: {
-            simd_length_squared((labelPositions[$0.0.id] ?? .zero)-target) < simd_length_squared((labelPositions[$1.0.id] ?? .zero)-target)
-        }) {
-            guard let p = labelPositions[place.id] else { continue }
-            let screen = projectPoint(SCNVector3(p)); let frame = CGRect(x: CGFloat(screen.x)-label.bounds.width/2,y: CGFloat(screen.y)-label.bounds.height-5,width:label.bounds.width,height:label.bounds.height)
-            let visible = screen.z > 0 && screen.z < 1 && bounds.insetBy(dx: 12,dy: 12).contains(frame) && !occupied.contains(where: { $0.intersects(frame.insetBy(dx:-8,dy:-6)) }) && occupied.count < 12
-            if label.isHidden == visible { label.isHidden = !visible }
-            if visible { if label.frame != frame { label.frame = frame }; occupied.append(frame) }
-        }
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.2,execute:next)
     }
     private func updateRouteOverlay() {
         guard let source, let device = device ?? MTLCreateSystemDefaultDevice() else { return }

@@ -121,15 +121,19 @@ enum WorldWorkingSet {
             return WorldTileRequest(id:tile.id,pixels:pixels,fine:fine)
         }
     }
-    /// Fill the background first. Reduce old allocations before admitting new
-    /// high-resolution pages, so retaining the old image never doubles residency.
+    /// Every tile already has a textured horizon fallback. Retire oversized
+    /// pages first, then finish the nearest requested detail before spending
+    /// time on distant pages. Do not rasterize a throwaway 256px intermediate.
     static func pending(wanted: [WorldTileRequest], current: [String: WorldTileRequest]) -> [WorldTileRequest] {
-        let missing=wanted.filter { current[$0.id] == nil }.map { WorldTileRequest(id:$0.id,pixels:min(256,$0.pixels),fine:false) }
-        let changed=wanted.filter { current[$0.id] != nil && current[$0.id] != $0 }
-        let down=changed.filter { current[$0.id]!.pixels > $0.pixels || (current[$0.id]!.fine && !$0.fine) }
-        let ids=Set(down.map(\.id))
-        return missing + down + changed.filter { !ids.contains($0.id) }
+        let changed = wanted.filter { current[$0.id] != $0 }
+        let down = changed.filter {
+            guard let old = current[$0.id] else { return false }
+            return old.pixels > $0.pixels || (old.fine && !$0.fine)
+        }
+        let ids = Set(down.map(\.id))
+        return down + changed.filter { !ids.contains($0.id) }
     }
+
 }
 
 actor WorldSourceStore {
@@ -227,6 +231,7 @@ actor WorldSourceStore {
         for tile in source.tiles {
             try Task.checkCancellation()
             result[tile.id] = try await prepare(tile, request: .init(id:tile.id,pixels:pixels,fine:false), sourceBounds:source.bounds)
+            await Task.yield() // Let nearby-detail requests interleave with horizon work.
         }
         return result
     }
