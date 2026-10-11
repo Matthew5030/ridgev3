@@ -3,6 +3,21 @@ import Foundation
 actor RegionTransferAudit {
     var streamedBeforeFinalIndex=false
     var bytes:Int64=0
+    var tileEvents=0,maximumTiles=0
+    var sawActive=false,validTiles=true
+    var completedTiles=Set<GeoBounds>()
+    var previousSavedCount=0
+    var sawPreviousSection=false
+    func recordTiles(_ state:WorldRegionTileProgress) {
+        tileEvents+=1;maximumTiles=max(maximumTiles,state.tiles.count)
+        sawActive = sawActive || !state.active.isEmpty
+        let tiles=Set(state.tiles)
+        validTiles = validTiles && state.completed.isSubset(of:tiles) && state.active.isSubset(of:tiles)
+            && state.completed.isDisjoint(with:state.active) && state.savedTileCount>=previousSavedCount
+        completedTiles.formUnion(state.completed)
+        previousSavedCount=state.savedTileCount
+        sawPreviousSection = sawPreviousSection || (state.savedTileCount>0 && !state.savedFills.isEmpty)
+    }
     func record(_ value:Int64,saved:Int,finalIndex:URL) {
         bytes=value
         if saved==0,value>0,!FileManager.default.fileExists(atPath:finalIndex.path) { streamedBeforeFinalIndex=true }
@@ -98,6 +113,7 @@ actor RegionTransferAudit {
         try check(model.regionPlan?.isEstimate==true && !model.checkingDownload && model.source==nil,"Model presents the download immediately without rendering or preflight")
         model.downloadRegionPack()
         try await wait { model.isSavingOffline }
+        try check(model.regionTileProgress.tiles.isEmpty && model.regionTileProgress.active.isEmpty,"Finished animation hands over to saved region shading")
         try check(model.regionComplete && model.downloadError==nil,model.downloadError ?? "Region did not finish")
         try check(model.downloadedBytes==remaining.bytes,"Estimated offer still transfers only missing bytes")
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
@@ -135,17 +151,24 @@ actor RegionTransferAudit {
         let lastAddress=root.appendingPathComponent(streamed.parts.last!.region.path).absoluteString
         let lastIndex=streamingCache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(lastAddress.utf8))+".index")
         let audit=RegionTransferAudit()
-        try await streamingStore.download(streamed) { bytes,saved in await audit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        try await streamingStore.download(streamed,tileProgress: { await audit.recordTiles($0) }) { bytes,saved in await audit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        let animation=await (audit.tileEvents,audit.maximumTiles,audit.sawActive,audit.validTiles,audit.completedTiles,audit.sawPreviousSection)
+        try check(animation.0>2 && animation.1<=256 && animation.2,"Real transfers emit bounded live tile animation")
+        try check(animation.3 && animation.4.count==plan.tileCount,"Every tile completes geographically across sections without active/completed overlap")
+        try check(animation.5,"Completed sections remain as compact static fills when the next section starts")
         let beforeFinal=await audit.streamedBeforeFinalIndex,actual=await audit.bytes
         try check(beforeFinal,"Terrain starts transferring before the remaining section indexes are fetched")
         try check(actual==plan.bytes && actual<=streamed.bytes,"Reported transfer is actual unique bytes, within the catalogue upper estimate")
         let reuseAudit=RegionTransferAudit()
-        try await streamingStore.download(streamed) { bytes,saved in await reuseAudit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        try await streamingStore.download(streamed,tileProgress: { await reuseAudit.recordTiles($0) }) { bytes,saved in await reuseAudit.record(bytes,saved:saved,finalIndex:lastIndex) }
+        let reuseAnimation=await (reuseAudit.sawActive,reuseAudit.completedTiles,reuseAudit.tileEvents)
+        try check(!reuseAnimation.0 && reuseAnimation.1.count==plan.tileCount && reuseAnimation.2==plan.parts.count,"Reused tiles appear saved immediately without fake download pulses")
         let reusedBytes=await reuseAudit.bytes
         try check(reusedBytes==0,"Repeating a fast-plan download transfers zero saved asset bytes")
         model.offerRegionDownload(fixture);model.pauseRegionDownload()
         try await Task.sleep(nanoseconds:100_000_000)
         try check(!model.checkingDownload && !model.isSavingOffline && model.regionPlan==nil && model.downloadError?.hasPrefix("Paused") == true,"Cancelled region check cannot publish stale results")
+        try check(model.regionTileProgress.active.isEmpty,"Paused download leaves no active tile pulses")
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==plan.tileCount,"Pausing preserves completed receipts")
         model.cancelDownload()
         try check(model.downloadRegion==nil && model.regionPlan==nil && !model.regionComplete,"Switching to custom clears regional selection")

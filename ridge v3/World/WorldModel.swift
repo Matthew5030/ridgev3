@@ -24,6 +24,7 @@ import CoreGraphics
     var activeDownloadTiles = Set<GeoBounds>()
     var downloadPlan: WorldDownloadPlan?
     var downloadRegion: WorldRegionPack?
+    var regionTileProgress = WorldRegionTileProgress()
     var regionPlan: WorldRegionDownloadPlan?
     var regionChecked = 0
     var regionTotal = 0
@@ -449,14 +450,21 @@ import CoreGraphics
         guard ticket==downloadGeneration else { return }
         isConnectingDownload=false;downloadedBytes=bytes;regionSaved=saved
     }
+    private func receiveRegionTiles(_ value:WorldRegionTileProgress,ticket:Int) {
+        guard ticket==downloadGeneration,isSavingOffline else { return }
+        regionTileProgress=value
+    }
     func downloadRegionPack() {
         guard let plan=regionPlan,!isSavingOffline else { return }
         downloadGeneration+=1;let ticket=downloadGeneration
         isSavingOffline=true;isConnectingDownload=plan.bytes>0;downloadedBytes=0;downloadError=nil;regionSaved=0
+        regionTileProgress=WorldRegionTileProgress()
         let downloads=WorldRegionDownloadStore(cacheURL:cacheURL)
         downloadTask=Task { [weak self] in
             do {
-                try await downloads.download(plan) { [weak self] bytes,saved in
+                try await downloads.download(plan,tileProgress: { [weak self] value in
+                    await self?.receiveRegionTiles(value,ticket:ticket)
+                }) { [weak self] bytes,saved in
                     await self?.receiveRegionProgress(bytes,saved:saved,ticket:ticket)
                 }
                 try Task.checkCancellation()
@@ -464,9 +472,11 @@ import CoreGraphics
                 await reloadOfflineCoverage()
                 guard ticket==downloadGeneration,!Task.isCancelled else { return }
                 isSavingOffline=false;isConnectingDownload=false;regionComplete=true;downloadTask=nil
+                regionTileProgress=WorldRegionTileProgress()
             } catch {
                 guard let self,ticket==downloadGeneration,!Task.isCancelled else { return }
                 isSavingOffline=false;isConnectingDownload=false;downloadTask=nil;regionPlan=nil
+                regionTileProgress.active=[]
                 downloadError=error.localizedDescription+" Completed files are kept. Check the remaining download to continue."
                 await reloadOfflineCoverage()
             }
@@ -476,11 +486,13 @@ import CoreGraphics
         guard downloadRegion != nil else { return }
         downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
         isSavingOffline=false;isConnectingDownload=false;checkingDownload=false;regionPlan=nil
+        regionTileProgress.active=[]
         downloadError="Paused. Completed files are kept. Check the remaining download to continue."
         refreshOfflineCoverage()
     }
     func cancelDownload() {
         let wasSaving=isSavingOffline
+        regionTileProgress=WorldRegionTileProgress()
         downloadRegion=nil;regionPlan=nil;regionComplete=false;regionChecked=0;regionSaved=0;regionTotal=0
         downloadGeneration+=1;downloadTask?.cancel();downloadTask=nil
         drawingDownload=false;downloadSelection=nil;completedDownloadTiles=[];activeDownloadTiles=[]

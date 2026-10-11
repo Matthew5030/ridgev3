@@ -35,7 +35,7 @@ struct WorldRegionDownloadCard: View {
                     if world.isConnectingDownload { ProgressView("Connecting to map server…") }
                     else {
                         if plan.isEstimate {
-                            ProgressView(value:Double(world.regionSaved),total:Double(max(1,plan.parts.count)))
+                            ProgressView(value:Double(world.regionTileProgress.savedTileCount+world.regionTileProgress.completed.count),total:Double(max(1,plan.tileCount)))
                             Text("\(RidgeTheme.bytes(world.downloadedBytes)) downloaded").font(.headline.monospacedDigit())
                         } else {
                             ProgressView(value:Double(world.downloadedBytes),total:Double(max(1,plan.bytes)))
@@ -43,6 +43,7 @@ struct WorldRegionDownloadCard: View {
                         }
                     }
                     Text("\(world.regionSaved) of \(plan.parts.count) sections saved").font(.subheadline.monospacedDigit())
+                    Text("Amber tiles are downloading. Green tiles are saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     Text("Keep Ridge open. The screen will stay awake while downloading. You can pause and continue later.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     Button("Pause download") { world.pauseRegionDownload() }.buttonStyle(.bordered)
                 } else if let plan=world.regionPlan,saved?.downloadState != .saved {

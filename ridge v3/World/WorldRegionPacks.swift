@@ -122,6 +122,46 @@ struct WorldRegionDownloadPlan: Sendable {
     }
 }
 
+/// Animate only the current section (at most 256 tiles). Previous sections
+/// become merged static fills, preserving holes without retaining every tile.
+struct WorldRegionTileProgress: Sendable {
+    var tiles: [GeoBounds] = []
+    var completed = Set<GeoBounds>()
+    var active = Set<GeoBounds>()
+    var savedFills: [GeoBounds] = []
+    var savedTileCount = 0
+}
+
+private actor WorldRegionTileReporter {
+    private let source: WorldSource
+    private var state: WorldRegionTileProgress
+    private var lastSent = Date.distantPast
+    private let report: @Sendable (WorldRegionTileProgress) async -> Void
+    init(source: WorldSource, savedFills: [GeoBounds], savedTileCount: Int,
+         report: @escaping @Sendable (WorldRegionTileProgress) async -> Void) {
+        self.source=source; self.report=report
+        state=WorldRegionTileProgress(tiles:source.tiles.map { $0.mesh.bounds },
+                                      savedFills:savedFills,savedTileCount:savedTileCount)
+    }
+    func update(verified: Set<String>, active: Set<String>) async {
+        guard !Task.isCancelled else { return }
+        var done=Set<GeoBounds>(),loading=Set<GeoBounds>()
+        for tile in source.tiles {
+            let own=Set([tile.map.sha256,tile.mesh.sha256]+[tile.background?.sha256].compactMap { $0 })
+            let required=own.union([source.overview.sha256,source.graph.sha256])
+            if required.isSubset(of:verified) { done.insert(tile.mesh.bounds) }
+            else if !own.isDisjoint(with:active) || own.isSubset(of:verified) { loading.insert(tile.mesh.bounds) }
+        }
+        // Coalesce very fast cached/local transfers; always deliver the first
+        // and final states, including a fully reused section with no transfers.
+        let now=Date(),finished=done.count==state.tiles.count
+        guard finished || now.timeIntervalSince(lastSent)>=0.08 else { return }
+        guard lastSent == .distantPast || done != state.completed || loading != state.active else { return }
+        state.completed=done;state.active=loading;lastSent=now
+        await report(state)
+    }
+}
+
 actor WorldRegionDownloadStore {
     private let cache:URL
     init(cacheURL:URL? = nil) { cache=WorldOfflineCoverage.cache(cacheURL) }
@@ -153,12 +193,13 @@ actor WorldRegionDownloadStore {
         }
         return .init(pack:pack,root:root,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },totalBytes:total,tileCount:tiles)
     }
-    func download(_ plan:WorldRegionDownloadPlan,progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
+    func download(_ plan:WorldRegionDownloadPlan,tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void = { _ in },progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
         // Reserve headroom for temporary files. A large offline save is a disk
         // operation; it must never allocate or prepare the whole region in RAM.
         if !plan.isEstimate,plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
            capacity < plan.bytes+256*1024*1024 { throw RidgeError.message("There isn’t enough free space for this pack. Free some storage and try again.") }
         var completed:Int64=0,checkedConnection=false
+        var savedFills:[GeoBounds]=[],savedTileCount=0
         for (index,part) in plan.parts.enumerated() {
             try Task.checkCancellation()
             let (files,source)=try await open(part.region,root:plan.root)
@@ -172,9 +213,14 @@ actor WorldRegionDownloadStore {
             } else { missing=part.missingBytes }
             if missing>0 && !checkedConnection { try await files.checkDownloadConnection();checkedConnection=true }
             let base=completed
-            try await files.pin(source.tiles,source:source,countCachedInProgress:false,coverageID:source.id,progress: { bytes in
+            let reporter=WorldRegionTileReporter(source:source,savedFills:savedFills,savedTileCount:savedTileCount,report:tileProgress)
+            try await files.pin(source.tiles,source:source,countCachedInProgress:false,coverageID:source.id,assetProgress: { verified,active in
+                await reporter.update(verified:verified,active:active)
+            },progress: { bytes in
                 await progress(plan.isEstimate ? base+bytes : min(plan.bytes,base+bytes),index)
             })
+            savedFills=WorldOfflineCoverage.displayBounds(savedFills+source.tiles.map { $0.mesh.bounds })
+            savedTileCount+=source.tiles.count
             completed+=missing
             await progress(plan.isEstimate ? completed : min(plan.bytes,completed),index+1)
         }

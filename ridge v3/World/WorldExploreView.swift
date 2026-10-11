@@ -40,6 +40,11 @@ struct WorldExploreView: View {
                 OfflineAtlasView(atlas:store.atlas,entries:[],savedEntries:[],focus:focus,selecting:false,
                     selectedBounds:.constant(nil),draggingSelection:.constant(false),admittedBounds:nil,selectionAllowed:false,
                     requiredBounds:nil,route:[],routeSegments:[],onViewport:viewportChanged,onWorldTap:visit,
+                    worldDownloadTiles:world.regionTileProgress.tiles,
+                    worldCompletedTiles:world.regionTileProgress.completed,
+                    worldActiveTiles:world.regionTileProgress.active,
+                    worldDownloading:world.isSavingOffline,
+                    worldSavedDownloadFills:world.regionTileProgress.savedFills,
                     worldRegions:regionMaps,selectedWorldRegion:world.downloadRegion?.id,onRegionTap:selectRegion)
                     .ignoresSafeArea(edges: .bottom)
             }

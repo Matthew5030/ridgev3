@@ -447,6 +447,7 @@ struct OfflineAtlasView: View {
     var worldCompletedTiles: Set<GeoBounds> = []
     var worldActiveTiles: Set<GeoBounds> = []
     var worldDownloading = false
+    var worldSavedDownloadFills: [GeoBounds] = []
     var onSelectionFinished: ((GeoBounds) -> Void)? = nil
     var worldRegions:[WorldRegionMapOverlay] = []
     var selectedWorldRegion:String? = nil
@@ -510,6 +511,12 @@ struct OfflineAtlasView: View {
                 if worldRegions.isEmpty,let atlas { drawPlaces(atlas, context: &context, size: size) }
                 drawWorldRegions(context:&context,size:size)
                 drawSelection(context: &context, size: size)
+                for bounds in worldSavedDownloadFills {
+                    let rect=rectangle(bounds,size:size)
+                    if CGRect(origin:.zero,size:size).intersects(rect) {
+                        context.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.30)))
+                    }
+                }
                 }
                 TimelineView(.animation(minimumInterval:1.0/15,paused:!worldDownloading || reduceMotion)) { timeline in
                     Canvas { context,size in
