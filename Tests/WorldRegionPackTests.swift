@@ -63,13 +63,41 @@ actor RegionTransferAudit {
         try check(upgraded.revision==catalog.revision && upgraded.sources.count==catalog.sources.count,"Legacy cached coverage refreshes instead of remaining permanently unavailable")
         let library=try WorldRegionPack.loadLibrary(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
         let packs=library.areas
-        try check((300...450).contains(packs.count),"Walking-map areas cover the country")
+        try check(packs.count==84,"Reviewed coastal blocks are bundled in the app")
         let wholeParks=library.parks
         try check(wholeParks.count==15,"All fifteen national parks remain grouped downloads")
         for whole in wholeParks {
             try check(whole.id==whole.parkID && !whole.cells.isEmpty,"Park download has an independent footprint")
             let ids=whole.sources(in:catalog).map(\.id)
             try check(Set(ids).count==ids.count,"Park download does not repeat shared source sections")
+        }
+        let baselineURL=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Tools/region_zones/baseline-download-zones.json")
+        let baseline=try WorldRegionPack.loadLibrary(url:baselineURL)
+        for old in baseline.parks {
+            let current=wholeParks.first { $0.id==old.id }!
+            let downloads=Set((current.downloadCells ?? current.cells).map(\.id))
+            try check(Set(old.cells.map(\.id)).isSubset(of:downloads),"Every original park edge section remains included")
+            try check(Set(current.cells.map(\.id)).isSubset(of:downloads),"The entire displayed block belongs to its download")
+        }
+        // Reject malformed download memberships rather than silently dropping
+        // visible terrain or requesting sections outside the known source grid.
+        let indexURL=URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json")
+        let originalIndex=try JSONSerialization.jsonObject(with:Data(contentsOf:indexURL)) as! [String:Any]
+        let invalidURL=cache.appendingPathComponent("invalid-zones.json")
+        for mutation in 0..<4 {
+            var object=originalIndex,zones=object["regions"] as! [[String:Any]]
+            let index=zones.firstIndex { $0["downloadCells"] != nil }!
+            var downloads=zones[index]["downloadCells"] as! [[String:Any]]
+            switch mutation {
+            case 0: downloads=[]
+            case 1: downloads.append(downloads[0])
+            case 2: downloads[0]["id"]="world-unknown"
+            default: downloads[0]["bounds"]=["minLatitude":0,"maxLatitude":1,"minLongitude":0,"maxLongitude":1]
+            }
+            zones[index]["downloadCells"]=downloads;object["regions"]=zones
+            try JSONSerialization.data(withJSONObject:object).write(to:invalidURL)
+            do { _=try WorldRegionPack.loadLibrary(url:invalidURL);throw RidgeError.message("Invalid download membership accepted") }
+            catch { try check(error.localizedDescription=="A region has invalid download sections.","Invalid park membership is rejected") }
         }
         let overlays=packs.map { WorldRegionMapOverlay(pack:$0,catalog:catalog) }
         for overlay in overlays {
@@ -100,8 +128,8 @@ actor RegionTransferAudit {
         try check(WorldRegionMapOverlay.at(.init(latitude:0,longitude:0),in:overlays)==nil,"Tapping outside UK packs selects nothing")
         let emptyOverlay=WorldRegionMapOverlay(pack:packs[0],catalog:nil)
         try check(emptyOverlay.available.isEmpty && !emptyOverlay.fills.isEmpty,"Missing catalogue cannot invent downloadable coverage")
-        let members=packs.flatMap { $0.sources(in:catalog).map(\.id) }
-        try check(Set(members).count==members.count && Set(members)==Set(catalog.sources.map(\.id)),"Every current source assigned exactly once")
+        let members=packs.flatMap { $0.displaySources(in:catalog).map(\.id) }
+        try check(Set(members).count==members.count && Set(members)==Set(catalog.sources.map(\.id)),"Every current source has exactly one display owner")
         let cells=packs.flatMap(\.cells).map(\.id)
         try check(Set(cells).count==cells.count,"Preset map cells do not overlap")
         struct OriginalGrid:Decodable { struct Region:Decodable { let cells:[WorldRegionPack.Cell] };let regions:[Region] }
@@ -113,8 +141,8 @@ actor RegionTransferAudit {
             } }
         })
         try check(Set(cells)==expectedCells,"Subdivision retains all source sections, including unpublished areas")
-        try check(Set(packs.map(\.id)).count==packs.count,"Every smaller pack has a stable unique ID")
-        try check(packs.filter { $0.id.hasPrefix("sheet-discoverer-") }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
+        try check(Set(packs.map(\.id)).count==packs.count,"Every coastal block has a stable unique ID")
+        try check(packs.filter { ["area-fermanagh-sperrins","area-antrim-derry","area-mournes-down"].contains($0.id) }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
         let northern=packs.filter { $0.bounds.center.latitude>56 && !$0.sources(in:catalog).isEmpty }
         try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Partial Scotland coverage is distinguishable from a full region")
         let completeSources=catalog.sources.filter { $0.tileCount==256 }
@@ -124,6 +152,8 @@ actor RegionTransferAudit {
         let started=Date()
         let eryri=packs.first { $0.contains(.init(latitude:53.0685,longitude: -4.0763)) }!
         let allEryri=wholeParks.first { $0.id=="park-eryri" }!
+        let expandedPlan=WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:published,root:root)!
+        try check(expandedPlan.archive==nil && expandedPlan.parts.count>57,"The larger Eryri block cannot reuse the smaller pilot archive as a complete download")
         try check(WorldRegionDownloadPlan.estimate(pack:allEryri,catalog:catalog,root:root) != nil,"Eryri remains downloadable despite small coverage gaps")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.0685,longitude: -4.0763),in:overlays)?.pack.parkID=="park-eryri","Yr Wyddfa selects an Eryri park area")
         try check(WorldRegionMapOverlay.at(.init(latitude:53.30,longitude: -4.35),in:overlays)?.id != eryri.id,"Anglesey is a separate map area")
@@ -221,6 +251,13 @@ actor RegionTransferAudit {
         try check(downloadedPartial.downloadState == .saved && downloadedPartial.statusText.contains("gaps remain") && !downloadedPartial.missingTerrain.isEmpty,"Finished partial download preserves gap shading and explanation")
         let receipts=WorldOfflineCoverage.savedBounds(at:cache)
         let overlapping=WorldRegionPack(id:"overlapping-park",name:"Overlapping park",subtitle:"",landmark:"",cells:fixture.cells)
+        let sharedEdge=WorldRegionPack(id:"shared-edge",name:"Shared edge",subtitle:"",landmark:"",cells:[fixture.cells[0]],downloadCells:fixture.cells)
+        let edgePlan=try await store.plan(pack:sharedEdge,catalog:catalog,root:root)
+        try check(edgePlan.parts.count==2 && edgePlan.bytes==0,"Park edge sections share the existing cache without redownloading")
+        try check(sharedEdge.displaySources(in:catalog).count==1 && sharedEdge.sources(in:catalog).count==2,"Map ownership stays separate from shared download membership")
+        let edgeOverlay=WorldRegionMapOverlay.make(packs:[sharedEdge],catalog:catalog,offline:receipts)[0]
+        try check(edgeOverlay.downloadState == .saved && edgeOverlay.savedTileCount==plan.tileCount,"Shared edge terrain contributes to download completion")
+        try check(edgeOverlay.savedPoint.map { sharedEdge.contains($0) } == true,"Explore starts inside the visible selected area")
         let overlappingStates=WorldRegionMapOverlay.make(packs:[fixture,overlapping],catalog:catalog,offline:receipts)
         try check(overlappingStates.allSatisfy { $0.savedTileCount==plan.tileCount && $0.downloadState == .saved },"Shared files update saved state in both area and park selections")
         let savedOverlay=WorldRegionMapOverlay.make(packs:[fixture],catalog:catalog,offline:receipts+receipts)[0]

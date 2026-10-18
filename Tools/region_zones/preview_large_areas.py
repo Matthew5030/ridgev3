@@ -197,7 +197,7 @@ def main():
     p.add_argument('--source-root',type=Path,required=True)
     p.add_argument('--output',type=Path,default=ROOT/'Artifacts/larger-regions-preview')
     a=p.parse_args()
-    current=json.loads((ROOT/'ridge v3/Resources/uk-download-zones.json').read_text())
+    current=json.loads((ROOT/'Tools/region_zones/baseline-download-zones.json').read_text())
     config=json.loads(Path(__file__).with_name('large-area-anchors.json').read_text())
     result=draft(current,config)
     add_map_footprints(result,a.source_root,ROOT/'ridge v3/Resources/RidgeData.bundle/atlas.json')

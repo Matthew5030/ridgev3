@@ -1,6 +1,8 @@
 # Larger download areas — revised boundary proposal, 18 October 2026
 
-This is a **preview**, not a replacement app index or a pack publication.
+The reviewed 84-area layout is now exported to the iOS app through
+`install_large_areas.py`. This folder remains its comparison preview; no new
+regional pack publication has been performed.
 Open `Artifacts/larger-regions-preview/index.html` directly, or serve that folder
 locally. The page is self-contained and has no external map/API dependencies.
 It compares current and proposed boundaries with search, selection, pan/zoom,
@@ -38,12 +40,13 @@ its neighbour, even though their selection polygons do not overlap. Consumers
 must reuse/deduplicate those shared source IDs. None of the original park
 coverage has been dropped to make the outlines simpler.
 
-**Do not copy this draft into the app unchanged.** The current loader assumes
-unique `cells` and does not consume this separate download membership yet.
-Integrating the accepted proposal needs loader, selection, cache-reuse and
-coverage checks. Source packs, catalogue, installed apps and user downloads
-have not changed. Existing Eryri pilot downloads remain intact; this larger
-Eryri proposal is a different membership and is not the tested pilot archive.
+The app now consumes separate display and download membership. The exporter
+strips draft metadata and frozen coverage flags before writing the app resource.
+Native tests verify full park coverage, invalid memberships, cache reuse,
+selection and saved-state counting. The larger Eryri membership deliberately
+does not match the smaller pilot archive; it downloads existing section bundles
+until a new matching regional archive is published. Terrain files and server
+catalogues have not been rebuilt by this integration.
 
 ## Size and coverage
 
@@ -110,8 +113,8 @@ not silently move their boundaries.
 catalogue hashes, checks the published source metadata against its masks and
 pack-file lengths, and traces gaps back to the frozen preparation plan. Its
 companion `REPORT.txt` lists regional coverage and follow-up work. This audit
-does not itself rebuild maps, integrate the draft into iOS, or certify every
-mesh payload. Bulk regional packaging remains after coverage remediation.
+does not itself rebuild maps or certify every mesh payload. The subsequent
+iOS integration changes selection and download membership only. Bulk regional packaging remains after coverage remediation.
 
 The completed local audit found no source-manifest hash discrepancies or
 published metadata/mask/pack-length problems. All 589,443 selected tiles are

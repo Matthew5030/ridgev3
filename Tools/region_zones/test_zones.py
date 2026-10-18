@@ -53,23 +53,38 @@ class DownloadZonesTests(unittest.TestCase):
 
     def test_simple_areas_and_independent_park_downloads(self):
         self.assertEqual(len(self.index['boundarySources']), 15)
-        self.assertEqual(len(self.index['parks']), 15)
+        parks=[a for a in self.index['regions'] if a.get('parkID')==a['id']]
+        self.assertEqual(len(parks),15)
+        self.assertEqual(self.index['parks'],[])
         for source in self.index['boundarySources']:
             self.assertEqual(source['source'], 'OpenStreetMap')
             self.assertEqual(len(source['sha256']), 64)
         areas = self.index['regions']
-        self.assertTrue(300 < len(areas) < 450)
+        self.assertEqual(len(areas),84)
         self.assertEqual(len({z['name'] for z in areas}),len(areas))
         self.assertEqual(len({z['mapLabel'] for z in areas}),len(areas))
         for zone in areas:
             self.assertLessEqual(len(zone['mapLabel'].split('\n')),2)
-            self.assertTrue(zone['id'].startswith('sheet-'))
-        self.assertTrue(self.index['sheetReference']['source'].startswith('https://'))
+            self.assertTrue(zone['id'].startswith(('area-','park-')))
         ids = {c['id'] for z in areas for c in z['cells']}
-        for park in self.index['parks']:
+        for park in parks:
             self.assertEqual(park['id'],park['parkID'])
-            self.assertTrue(set(c['id'] for c in park['cells']).issubset(ids))
+            self.assertTrue(set(c['id'] for c in park['downloadCells']).issubset(ids))
+            self.assertTrue(set(c['id'] for c in park['cells']).issubset(c['id'] for c in park['downloadCells']))
             self.assertEqual(len(park['cells']),len({c['id'] for c in park['cells']}))
+
+    def test_app_ships_the_reviewed_layout_without_frozen_coverage_flags(self):
+        import hashlib
+        raw=(ROOT/'Artifacts/larger-regions-preview/regions.json').read_bytes()
+        preview=json.loads(raw)
+        self.assertEqual(self.index['layoutSHA256'],hashlib.sha256(raw).hexdigest())
+        self.assertNotIn('draft',self.index)
+        for app,proposed in zip(self.index['regions'],preview['regions']):
+            for key in ['id','cells','mapShapes','mapLabel','labelBounds','downloadCells']:
+                self.assertEqual(app.get(key),proposed.get(key),app['name'])
+            self.assertNotIn('stats',app)
+            self.assertNotIn('missingShapes',app)
+            self.assertNotIn('Draft',app['subtitle'])
 
     def test_recognisable_walking_areas_keep_key_mountains_together(self):
         from shapely.geometry import Point
@@ -79,8 +94,8 @@ class DownloadZonesTests(unittest.TestCase):
                     return z
         snowdon=area_at(-4.0763,53.0685)
         self.assertEqual(snowdon['id'],area_at(-3.9966,53.1143)['id']) # Tryfan
-        self.assertIn('Snowdon',snowdon['name'])
-        self.assertIn('Dark Peak',area_at(-1.873,53.384)['name']) # Kinder Scout
+        self.assertEqual('Eryri',snowdon['name'])
+        self.assertEqual('Peak District',area_at(-1.873,53.384)['name']) # Kinder Scout
         self.assertNotEqual(area_at(-4.35,53.30)['id'],snowdon['id']) # Anglesey
 
 

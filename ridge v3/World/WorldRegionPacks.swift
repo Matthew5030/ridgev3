@@ -1,8 +1,8 @@
 import Foundation
 import CoreGraphics
 
-/// Named groups of the existing UK grid. Each published source belongs to one
-/// group; regional downloads use exactly the same assets as custom-area saves.
+/// Named, non-overlapping map areas. Park downloads may share boundary
+/// sections; the content-addressed cache reuses those files across selections.
 struct WorldRegionPack: Identifiable, Sendable {
     struct Cell: Decodable, Sendable { let id: String; let bounds: GeoBounds }
     /// Geographic display footprint, separate from immutable download files.
@@ -78,6 +78,7 @@ struct WorldRegionPack: Identifiable, Sendable {
     let subtitle: String
     let landmark: String
     let cells: [Cell]
+    var downloadCells:[Cell]? = nil
     var mapShapes:[MapShape]? = nil
     var labelBounds:GeoBounds? = nil
     var mapLabel: String? = nil
@@ -114,6 +115,12 @@ struct WorldRegionPack: Identifiable, Sendable {
                   maxLatitude:cells.map { $0.bounds.maxLatitude }.max()!,maxLongitude:cells.map { $0.bounds.maxLongitude }.max()!)
     }
     func sources(in catalog: WorldCatalog) -> [WorldCatalog.Region] {
+        matchingSources(downloadCells ?? cells,in:catalog)
+    }
+    func displaySources(in catalog: WorldCatalog) -> [WorldCatalog.Region] {
+        matchingSources(cells,in:catalog)
+    }
+    private func matchingSources(_ cells:[Cell],in catalog:WorldCatalog)->[WorldCatalog.Region] {
         let ids=Set(cells.map(\.id))
         // Published zones follow source sections exactly. Older/custom callers
         // may still supply broad cells, so retain their geographic matching.
@@ -135,7 +142,7 @@ struct WorldRegionPack: Identifiable, Sendable {
     /// render time so coastlines and water holes retain their exact footprint.
     func missingTerrain(in catalog:WorldCatalog?)->[GeoBounds] {
         guard let catalog else { return [] }
-        let sources=sources(in:catalog),ids=Set(sources.map(\.id))
+        let sources=displaySources(in:catalog),ids=Set(sources.map(\.id))
         var gaps=cells.filter { cell in
             !ids.contains(cell.id) && !sources.contains { cell.bounds.contains($0.bounds.center) }
         }.map(\.bounds)
@@ -145,7 +152,7 @@ struct WorldRegionPack: Identifiable, Sendable {
     }
     func terrainAvailability(in catalog:WorldCatalog?)->TerrainAvailability {
         guard let catalog else { return .unknown }
-        let sources=sources(in:catalog)
+        let sources=displaySources(in:catalog)
         guard !sources.isEmpty else { return .unavailable }
         let gaps=missingTerrain(in:catalog)
         if !gaps.isEmpty,let shapes=mapShapes {
@@ -163,7 +170,7 @@ struct WorldRegionPack: Identifiable, Sendable {
     static func loadLibrary(url: URL? = nil) throws -> Library {
         struct Zone: Decodable {
             let id:String;let name:String;let subtitle:String;let mapLabel:String
-            let parkID:String?;let parkName:String?;let artwork:String?;let cells:[Cell]
+            let parkID:String?;let parkName:String?;let artwork:String?;let cells:[Cell];let downloadCells:[Cell]?
             let mapShapes:[MapShape]?;let labelBounds:GeoBounds?
         }
         struct Index: Decodable { let schemaVersion:Int;let regions:[Zone];let parks:[Zone] }
@@ -176,14 +183,26 @@ struct WorldRegionPack: Identifiable, Sendable {
         guard index.schemaVersion==3,!index.regions.isEmpty,
               Set(index.regions.map(\.id)).count==index.regions.count,
               Set(cells.map(\.id)).count==cells.count else { throw RidgeError.message("Invalid download zones.") }
+        let cellBounds=Dictionary(uniqueKeysWithValues:cells.map { ($0.id,$0.bounds) })
         func convert(_ zone:Zone) throws -> WorldRegionPack {
             guard !zone.cells.isEmpty,Set(zone.cells.map(\.id)).count==zone.cells.count,zone.cells.allSatisfy({ $0.bounds.isValid }) else {
                 throw RidgeError.message("A region has an invalid map boundary.")
             }
+            if let downloads=zone.downloadCells {
+                guard Set(downloads.map(\.id)).count==downloads.count,
+                      Set(zone.cells.map(\.id)).isSubset(of:Set(downloads.map(\.id))),
+                      downloads.allSatisfy({ cellBounds[$0.id] == $0.bounds }) else {
+                    throw RidgeError.message("A region has invalid download sections.")
+                }
+            }
             return Self(id:zone.id,name:zone.name,subtitle:zone.subtitle,landmark:zone.parkName ?? zone.name,
-                        cells:zone.cells,mapShapes:zone.mapShapes,labelBounds:zone.labelBounds,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
+                        cells:zone.cells,downloadCells:zone.downloadCells,mapShapes:zone.mapShapes,labelBounds:zone.labelBounds,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
         }
-        return try Library(areas:index.regions.map(convert),parks:index.parks.map(convert))
+        let areas=try index.regions.map(convert)
+        let legacyParks=try index.parks.map(convert)
+        return Library(areas:areas,parks:legacyParks+areas.filter { area in
+            area.parkID==area.id && !legacyParks.contains { $0.id==area.id }
+        })
     }
 }
 
@@ -494,7 +513,7 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
             for index in Set(owners.filter { $0.source.id==source.id }.map(\.pack)) {
                 result[index].savedTileCount+=1
                 let target=result[index].pack.bounds.center
-                if result[index].savedPoint.map({ point.distance(to:target)<$0.distance(to:target) }) ?? true {
+                if result[index].pack.contains(point),result[index].savedPoint.map({ point.distance(to:target)<$0.distance(to:target) }) ?? true {
                     result[index].savedPoint=point
                 }
             }

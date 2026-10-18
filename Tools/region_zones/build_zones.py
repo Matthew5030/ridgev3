@@ -224,7 +224,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', type=Path, required=True)
     parser.add_argument('--grid', type=Path, default=Path('ridge v3/Resources/uk-pack-regions.json'))
-    parser.add_argument('--output', type=Path, default=Path('ridge v3/Resources/uk-download-zones.json'))
+    parser.add_argument('--output', type=Path, required=True, help='Explicit legacy output path; the app now uses install_large_areas.py')
     args = parser.parse_args()
     result = build(json.loads(args.grid.read_text()), args.source_root)
     add_map_footprints(result, args.source_root, Path('ridge v3/Resources/RidgeData.bundle/atlas.json'))

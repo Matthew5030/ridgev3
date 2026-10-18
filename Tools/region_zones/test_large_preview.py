@@ -10,7 +10,7 @@ ROOT=Path(__file__).resolve().parents[2]
 class LargePreviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.old=json.loads((ROOT/'ridge v3/Resources/uk-download-zones.json').read_text())
+        cls.old=json.loads((ROOT/'Tools/region_zones/baseline-download-zones.json').read_text())
         cls.new=json.loads((ROOT/'Artifacts/larger-regions-preview/regions.json').read_text())
 
     def test_every_original_section_keeps_its_bounds_and_one_display_owner(self):

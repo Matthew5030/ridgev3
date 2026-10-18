@@ -22,7 +22,9 @@ actor ArchiveAudit {
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("region-archive-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
-        let library=try WorldRegionPack.loadLibrary(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
+        // Existing archives retain their old memberships after the app's map recut.
+        let baseline=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Tools/region_zones/baseline-download-zones.json")
+        let library=try WorldRegionPack.loadLibrary(url:baseline)
         let regionID=CommandLine.arguments.count>2 ? CommandLine.arguments[2] : "sheet-explorer-ol17"
         let region=(library.areas+library.parks).first { $0.id==regionID }!
         let plan=WorldRegionDownloadPlan.estimate(pack:region,catalog:catalog,root:root)!
