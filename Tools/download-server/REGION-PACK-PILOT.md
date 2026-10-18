@@ -139,3 +139,33 @@ in each of the first, middle and last sections. The native integration suite
 prepares the first and last tile of every section. Offline verification time is
 reported separately from transfer/installation time. Both cases use isolated
 caches and remove them afterwards.
+
+### Eryri physical-device result
+
+On the same M1 iPad Pro, using empty isolated caches on the local network:
+
+| Transfer and installation | Bytes | Seconds |
+| --- | ---: | ---: |
+| Existing 57 section files | 884,699,005 | 66.25 |
+| Single Eryri archive | 891,698,257 | 32.38 |
+
+The single file was **2.05× faster**, a 51% elapsed-time reduction, with 0.79%
+metadata overhead. Both cases recorded all 13,424 available tiles offline and
+passed offline checks; the separate offline verification sweep took 13.88 s
+for each format. Those deliberate checks are not an additional preparation
+stage in the normal download flow. On-device checks reopened all 57 overviews,
+read the first section's routing graph and prepared six terrain/vector samples
+across the park. The native integration test prepared 114 samples across all
+57 sections, with 69 checks passing including resume, repeat-save reuse and
+interrupted-install recovery. Three Python builder tests and the signed Debug
+iOS build passed.
+
+This is one paired sequential run, section files first, with source/server
+caching and local Wi-Fi variability. It supports the whole-park option but does
+not promise these times on other connections or establish an ideal maximum
+file size. The on-device verification was performed with network access
+disabled in the readers, not by manually toggling airplane mode. Temporary
+test downloads were removed, existing user maps retained, and the app reopened
+normally. The Eryri archive is available through the existing **Select whole
+park** action; previously saved sections can still cause the app to choose
+smaller missing-section downloads instead of fetching overlapping data again.
