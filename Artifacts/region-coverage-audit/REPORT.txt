@@ -1,0 +1,128 @@
+REGION COVERAGE AUDIT — 18 October 2026
+Local prepared-source and publication metadata audit. Does not revalidate full mesh payloads or establish whether additional public surveys exist.
+
+{
+  "regions": 84,
+  "availability": {
+    "partial": 47,
+    "unavailable": 29,
+    "available": 8
+  },
+  "parentSections": 674,
+  "emptyParentSections": 332,
+  "selectedChunks": 589443,
+  "publishedChunks": 589443,
+  "publishedSources": 2531,
+  "tileTotalsMatch": true,
+  "metadataProblems": [],
+  "sourceManifestProblems": [],
+  "catalogueMatchesBlockSnapshot": true,
+  "conversionState": "complete",
+  "conversionFailures": {},
+  "conversionDeferred": {},
+  "upstreamEvidence": {
+    "no_prepared_manifest": 220,
+    "prepared_but_no_selected_chunks": 112,
+    "partial_or_complete_prepared_input": 268,
+    "outside_recorded_ea_survey_footprint": 153,
+    "welsh_only_empty_input_review_source_choice": 19,
+    "fallback_excluded_by_seam_policy": 1
+  },
+  "rejectedWithoutFallback": 212986,
+  "suppressedFallbackCandidates": 133
+}
+
+Coverage below is approximate land-only coverage of proposed download blocks, not legal park polygons.
+Flags describe whole upstream parent sections and may overlap. They do not allocate each missing square metre to an exact cause. Welsh-only empty sections are review candidates, not proof of absent LiDAR or of a source-selection bug.
+
+Aberdeenshire: 0.00% detailed; 5,070.60 km² missing; unavailable
+Angus & Dundee: 0.00% detailed; 1,688.68 km² missing; unavailable
+Antrim & Derry: 0.00% detailed; 4,803.59 km² missing; unavailable
+Ardnamurchan & Morvern: 0.00% detailed; 1,714.75 km² missing; unavailable
+Argyll & Kintyre: 0.00% detailed; 627.40 km² missing; unavailable
+Arran: 0.00% detailed; 449.51 km² missing; unavailable
+Assynt & Sutherland: 0.00% detailed; 3,682.13 km² missing; unavailable
+Caithness: 0.00% detailed; 3,331.83 km² missing; unavailable
+Cape Wrath & the North Coast: 0.00% detailed; 1,189.80 km² missing; unavailable
+Edinburgh & the Lothians: 0.00% detailed; 2,146.58 km² missing; unavailable
+Fermanagh & Sperrins: 0.00% detailed; 7,571.36 km² missing; unavailable
+Galloway: 0.00% detailed; 2,392.85 km² missing; unavailable
+Glasgow & Clyde Valley: 0.00% detailed; 4,520.98 km² missing; unavailable
+Islay & Jura: -0.00% detailed; 997.82 km² missing; unavailable
+Kintail & Glen Affric: 0.00% detailed; 4,560.98 km² missing; unavailable
+Lochaber: 0.00% detailed; 3,994.96 km² missing; unavailable
+Moray & Easter Ross: 0.00% detailed; 1,237.69 km² missing; unavailable
+Mournes & Down: 0.00% detailed; 6,580.67 km² missing; unavailable
+Mull, Coll & Tiree: 0.00% detailed; 1,053.02 km² missing; unavailable
+Oban & Loch Awe: 0.00% detailed; 1,161.32 km² missing; unavailable
+Orkney: 0.00% detailed; 931.80 km² missing; unavailable
+Outer Hebrides: -0.00% detailed; 2,882.87 km² missing; unavailable
+Perthshire: 0.00% detailed; 2,480.68 km² missing; unavailable
+Scottish Borders: 0.00% detailed; 1,957.68 km² missing; unavailable
+Shetland: 0.00% detailed; 1,357.19 km² missing; unavailable
+Skye & Raasay: -0.00% detailed; 1,660.77 km² missing; unavailable
+Small Isles: 0.00% detailed; 115.15 km² missing; unavailable
+Stirling & Fife: 0.00% detailed; 2,050.45 km² missing; unavailable
+Torridon & Wester Ross: 0.00% detailed; 695.11 km² missing; unavailable
+Dumfries & Moffat: 0.02% detailed; 2,358.71 km² missing; partial
+Loch Lomond & the Trossachs: 0.87% detailed; 3,674.06 km² missing; partial
+Ayrshire: 1.01% detailed; 2,927.70 km² missing; partial
+Cairngorms: 3.25% detailed; 10,377.28 km² missing; partial
+Solway & Carlisle: 37.33% detailed; 2,674.71 km² missing; partial
+Wye Valley & Herefordshire: 50.29% detailed; 2,495.24 km² missing; partial
+Shropshire & the Marches: 51.14% detailed; 2,386.14 km² missing; partial
+Isles of Scilly: 56.07% detailed; 2.64 km² missing; partial
+Cheshire & Staffordshire: 57.92% detailed; 1,724.87 km² missing; partial
+Chester & Merseyside: 58.66% detailed; 2,000.04 km² missing; partial
+Llŷn Peninsula: 70.48% detailed; 100.13 km² missing; partial
+Northumberland: 71.59% detailed; 1,116.01 km² missing; partial
+Pembrokeshire Coast: 82.32% detailed; 245.12 km² missing; partial
+Anglesey: 83.39% detailed; 125.64 km² missing; partial
+North York Moors: 88.60% detailed; 473.10 km² missing; partial
+Somerset & Mendips: 90.10% detailed; 349.39 km² missing; partial
+Carmarthenshire: 94.72% detailed; 102.89 km² missing; partial
+Gower & South Wales: 95.50% detailed; 75.74 km² missing; partial
+West Cornwall: 95.72% detailed; 11.83 km² missing; partial
+Ceredigion & Cambrian Mountains: 95.82% detailed; 92.43 km² missing; partial
+Eryri: 97.44% detailed; 92.59 km² missing; partial
+Isle of Wight: 98.09% detailed; 6.78 km² missing; partial
+Bannau Brycheiniog: 98.16% detailed; 64.30 km² missing; partial
+Clwyd & Berwyn: 98.45% detailed; 11.21 km² missing; partial
+Dorset & Jurassic Coast: 98.59% detailed; 15.92 km² missing; partial
+Norfolk: 98.63% detailed; 14.70 km² missing; partial
+Northumberland Coast: 98.87% detailed; 8.99 km² missing; partial
+York & the Wolds: 98.95% detailed; 27.79 km² missing; partial
+Kent: 98.96% detailed; 32.92 km² missing; partial
+North Cornwall & Bodmin: 99.28% detailed; 33.71 km² missing; partial
+New Forest: 99.37% detailed; 11.84 km² missing; partial
+The Broads: 99.41% detailed; 28.56 km² missing; partial
+Exmoor: 99.42% detailed; 17.97 km² missing; partial
+Morecambe Bay: 99.48% detailed; 1.71 km² missing; partial
+Nottinghamshire & Lincoln: 99.55% detailed; 29.30 km² missing; partial
+Suffolk & North Essex: 99.66% detailed; 10.34 km² missing; partial
+Northamptonshire & Rutland: 99.69% detailed; 11.87 km² missing; partial
+London & South Essex: 99.71% detailed; 12.33 km² missing; partial
+South Downs: 99.72% detailed; 20.10 km² missing; partial
+Central Midlands: 99.78% detailed; 11.73 km² missing; partial
+Nidderdale & Vale of York: 99.83% detailed; 3.69 km² missing; partial
+Fens & Cambridgeshire: 99.87% detailed; 11.93 km² missing; partial
+Oxford & North Cotswolds: 99.89% detailed; 4.11 km² missing; partial
+Tyne & Wear: 99.89% detailed; 1.74 km² missing; partial
+Humber & Lincolnshire Wolds: 99.90% detailed; 3.80 km² missing; partial
+Dartmoor: 99.91% detailed; 2.04 km² missing; partial
+Lake District: 99.99% detailed; 0.54 km² missing; partial
+Chilterns & Thames Valley: 100.00% detailed; 0.00 km² missing; available
+Cotswolds: 100.00% detailed; 0.00 km² missing; available
+Lancashire & Bowland: 100.00% detailed; 0.00 km² missing; available
+North Pennines: 100.00% detailed; 0.00 km² missing; available
+Peak District: 100.00% detailed; 0.00 km² missing; available
+South Pennines: 100.00% detailed; 0.00 km² missing; available
+Wiltshire & Hampshire: 100.00% detailed; 0.00 km² missing; available
+Yorkshire Dales: 100.00% detailed; 0.00 km² missing; available
+
+NEXT ACTIONS
+1. Investigate Welsh-only empty input sections first, including Leominster and Ludlow. Check source selection and eligible English input; do not assume data is recoverable until sampled.
+2. Audit broader Scottish and Northern Irish acquisition beyond the prepared collection; missing local manifests are not evidence that no survey exists.
+3. Keep footprint-rejected and seam-policy-excluded chunks blocked until a verified replacement is available. Do not re-enable rejected flat data.
+4. Build and seam-test an explicit standard-terrain fallback with vector maps and routable paths where high-detail input remains unavailable.
+5. Recut regional archive parts only after coverage and quality metadata are settled. Existing published packs remain untouched.

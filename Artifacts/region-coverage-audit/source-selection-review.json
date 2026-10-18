@@ -1,0 +1,285 @@
+{
+  "configPath": "/Users/matthewbilella/Desktop/ProjectFatRidge/mapping/config/england-wales-precision.json",
+  "configSHA256": "9c3728e4e9abac9d1424c512d8dc21bf71c8d9b1ccc0b189b50a101c0c4334d3",
+  "chooserPath": "/Users/matthewbilella/Desktop/ProjectFatRidge/mapping/scripts/national_parks_precision.py",
+  "chooserSHA256": "0fc819f87d0a76b9cd61c5ea63cd1b2dcec30f56c402a1ae48a55d45155b3bc3",
+  "chooserLine": 252,
+  "finding": "The inspected acquisition chooser takes the first source rectangle matching the tile centre. The Welsh rectangle precedes the English rectangle and extends east to longitude -2.45. It selects only one source for a tile; the later native planner cannot recover an English fallback that was never prepared.",
+  "limitation": "Candidate overlap is with configured rectangles, not verified survey coverage. Empty coastal/water tiles can also match. An eligible English survey must be checked and sampled before promising recovery.",
+  "examples": [
+    "z10-x504-y337 (Leominster)",
+    "z10-x504-y336 (Ludlow)"
+  ],
+  "emptyOverlapCandidates": [
+    {
+      "id": "z10-x498-y331",
+      "centre": [
+        -4.74609375,
+        53.435590187258626
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/498/331/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x500-y331",
+      "centre": [
+        -4.04296875,
+        53.435590187258626
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/500/331/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x501-y331",
+      "centre": [
+        -3.69140625,
+        53.435590187258626
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/501/331/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x503-y331",
+      "centre": [
+        -2.98828125,
+        53.435590187258626
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/503/331/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y331",
+      "centre": [
+        -2.63671875,
+        53.435590187258626
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/331/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x498-y332",
+      "centre": [
+        -4.74609375,
+        53.225639133061804
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/498/332/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y332",
+      "centre": [
+        -2.63671875,
+        53.225639133061804
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/332/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y334",
+      "centre": [
+        -2.63671875,
+        52.80263156302237
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/334/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y335",
+      "centre": [
+        -2.63671875,
+        52.58957065017634
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/335/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y336",
+      "centre": [
+        -2.63671875,
+        52.37546879792319
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/336/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y337",
+      "centre": [
+        -2.63671875,
+        52.16032392488458
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/337/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x496-y338",
+      "centre": [
+        -5.44921875,
+        51.94413399822673
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/496/338/manifest.json",
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/products/uk-national-parks-precision/2026.09.01-1/tiles/10/496/338/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x496-y339",
+      "centre": [
+        -5.44921875,
+        51.72689703461309
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/496/339/manifest.json",
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/products/uk-national-parks-precision/2026.09.01-1/tiles/10/496/339/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x497-y340",
+      "centre": [
+        -5.09765625,
+        51.50861110116374
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/497/340/manifest.json",
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/products/uk-national-parks-precision/2026.09.01-1/tiles/10/497/340/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x498-y340",
+      "centre": [
+        -4.74609375,
+        51.50861110116374
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/498/340/manifest.json",
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/products/uk-national-parks-precision/2026.09.01-1/tiles/10/498/340/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x498-y341",
+      "centre": [
+        -4.74609375,
+        51.28927431642152
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/498/341/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x499-y341",
+      "centre": [
+        -4.39453125,
+        51.28927431642152
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/499/341/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x503-y341",
+      "centre": [
+        -2.98828125,
+        51.28927431642152
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/503/341/manifest.json"
+      ]
+    },
+    {
+      "id": "z10-x504-y341",
+      "centre": [
+        -2.63671875,
+        51.28927431642152
+      ],
+      "matchingConfiguredSources": [
+        "wales",
+        "england"
+      ],
+      "recordedManifestPaths": [
+        "/Volumes/MLB_EXT_4TB/Project Ridge External/ridge-precision/england-wales-precision/products/england-wales-precision/2026.09.02-1/tiles/10/504/341/manifest.json"
+      ]
+    }
+  ]
+}

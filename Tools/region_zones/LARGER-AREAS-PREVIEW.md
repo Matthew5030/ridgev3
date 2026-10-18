@@ -112,3 +112,27 @@ pack-file lengths, and traces gaps back to the frozen preparation plan. Its
 companion `REPORT.txt` lists regional coverage and follow-up work. This audit
 does not itself rebuild maps, integrate the draft into iOS, or certify every
 mesh payload. Bulk regional packaging remains after coverage remediation.
+
+The completed local audit found no source-manifest hash discrepancies or
+published metadata/mask/pack-length problems. All 589,443 selected tiles are
+accounted for across 2,531 published sources. Among the 674 original parent
+areas, 220 have no prepared manifest and 112 have no selected native chunks.
+The audit's reason flags overlap and are parent-level evidence, not an exact
+allocation of missing land to individual causes.
+
+The first acquisition issue to investigate is the rectangular, first-matching
+source chooser: Welsh coverage is selected before English coverage, including
+at Leominster and Ludlow. Nineteen empty parent areas match both configured
+rectangles. `source-selection-review.json` records inspected code/config hashes
+and candidates. These rectangles are not survey footprints; some candidates
+are coastal, and this finding does not yet prove usable English data exists.
+Retain the official-footprint exclusions and seam policy until validated
+replacement data is built. No excluded terrain was re-enabled by the audit.
+
+To repeat the read-only metadata audit with the external drive connected:
+
+```sh
+python Tools/region_zones/audit_coverage.py \
+  --source-root '/Volumes/MLB_EXT_4TB/Ridge Sources' \
+  --plan '/Volumes/MLB_EXT_4TB/Ridge Experiments/UK-adaptive-0p5-v3/plan.json'
+```
