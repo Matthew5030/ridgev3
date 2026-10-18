@@ -1,65 +1,80 @@
-# Larger download areas — boundary proposal, 18 October 2026
+# Larger download areas — revised boundary proposal, 18 October 2026
 
 This is a **preview**, not a replacement app index or a pack publication.
 Open `Artifacts/larger-regions-preview/index.html` directly, or serve that folder
-locally. The self-contained page has no external map/API dependencies. It
-compares the current and proposed boundaries with search, selection, pan/zoom,
-size estimates and an independent terrain-gap overlay.
+locally. The page is self-contained and has no external map/API dependencies.
+It compares current and proposed boundaries with search, selection, pan/zoom,
+size estimates and an optional terrain-gap overlay (off initially).
 
-## Proposal
+## Clearer geography
 
-- 420 current areas become 89 visible areas: all 15 parks, separate island
-  groups, and larger surrounding countryside regions.
-- Existing park download memberships are retained, including the tested Eryri
-  archive. Skye/Raasay, Anglesey, Arran, Orkney, Shetland and other island groups
-  have separate selection areas.
-- Every original source section retains its identifier and bounds and has one
-  display owner. All 2,531 published sections remain represented.
-- Display areas do not overlap. The coastline and total displayed land are
-  unchanged. Boundaries snap to existing source sections; they are draft
-  download footprints, not administrative or exact national-park boundaries.
-- Surrounding areas use curated names anchored to existing walking-map labels,
-  with nearest-anchor assignment inside the existing broad geographic groups.
-  This is deterministic and avoids inventing new terrain or cartographic data.
+420 current areas become **84 visible areas**, including all 15 national parks
+as separate download groups, named islands and surrounding countryside.
+The first 89-area proposal produced stepped park outlines, narrow leftovers
+and disconnected fragments because it assigned cells to their nearest place
+within the old broad groups. That algorithm has been replaced.
 
-Three source sections touch both the Lakes and Dales park groups. Their display
-owner is whichever actual OSM park boundary intersects more of the section.
-Both parks retain the full edge terrain in `downloadCells`; a future consumer
-must deduplicate those shared files. The Eryri membership is unchanged.
+The new layout recursively divides the source grid with straight shared cuts.
+It protects the central park extents, uses curated place anchors, avoids narrow
+blocks, and removes surrounding-area anchors that would produce coastal
+remnants smaller than roughly 200 square kilometres. These are approximate
+land areas, not surveyed administrative boundaries. Final outlines are clipped
+to the same coastline used previously. Five detached mainland fragments are
+reassigned to the neighbouring region they actually touch on land; for example,
+the Cumbrian coastal strip now belongs to the Lake District, not Dumfries.
+True islands are not moved by that rule. The recorded `coastalTransfers` make
+these exceptions auditable and reproducible.
 
-**Do not copy this draft into the app unchanged.** Its `cells` define disjoint
-display ownership; `downloadCells`, where present, define the full download.
-The current app loader assumes globally unique `cells` and does not yet consume
-this draft's separate download membership. Integrating the accepted proposal
-needs explicit loader/selection/coverage tests for this distinction.
+Every original section retains its identifier and bounds and has one display
+owner. Total displayed land is unchanged, with no overlapping selection areas.
+All 2,531 published sections remain represented. Green outlines are **download
+areas around parks**, not legal national-park boundaries.
+
+## Park membership and integration
+
+Each park's `downloadCells` contains its displayed block plus every original
+park section. A boundary section can therefore be included by both a park and
+its neighbour, even though their selection polygons do not overlap. Consumers
+must reuse/deduplicate those shared source IDs. None of the original park
+coverage has been dropped to make the outlines simpler.
+
+**Do not copy this draft into the app unchanged.** The current loader assumes
+unique `cells` and does not consume this separate download membership yet.
+Integrating the accepted proposal needs loader, selection, cache-reuse and
+coverage checks. Source packs, catalogue, installed apps and user downloads
+have not changed. Existing Eryri pilot downloads remain intact; this larger
+Eryri proposal is a different membership and is not the tested pilot archive.
 
 ## Size and coverage
 
-| Area | Download |
+| Proposed area | Estimated current download |
 | --- | ---: |
-| Eryri | 892 MB, actual tested archive |
-| Lake District | about 411 MB |
-| Peak District | about 287 MB |
-| Bannau Brycheiniog | about 523 MB |
-| Yorkshire Dales | about 355 MB |
+| Eryri | 1,014 MB |
+| Lake District | 491 MB |
+| Peak District | 428 MB |
+| Bannau Brycheiniog | 839 MB |
+| Yorkshire Dales | 457 MB |
 
-Other estimates use existing compressed section-pack bytes plus 1% metadata
-allowance. Every current estimate is below 1 GB and every available group has
-at most 128 published sections. Full builder validation (including the 8 MB
-index and 32 MB decoded-metadata limits) is still required before publication;
-a byte estimate alone is not a format-compatibility guarantee.
+Estimates sum existing compressed section-pack bytes plus 1% metadata allowance.
+Making cleaner blocks includes some surrounding countryside, so these are
+larger than exact park-only groups. Eryri exceeds the conservative 1 GB target;
+Fens & Cambridgeshire exceeds the current 128-section archive limit. Both are
+flagged as needing multiple archive parts while remaining a single map
+selection. Multipart publication is not implemented by this preview. The
+8 MB compressed-index and 32 MB decoded-metadata limits must also be validated
+by the builder before publication; byte estimates alone do not establish
+format compatibility.
 
-The library still has the same 14,156,003,383 unique section bytes. Recutting
-cannot fill missing terrain. Thirty proposed areas have no published detailed
-terrain; others are partial. A smaller unavailable-area count than before is
-only a consequence of larger groupings. The terrain-gap overlay is independent
-of the boundary mode and stays visible over both layouts. Zero-data areas are
-labelled unavailable, never advertised as a free/zero-byte download. Low sizes
-in Scotland must not be interpreted as sizes for future complete coverage.
+The library still has 14,156,003,383 unique section bytes. Recutting cannot fill
+missing terrain. Twenty-nine proposed areas have no published detailed terrain;
+others are partial. Lower unavailable-area counts reflect regrouping, not new
+coverage. Selecting an area always shows its coverage status, even when the
+optional terrain-gap shading is hidden. The overlay covers both layouts and
+is drawn only once. Zero-data areas are labelled unavailable, not advertised
+as zero-byte downloads. Scottish sizes are not forecasts of complete coverage.
 
-`regions.json` records the source catalogue hash/revision used for these figures.
-The build does not alter source packs, the server catalogue, installed apps or
-user downloads. No cloud service is activated.
+`regions.json` records the catalogue hash/revision used for these figures.
+No cloud service is activated.
 
 ## Reproduce and verify
 
@@ -73,12 +88,12 @@ python -m http.server 8776 --bind 127.0.0.1 \
   --directory Artifacts/larger-regions-preview
 ```
 
-Five tests pass: immutable source cells/unique ownership, full park download
-membership, equal total land/no visual overlaps/coastal labels, honest size and
-availability reporting, and recognisable mountain/island grouping. Browser
-checks exercised map selection, current/proposed switching, coverage controls,
-and zoom. The saved Lake District screenshot shows the actual rendered preview.
+Six tests cover immutable sections and unique ownership; full park and displayed
+block download membership; rectangular partitions with recorded coastal
+exceptions and no tiny surrounding remnants; unchanged land, no overlaps and
+coastal labels; honest size/coverage flags; and named mountain/island locations,
+including the corrected Cumbrian coastal strip.
 
-Review the shapes and names before app integration and bulk archive generation.
-Keep the existing section files during rollout so current downloads remain
-reusable and smaller repairs do not require a whole-region redownload.
+Review shapes before app integration and bulk archive generation. Keep existing
+section files during rollout so saved downloads remain reusable and smaller
+repairs do not require a whole-region redownload.
