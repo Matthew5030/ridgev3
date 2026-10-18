@@ -97,3 +97,18 @@ including the corrected Cumbrian coastal strip.
 Review shapes before app integration and bulk archive generation. Keep existing
 section files during rollout so saved downloads remain reusable and smaller
 repairs do not require a whole-region redownload.
+
+## Layout checkpoint before the coverage audit
+
+The 84-area layout is the fixed boundary baseline for the next audit. All six
+layout checks pass, including complete park download memberships, unique
+section ownership, unchanged land and the repaired coastal fragments. Further
+coverage fixes should change what terrain is available inside these blocks,
+not silently move their boundaries.
+
+`Artifacts/region-coverage-audit/audit.json` records the exact layout and
+catalogue hashes, checks the published source metadata against its masks and
+pack-file lengths, and traces gaps back to the frozen preparation plan. Its
+companion `REPORT.txt` lists regional coverage and follow-up work. This audit
+does not itself rebuild maps, integrate the draft into iOS, or certify every
+mesh payload. Bulk regional packaging remains after coverage remediation.
