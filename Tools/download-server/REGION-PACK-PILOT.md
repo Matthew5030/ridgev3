@@ -90,3 +90,26 @@ The DEBUG-only `RIDGE_BENCHMARK_REGION=sheet-explorer-ol17` launch compares the
 `Documents/region-benchmark.json`, checks offline terrain/vector reads with
 network access disabled in the reader, then removes its temporary data.
 It does not delete the user's saved maps or claim manual airplane-mode testing.
+
+## Physical iPad result
+
+On the connected M1 iPad Pro over the local network:
+
+| Transfer and installation | Bytes | Seconds |
+| --- | ---: | ---: |
+| Existing 19 section files | 295,143,487 | 39.13 |
+| Single region archive | 297,425,064 | 13.19 |
+
+This run was about **2.97× faster** despite the 0.77% metadata overhead. Timings
+include the download method's verification and installation; they exclude the
+subsequent deliberate offline rendering sweep. Both cases passed offline reads
+and terrain/vector preparation for the first and last tile of every section
+(38 sampled tiles), and had all 4,368 available tiles recorded offline. This is
+one sequential local-network run, not a guarantee for every region or network.
+The server/drive cache may also favour the second run.
+
+The final native archive suite passed 31 checks, including recovery after a
+simulated interruption between storing the archive and installing references.
+Backward compatibility suites passed 24 section-pack checks, 344,699 region
+assertions and 59 catalogue/offline checks; three Python builder tests passed.
+The final signed iOS Debug build succeeded. User downloads were not cleared.
