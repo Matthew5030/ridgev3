@@ -12,7 +12,12 @@ enum WorldSectionPack {
         let compressed:Bool
     }
     struct Index:Codable { let schemaVersion:Int;let sourceID:String;let entries:[Entry] }
-    struct Installed:Codable { let sourceID:String;let asset:WorldMapAsset }
+    struct Container:Codable,Sendable { let asset:WorldMapAsset;let offset:Int }
+    struct Installed:Codable { let sourceID:String;let asset:WorldMapAsset;var container:Container? = nil }
+    static func validRegion(_ asset:WorldMapAsset)->Bool {
+        asset.byteCount>12 && asset.byteCount<=1024*1024*1024 && asset.sha256.count==64 && asset.sha256.allSatisfy(\.isHexDigit)
+            && asset.file=="region-"+asset.sha256+".ridgepack"
+    }
     static func useBundle(_ pack:WorldMapAsset,missing:[WorldMapAsset])->Bool {
         let bytes=missing.reduce(Int64(0)) { $0+Int64($1.byteCount) }
         return bytes>pack.byteCount || (missing.count>=32 && Double(bytes)>=Double(pack.byteCount)*0.7)
@@ -32,10 +37,10 @@ enum WorldSectionPack {
     static func open(sourceID:String,cache:URL)->Reader? {
         guard let data=try? Data(contentsOf:reference(sourceID,cache:cache)),
               let installed=try? JSONDecoder().decode(Installed.self,from:data),installed.sourceID==sourceID else { return nil }
-        return try? Reader(url:file(installed.asset,cache:cache),asset:installed.asset,sourceID:sourceID)
+        return try? Reader(url:file(installed.container?.asset ?? installed.asset,cache:cache),asset:installed.asset,sourceID:sourceID,container:installed.container)
     }
-    static func install(_ asset:WorldMapAsset,sourceID:String,cache:URL) throws {
-        let ref=Installed(sourceID:sourceID,asset:asset)
+    static func install(_ asset:WorldMapAsset,sourceID:String,cache:URL,container:Container?=nil) throws {
+        let ref=Installed(sourceID:sourceID,asset:asset,container:container)
         try JSONEncoder().encode(ref).write(to:reference(sourceID,cache:cache),options:.atomic)
     }
     /// Owned by a single source actor; file reads never allocate the whole pack.
@@ -45,14 +50,21 @@ enum WorldSectionPack {
         let entries:[String:Entry]
         let ordered:[Entry]
         let payloadOffset:Int
+        let physicalAsset:WorldMapAsset
+        private let start:Int
+        private let partial:Bool
         private let handle:FileHandle
         private var verifiedStamp:Date?
-        init(url:URL,asset:WorldMapAsset,sourceID:String,partial:Bool=false) throws {
+        init(url:URL,asset:WorldMapAsset,sourceID:String,partial:Bool=false,container:Container?=nil) throws {
             guard valid(asset) else { throw RidgeError.message("Invalid section pack.") }
+            let physical=container?.asset ?? asset,start=container?.offset ?? 0
+            guard start>=0,start<=physical.byteCount-asset.byteCount,
+                  container == nil || (validRegion(physical) && start>=12) else { throw RidgeError.message("Invalid region section range.") }
             let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
-            guard partial ? size<=asset.byteCount : size==asset.byteCount else { throw RidgeError.message("Incomplete section pack.") }
+            guard partial ? size<=physical.byteCount : size==physical.byteCount else { throw RidgeError.message("Incomplete section pack.") }
             let handle=try FileHandle(forReadingFrom:url)
             do {
+                try handle.seek(toOffset:UInt64(start))
                 let header=try handle.read(upToCount:12) ?? Data()
                 guard header.count==12,String(data:header.prefix(8),encoding:.utf8)=="RIDGEPK1" else { throw RidgeError.message("Invalid section pack header.") }
                 let count=header.dropFirst(8).enumerated().reduce(0) { $0 | (Int($1.element)<<($1.offset*8)) }
@@ -71,7 +83,8 @@ enum WorldSectionPack {
                     end+=entry.storedByteCount
                 }
                 guard end+12+count==asset.byteCount else { throw RidgeError.message("Invalid section pack length.") }
-                self.url=url;self.asset=asset;self.handle=handle;payloadOffset=12+count
+                self.url=url;self.asset=asset;self.handle=handle;payloadOffset=start+12+count
+                self.start=start;self.partial=partial;physicalAsset=physical
                 ordered=index.entries;entries=Dictionary(uniqueKeysWithValues:index.entries.map { ($0.sha256,$0) })
             } catch { try? handle.close();throw error }
         }
@@ -89,11 +102,12 @@ enum WorldSectionPack {
         func verify() throws {
             let attributes=try FileManager.default.attributesOfItem(atPath:url.path)
             let modified=attributes[.modificationDate] as? Date
-            guard (attributes[.size] as? NSNumber)?.intValue==asset.byteCount else { throw RidgeError.message("Incomplete section pack.") }
+            let size=(attributes[.size] as? NSNumber)?.intValue ?? 0
+            guard partial ? size>=start+asset.byteCount && size<=physicalAsset.byteCount : size==physicalAsset.byteCount else { throw RidgeError.message("Incomplete section pack.") }
             if let verifiedStamp,verifiedStamp==modified { return }
-            try handle.seek(toOffset:0)
+            try handle.seek(toOffset:UInt64(start))
             var digest=SHA256(),count=0
-            while let data=try handle.read(upToCount:1024*1024),!data.isEmpty {
+            while count<asset.byteCount,let data=try handle.read(upToCount:min(1024*1024,asset.byteCount-count)),!data.isEmpty {
                 try Task.checkCancellation();digest.update(data:data);count+=data.count
             }
             let hash=digest.finalize().map { String(format:"%02x",$0) }.joined()
@@ -177,7 +191,7 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
         continuation=nil;session.finishTasksAndInvalidate();self.session=nil
     }
     static func download(url:URL,asset:WorldMapAsset,cache:URL,progress:@escaping @Sendable (Int64,Int64) async -> Void) async throws -> Int64 {
-        guard WorldSectionPack.valid(asset) else { throw RidgeError.message("Invalid section pack.") }
+        guard WorldSectionPack.valid(asset) || WorldSectionPack.validRegion(asset) else { throw RidgeError.message("Invalid section pack.") }
         let directory=WorldSectionPack.directory(cache)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         let target=WorldSectionPack.partial(asset,cache:cache)
@@ -210,13 +224,15 @@ actor WorldPackProgress {
     private let sourceID:String
     private let cache:URL
     private var reader:WorldSectionPack.Reader?
+    private let container:WorldSectionPack.Container?
+    private let fileOverride:URL?
     private var failure:Error?
     private var verified=Set<String>()
-    init(asset:WorldMapAsset,sourceID:String,cache:URL) { self.asset=asset;self.sourceID=sourceID;self.cache=cache }
+    init(asset:WorldMapAsset,sourceID:String,cache:URL,container:WorldSectionPack.Container?=nil,file:URL?=nil) { self.asset=asset;self.sourceID=sourceID;self.cache=cache;self.container=container;fileOverride=file }
     func update(received:Int64)->(Set<String>,Set<String>) {
-        let file=WorldSectionPack.partial(asset,cache:cache)
+        let file=fileOverride ?? WorldSectionPack.partial(asset,cache:cache)
         if reader==nil {
-            reader=try? WorldSectionPack.Reader(url:file,asset:asset,sourceID:sourceID,partial:true)
+            reader=try? WorldSectionPack.Reader(url:file,asset:asset,sourceID:sourceID,partial:true,container:container)
         }
         guard let reader,failure==nil else { return (verified,[]) }
         var active=Set<String>()

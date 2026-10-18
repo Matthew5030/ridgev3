@@ -36,6 +36,9 @@ struct ridge_v3App: App {
         if let sourceID=ProcessInfo.processInfo.environment["RIDGE_BENCHMARK_PACK"] {
             Task { await WorldPackDiagnostics.run(sourceID:sourceID) }
         }
+        if let regionID=ProcessInfo.processInfo.environment["RIDGE_BENCHMARK_REGION"] {
+            Task { await WorldPackDiagnostics.runRegion(id:regionID) }
+        }
         // An explicit development launch can select a different LAN library.
         if let address = ProcessInfo.processInfo.environment["RIDGE_LOCAL_TEST_SERVER"],
            let root = try? WorldLibrary.root(mode: "local", local: address) {

@@ -87,6 +87,7 @@ import CoreGraphics
     @ObservationIgnored private var regionLoad: Task<Void, Never>?
     @ObservationIgnored private var selectionGeneration = 0
     @ObservationIgnored private var requestedPoint: GeoPoint?
+    @ObservationIgnored private var catalogRefresh:Task<Void,Never>?
     @ObservationIgnored private var navigationDestination: GeoPoint?
     @ObservationIgnored private var retryPoint: GeoPoint?
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -98,6 +99,7 @@ import CoreGraphics
     @ObservationIgnored private var reduceDetailUntil = Date.distantPast
 
     func configure(mode: String, local: String, preservingSelection: Bool = false) async {
+        catalogRefresh?.cancel();catalogRefresh=nil
         let selectedRegion = preservingSelection ? downloadRegion : nil
         cancelRegionLoad(); distantLoad?.cancel(); distantLoad=nil; distantTerrain=nil; generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; failed = []; tiles = [:]; previewPages = [:]
@@ -123,6 +125,17 @@ import CoreGraphics
             // Rebuild its card now instead of leaving a stale connection error
             // and no download action after the server has become available.
             if let pack=downloadRegion { offerRegionDownload(pack) }
+            // Open saved maps immediately, then refresh coverage and published
+            // download formats without leaving the catalogue stale indefinitely.
+            catalogRefresh=Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let fresh=try await catalogs.open(root:root,preferCached:false)
+                    guard generation==token,!Task.isCancelled else { return }
+                    catalog=fresh
+                    if let selected=downloadRegion,!isSavingOffline,!regionComplete { offerRegionDownload(selected) }
+                } catch { /* The existing offline catalogue remains usable. */ }
+            }
         } catch {
             guard generation == token, !Task.isCancelled else { return }
             message = error.localizedDescription

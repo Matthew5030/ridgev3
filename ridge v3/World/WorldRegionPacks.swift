@@ -198,6 +198,7 @@ struct WorldRegionDownloadPlan: Sendable {
     let totalBytes:Int64
     let tileCount:Int
     var isEstimate=false
+    var archive:WorldRegionArchive? = nil
 
     /// Catalogue-only offer: no section requests, disk scans or asset hashing.
     static func estimate(pack:WorldRegionPack,catalog:WorldCatalog,root:URL)->Self? {
@@ -209,9 +210,10 @@ struct WorldRegionDownloadPlan: Sendable {
             // Include it conservatively; duplicate/cached bytes are skipped later.
             Part(region:region,missingBytes:region.pack.map { Int64($0.byteCount) } ?? (region.downloadBytes!+Int64(region.routing?.byteCount ?? 0)))
         }
-        let total=parts.reduce(Int64(0)) { $0+$1.missingBytes }
+        let archive=catalog.regionArchives?.first { $0.id==pack.id && Set($0.sourceIDs)==Set(regions.map(\.id)) }
+        let total=archive.map { Int64($0.asset.byteCount) } ?? parts.reduce(Int64(0)) { $0+$1.missingBytes }
         return Self(pack:pack,root:root,parts:parts,bytes:total,totalBytes:total,
-                    tileCount:regions.reduce(0) { $0+$1.tileCount },isEstimate:true)
+                    tileCount:regions.reduce(0) { $0+$1.tileCount },isEstimate:true,archive:archive)
     }
 }
 
@@ -225,7 +227,7 @@ struct WorldRegionTileProgress: Sendable {
     var savedTileCount = 0
 }
 
-private actor WorldRegionTileReporter {
+actor WorldRegionTileReporter {
     private let source: WorldSource
     private var state: WorldRegionTileProgress
     private var lastSent = Date.distantPast
@@ -262,7 +264,7 @@ private actor WorldRegionTileReporter {
 }
 
 actor WorldRegionDownloadStore {
-    private let cache:URL
+    let cache:URL
     init(cacheURL:URL? = nil) { cache=WorldOfflineCoverage.cache(cacheURL) }
     private func open(_ region:WorldCatalog.Region,root:URL) async throws -> (WorldSourceStore,WorldSource) {
         let files=WorldSourceStore(cacheURL:cache)
@@ -298,6 +300,10 @@ actor WorldRegionDownloadStore {
             parts.append(.init(region:region,missingBytes:missing));tiles+=source.tiles.count
             await progress(parts.count,regions.count)
         }
+        let candidate=catalog.regionArchives?.first { $0.id==pack.id && Set($0.sourceIDs)==Set(regions.map(\.id)) }
+        if let candidate,try await shouldDownloadArchive(candidate,regions:regions,root:root) {
+            return .init(pack:pack,root:root,parts:parts,bytes:WorldSectionPack.remainingBytes(candidate.asset,cache:cache),totalBytes:Int64(candidate.asset.byteCount),tileCount:tiles,archive:candidate)
+        }
         return .init(pack:pack,root:root,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },totalBytes:total,tileCount:tiles)
     }
     func download(_ plan:WorldRegionDownloadPlan,tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void = { _ in },progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
@@ -307,6 +313,10 @@ actor WorldRegionDownloadStore {
         // operation; it must never allocate or prepare the whole region in RAM.
         if !plan.isEstimate,plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
            capacity < plan.bytes+256*1024*1024 { throw RidgeError.message("There isn’t enough free space for this pack. Free some storage and try again.") }
+        if let archive=plan.archive,try await shouldDownloadArchive(archive,regions:plan.parts.map(\.region),root:plan.root) {
+            try await downloadArchive(archive,regions:plan.parts.map(\.region),root:plan.root,tileProgress:tileProgress,progress:progress)
+            return
+        }
         var completed:Int64=0,checkedConnection=false
         var savedFills:[GeoBounds]=[],savedTileCount=0
         for (index,part) in plan.parts.enumerated() {

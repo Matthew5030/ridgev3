@@ -318,7 +318,7 @@ actor WorldSourceStore {
     // Shared cache writers reserve hashes atomically before starting downloads.
     // Partial saves remain reserved so a cancelled operation can be resumed.
     private static let pinLock = NSLock()
-    private static func reserve(_ hashes: Set<String>, cache: URL) throws -> Set<String> {
+    static func reserve(_ hashes: Set<String>, cache: URL) throws -> Set<String> {
         pinLock.lock(); defer { pinLock.unlock() }
         let url = cache.appendingPathComponent("pins.json")
         let saved = (try? JSONDecoder().decode(Set<String>.self,from:Data(contentsOf:url))) ?? []
@@ -363,7 +363,7 @@ actor WorldSourceStore {
         let assets = ordered.filter { seen.insert($0.sha256).inserted }
         let cached=try cachedAssetHashes(for:assets)
         if let sectionPack,assets.allSatisfy({ sectionPack.contains($0) && cached.contains($0.sha256) }) {
-            pins=try Self.reserve([sectionPack.asset.sha256],cache:cache)
+            pins=try Self.reserve([sectionPack.physicalAsset.sha256],cache:cache)
             try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
             await progress(countCachedInProgress ? assets.reduce(0) { $0+Int64($1.byteCount) } : 0)
             await assetProgress(cached,[])
@@ -428,8 +428,8 @@ actor WorldSourceStore {
     }
     private func recordSavedCoverage(_ tiles: [WorldTile], source: WorldSource, coverageID: String? = nil) throws {
         guard !base.isFileURL, !pins.isEmpty else { return }
-        if let sectionPack,Self.assets(tiles:tiles,source:source).allSatisfy({ sectionPack.contains($0) }),pins.contains(sectionPack.asset.sha256) {
-            let receiptAsset=WorldOfflineCoverage.Asset(hash:sectionPack.asset.sha256,bytes:sectionPack.asset.byteCount,packed:true)
+        if let sectionPack,Self.assets(tiles:tiles,source:source).allSatisfy({ sectionPack.contains($0) }),pins.contains(sectionPack.physicalAsset.sha256) {
+            let receiptAsset=WorldOfflineCoverage.Asset(hash:sectionPack.physicalAsset.sha256,bytes:sectionPack.physicalAsset.byteCount,packed:true)
             try WorldOfflineCoverage.record(tiles.map { .init(bounds:$0.mesh.bounds,assets:[receiptAsset]) },at:cache,identifier:coverageID)
             return
         }
@@ -440,14 +440,14 @@ actor WorldSourceStore {
                 + [tile.background].compactMap { $0 }.map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) }
             guard assets.allSatisfy({ asset in
                 if let value=present[asset.sha256] { return value }
-                let packed=sectionPack.flatMap { $0.contains(asset) ? $0.asset : nil }
+                let packed=sectionPack.flatMap { $0.contains(asset) ? $0.physicalAsset : nil }
                 let hash=packed?.sha256 ?? asset.sha256,bytes=packed?.byteCount ?? asset.byteCount
                 let file=packed.map { WorldSectionPack.file($0,cache:cache) } ?? cache.appendingPathComponent(hash)
                 let value=hash.count==64 && hash.allSatisfy(\.isHexDigit) && pins.contains(hash) && (try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize)==bytes
                 present[asset.sha256]=value;return value
             }) else { return nil }
             let receipts=assets.map { asset -> WorldOfflineCoverage.Asset in
-                if let sectionPack,sectionPack.contains(asset) { return .init(hash:sectionPack.asset.sha256,bytes:sectionPack.asset.byteCount,packed:true) }
+                if let sectionPack,sectionPack.contains(asset) { return .init(hash:sectionPack.physicalAsset.sha256,bytes:sectionPack.physicalAsset.byteCount,packed:true) }
                 return .init(hash:asset.sha256,bytes:asset.byteCount)
             }
             return .init(bounds:tile.mesh.bounds,assets:Array(Set(receipts)))

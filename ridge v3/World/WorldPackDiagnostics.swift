@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 
 /// Opt-in physical-device comparison. Uses isolated temporary caches and never
 /// changes the user's saved maps. Launch with RIDGE_BENCHMARK_PACK=<source ID>.
@@ -41,5 +42,52 @@ enum WorldPackDiagnostics {
         } catch { result["state"]="failed";result["error"]=String(describing:error) }
         save()
     }
+    @MainActor static func runRegion(id:String) async {
+        let idle=UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled=true
+        defer { UIApplication.shared.isIdleTimerDisabled=idle }
+        let cache=FileManager.default.temporaryDirectory.appendingPathComponent("region-benchmark-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:cache) }
+        let report=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("region-benchmark.json")
+        var result:[String:String]=["state":"running","region":id,"phase":"catalogue"]
+        func save() { if let data=try? JSONEncoder().encode(result) { try? data.write(to:report,options:.atomic) } }
+        save()
+        do {
+            let root=try WorldLibrary.root(mode:"local",local:UserDefaults.standard.string(forKey:"ridge.localMapServer") ?? WorldLibrary.defaultLocalServer)
+            let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
+            guard let region=try WorldRegionPack.load().first(where: { $0.id==id }),
+                  let candidate=WorldRegionDownloadPlan.estimate(pack:region,catalog:catalog,root:root),candidate.archive != nil else {
+                throw RidgeError.message("Region pilot unavailable")
+            }
+            for bundled in [false,true] {
+                let label=bundled ? "region" : "sections"
+                let directory=cache.appendingPathComponent(label)
+                try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+                let store=WorldRegionDownloadStore(cacheURL:directory)
+                var plan=candidate
+                if !bundled { plan.archive=nil }
+                result["phase"]=label+" download";save()
+                let start=Date()
+                try await store.download(plan,progress:{ _,_ in })
+                result[label+"Seconds"]=String(Date().timeIntervalSince(start))
+                result[label+"Bytes"]=String(bundled ? candidate.archive!.asset.byteCount : candidate.parts.reduce(0) { $0+($1.region.pack?.byteCount ?? 0) })
+                result["phase"]=label+" offline verification";save()
+                for part in plan.parts {
+                    let files=WorldSourceStore(cacheURL:directory,allowsNetwork:false)
+                    let source=try await files.manifest(address:root.appendingPathComponent(part.region.path).absoluteString,routing:part.region.routing,preferCached:true)
+                    _=try await files.contents(of:source,includeGraph:part.region.id==plan.parts[0].region.id)
+                    for tile in [source.tiles.first!,source.tiles.last!] {
+                        _=try await files.prepare(tile,request:.init(id:tile.id,pixels:32,fine:true),sourceBounds:source.bounds)
+                    }
+                }
+                guard WorldOfflineCoverage.savedBounds(at:directory).count==candidate.tileCount else { throw RidgeError.message("Offline coverage mismatch") }
+                result[label+"Offline"]="passed";save()
+            }
+            result["tiles"]=String(candidate.tileCount);result["sections"]=String(candidate.parts.count)
+            result["state"]="complete";result["phase"]="complete"
+        } catch { result["state"]="failed";result["error"]=String(describing:error) }
+        save()
+    }
+
 }
 #endif

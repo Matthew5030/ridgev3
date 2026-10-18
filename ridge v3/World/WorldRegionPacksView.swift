@@ -51,7 +51,7 @@ struct WorldRegionDownloadCard: View {
                 } else if blocked {
                     Label("Terrain unavailable",systemImage:"exclamationmark.triangle.fill")
                         .font(.headline).foregroundStyle(Color(red:0.70,green:0.19,blue:0.16))
-                    Text("Detailed terrain is missing in this region. You can browse the overview, but this region can’t be downloaded yet.")
+                    Text("Red means this map source has no detailed terrain here. It doesn’t mean you need to download it. You can still browse the overview.")
                         .font(.subheadline)
                 } else if world.regionComplete {
                     Label(partialCoverage ? "Available terrain saved" : "Maps saved",systemImage:"checkmark.circle.fill").font(.headline)

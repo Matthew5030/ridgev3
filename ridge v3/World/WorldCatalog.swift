@@ -73,9 +73,14 @@ struct WorldCatalog: Decodable, Sendable {
     let revision: String
     let sources: [Region]
     var packVersion:Int? = nil
+    var regionArchives:[WorldRegionArchive]? = nil
     func validate() throws {
         guard schemaVersion == 1, !revision.isEmpty, sources.count <= 20_000,
               Set(sources.map(\.id)).count == sources.count else { throw RidgeError.message("Unsupported map catalogue.") }
+        if let regionArchives {
+            guard regionArchives.count<=1000,Set(regionArchives.map(\.id)).count==regionArchives.count else { throw RidgeError.message("Invalid region downloads.") }
+            for archive in regionArchives { try archive.validate(sources:sources) }
+        }
         for region in sources {
             if let pack=region.pack,!WorldSectionPack.valid(pack) { throw RidgeError.message("Invalid section pack in catalogue.") }
             if let gaps=region.missingTerrain {
