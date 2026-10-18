@@ -55,7 +55,8 @@ enum WorldPackDiagnostics {
         do {
             let root=try WorldLibrary.root(mode:"local",local:UserDefaults.standard.string(forKey:"ridge.localMapServer") ?? WorldLibrary.defaultLocalServer)
             let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
-            guard let region=try WorldRegionPack.load().first(where: { $0.id==id }),
+            let library=try WorldRegionPack.loadLibrary()
+            guard let region=(library.areas+library.parks).first(where: { $0.id==id }),
                   let candidate=WorldRegionDownloadPlan.estimate(pack:region,catalog:catalog,root:root),candidate.archive != nil else {
                 throw RidgeError.message("Region pilot unavailable")
             }
@@ -72,15 +73,23 @@ enum WorldPackDiagnostics {
                 result[label+"Seconds"]=String(Date().timeIntervalSince(start))
                 result[label+"Bytes"]=String(bundled ? candidate.archive!.asset.byteCount : candidate.parts.reduce(0) { $0+($1.region.pack?.byteCount ?? 0) })
                 result["phase"]=label+" offline verification";save()
-                for part in plan.parts {
+                let offlineStart=Date()
+                for (index,part) in plan.parts.enumerated() {
+                    result["phase"]=label+" offline section \(index+1)/\(plan.parts.count)";save()
                     let files=WorldSourceStore(cacheURL:directory,allowsNetwork:false)
                     let source=try await files.manifest(address:root.appendingPathComponent(part.region.path).absoluteString,routing:part.region.routing,preferCached:true)
                     _=try await files.contents(of:source,includeGraph:part.region.id==plan.parts[0].region.id)
-                    for tile in [source.tiles.first!,source.tiles.last!] {
-                        _=try await files.prepare(tile,request:.init(id:tile.id,pixels:32,fine:true),sourceBounds:source.bounds)
+                    // Native integration tests render samples in every section.
+                    // On-device checks sample the start, middle and far end of
+                    // a large park while reopening every section with no network.
+                    if plan.parts.count<=19 || [0,plan.parts.count/2,plan.parts.count-1].contains(index) {
+                        for tile in [source.tiles.first!,source.tiles.last!] {
+                            _=try await files.prepare(tile,request:.init(id:tile.id,pixels:32,fine:true),sourceBounds:source.bounds)
+                        }
                     }
                 }
                 guard WorldOfflineCoverage.savedBounds(at:directory).count==candidate.tileCount else { throw RidgeError.message("Offline coverage mismatch") }
+                result[label+"OfflineSeconds"]=String(Date().timeIntervalSince(offlineStart))
                 result[label+"Offline"]="passed";save()
             }
             result["tiles"]=String(candidate.tileCount);result["sections"]=String(candidate.parts.count)

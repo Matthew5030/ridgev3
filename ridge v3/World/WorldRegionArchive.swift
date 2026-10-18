@@ -35,7 +35,7 @@ struct WorldRegionArchive:Decodable,Sendable {
         guard prefix.count==12 else { return nil }
         guard String(data:prefix.prefix(8),encoding:.utf8)=="RIDGERG1" else { throw RidgeError.message("Invalid region header.") }
         let count=prefix.dropFirst(8).enumerated().reduce(0) { $0 | (Int($1.element)<<($1.offset*8)) }
-        guard (1...4_000_000).contains(count),count+12<asset.byteCount else { throw RidgeError.message("Invalid region index.") }
+        guard (1...8_000_000).contains(count),count+12<asset.byteCount else { throw RidgeError.message("Invalid region index.") }
         let data=try handle.read(upToCount:count) ?? Data()
         guard data.count==count else { return nil }
         let header=try JSONDecoder().decode(Header.self,from:data)

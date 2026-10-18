@@ -43,6 +43,13 @@ class RegionPackTests(unittest.TestCase):
             self.assertEqual(published['sources'], sources)
             self.assertEqual(published['regionArchives'], [result])
             self.assertEqual(pack_region.build(root, zones, 'pilot', publish=True), result)
+            park_zone = dict(id='park-pilot', cells=[dict(id=s['id']) for s in sources])
+            zones.write_bytes(pack_sections.raw(dict(regions=[], parks=[park_zone])))
+            park = pack_region.build(root, zones, 'park-pilot', publish=True)
+            published = json.loads((root / 'catalog.json').read_bytes())
+            self.assertEqual(published['regionArchives'], [result, park])
+            self.assertEqual(park['sourceIDs'], result['sourceIDs'])
+            zones.write_bytes(pack_sections.raw(dict(regions=[dict(id='pilot', cells=[dict(id=s['id']) for s in sources])])))
             broken = root / Path(sources[0]['path']).parent / sources[0]['pack']['file']
             broken.write_bytes(b'corrupt')
             with self.assertRaisesRegex(ValueError, 'Damaged section pack'):

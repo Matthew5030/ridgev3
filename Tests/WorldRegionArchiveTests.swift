@@ -23,19 +23,20 @@ actor ArchiveAudit {
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
         let library=try WorldRegionPack.loadLibrary(url:URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("uk-download-zones.json"))
-        let region=library.areas.first { $0.id=="sheet-explorer-ol17" }!
+        let regionID=CommandLine.arguments.count>2 ? CommandLine.arguments[2] : "sheet-explorer-ol17"
+        let region=(library.areas+library.parks).first { $0.id==regionID }!
         let plan=WorldRegionDownloadPlan.estimate(pack:region,catalog:catalog,root:root)!
         let archive=plan.archive!
-        try check(plan.parts.count==19 && plan.bytes==archive.asset.byteCount,"Named region offers one archive at its real wire size")
+        try check(plan.parts.count==archive.sourceIDs.count && plan.bytes==archive.asset.byteCount,"Named region offers one archive at its real wire size")
         let store=WorldRegionDownloadStore(cacheURL:cache),audit=ArchiveAudit(),started=Date()
         try await store.download(plan,tileProgress:{ await audit.tiles($0) },progress:{ bytes,_ in await audit.progress(bytes) })
         let elapsed=Date().timeIntervalSince(started),bytes=await audit.bytes
         try check(bytes==archive.asset.byteCount,"Fresh region transfers one complete archive")
         let packed=try FileManager.default.contentsOfDirectory(at:WorldSectionPack.directory(cache),includingPropertiesForKeys:nil).filter { $0.pathExtension=="ridgepack" }
-        try check(packed.count==1,"Nineteen sections remain in one physical file without extraction")
+        try check(packed.count==1,"All sections remain in one physical file without extraction")
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==plan.tileCount,"Every available tile receives offline coverage")
         let animation=await (audit.maxTiles,audit.completed,audit.tileEvents)
-        try check(animation.0<=256 && animation.1.count==plan.tileCount && animation.2>19,"Geographic progress stays bounded and completes across all sections")
+        try check(animation.0<=256 && animation.1.count==plan.tileCount && animation.2>plan.parts.count,"Geographic progress stays bounded and completes across all sections")
         for part in plan.parts {
             let files=WorldSourceStore(cacheURL:cache,allowsNetwork:false)
             let source=try await files.manifest(address:root.appendingPathComponent(part.region.path).absoluteString,routing:part.region.routing,preferCached:true)

@@ -13,7 +13,8 @@ from pack_sections import atomic, raw
 
 def build(root, zones, region_id, publish=False):
     catalog = json.loads((root / 'catalog.json').read_bytes())
-    zone = next(z for z in json.loads(zones.read_bytes())['regions'] if z['id'] == region_id)
+    library = json.loads(zones.read_bytes())
+    zone = next(z for z in library['regions'] + library.get('parks', []) if z['id'] == region_id)
     ids = {c['id'] for c in zone['cells']}
     sources = sorted((s for s in catalog['sources'] if s['id'] in ids), key=lambda s: s['id'])
     if not 1 <= len(sources) <= 128:
@@ -31,7 +32,7 @@ def build(root, zones, region_id, publish=False):
                             manifestBytes=len(data)))
         offset += source['pack']['byteCount']
     index = raw(dict(schemaVersion=1, regionID=region_id, members=members))
-    if len(index) > 4_000_000 or sum(m['manifestBytes'] for m in members) > 32_000_000:
+    if len(index) > 8_000_000 or sum(m['manifestBytes'] for m in members) > 32_000_000:
         raise ValueError('Oversized region index')
     folder = root / 'region-packs'
     folder.mkdir(exist_ok=True)

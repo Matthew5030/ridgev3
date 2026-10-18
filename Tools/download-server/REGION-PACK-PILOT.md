@@ -1,7 +1,6 @@
 # Single-region download pilot — 18 October 2026
 
-Only **Snowdon & Conwy Valley** (`sheet-explorer-ol17`) is published in this
-format. Its 19 existing sections contain 4,368 available terrain tiles.
+The first pilot is **Snowdon & Conwy Valley** (`sheet-explorer-ol17`). Its 19 existing sections contain 4,368 available terrain tiles.
 The 295,143,487 bytes of section packs are preserved byte-for-byte inside a
 297,425,064-byte region archive. The extra 2,281,577 bytes hold the index and
 compressed manifests. No adaptive terrain, vectors or routing data is rebuilt.
@@ -31,7 +30,7 @@ background, so a newly published format/coverage does not require clearing maps.
 payload-relative `offset`, its unchanged section `asset`, a base64/zlib
 `manifest`, and decoded `manifestBytes`. The payload concatenates the original
 `RIDGEPK1` section files. File name: `region-<whole-file-sha256>.ridgepack`.
-Limits: 1 GiB archive, 128 sections, 4 MB index, 32 MB decoded manifests total,
+Limits: 1 GiB archive, 128 sections, 8 MB index, 32 MB decoded manifests total,
 16 MB per manifest. Section and individual-asset limits still apply.
 
 Build one region, verifying every input section hash:
@@ -113,3 +112,30 @@ simulated interruption between storing the archive and installing references.
 Backward compatibility suites passed 24 section-pack checks, 344,699 region
 assertions and 59 catalogue/offline checks; three Python builder tests passed.
 The final signed iOS Debug build succeeded. User downloads were not cleared.
+
+## Whole Eryri follow-up
+
+`park-eryri` uses the existing park grouping, without changing map-region
+boundaries. Its 57 available sections total 884,699,005 bytes; the region archive
+is 891,698,257 bytes (7.00 MB metadata overhead). No terrain is regenerated.
+This includes all currently published sections selected by the park, not a
+promise of complete LiDAR coverage at every point inside the park boundary.
+
+The builder accepts both map areas and park groups. The bounded JSON-index
+allowance is now 8 MB (previously 4 MB), because Eryri's index is about 7 MB.
+The archive remains below the existing 1 GiB file limit and its decoded
+manifests remain below the existing 32 MB limit. Use the updated app for this
+larger pilot. Existing smaller archive bytes and section formats are unchanged.
+
+```sh
+python3 Tools/world_source/pack_region.py ROOT \
+  'ridge v3/Resources/uk-download-zones.json' --region park-eryri --publish
+sh Tools/test_world_region_archive.sh park-eryri
+```
+
+Launch the device diagnostic with `RIDGE_BENCHMARK_REGION=park-eryri`. For large
+parks it reopens all sections offline and prepares two terrain/vector samples
+in each of the first, middle and last sections. The native integration suite
+prepares the first and last tile of every section. Offline verification time is
+reported separately from transfer/installation time. Both cases use isolated
+caches and remove them afterwards.
