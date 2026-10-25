@@ -17,7 +17,7 @@
     "physicalAssetSizesMatch": true,
     "partialFiles": 0,
     "coldLaunchShowsMapsSaved": true,
-    "gestureAcceptance": "pending"
+    "gestureAcceptance": "User confirmed smooth after wide zoom, close zoom and pan"
   },
   "timingTrace": "Instruments could not attach; no frame-time claim",
   "ciRun": 40192005926
