@@ -301,12 +301,14 @@ actor RegionTransferAudit {
         model.catalog=catalog
         model.offerRegionDownload(incomplete)
         try await wait { model.checkingDownload }
-        try check(model.regionPlan?.isEstimate==true && !model.checkingDownload && model.source==nil,"Model presents the download immediately without rendering or preflight")
+        try check(model.regionPlan?.isEstimate==false && !model.checkingDownload && model.source==nil
+            && (model.regionPlan?.bytes ?? 0)>0 && (model.regionPlan?.bytes ?? 0)<(model.regionPlan?.totalBytes ?? 0),"Model resolves the actual remaining download without rendering terrain")
+        let offeredRemaining=model.regionPlan!.bytes
         model.downloadRegionPack()
         try await wait { model.isSavingOffline }
         try check(model.regionTileProgress.tiles.isEmpty && model.regionTileProgress.active.isEmpty,"Finished animation hands over to saved region shading")
         try check(model.regionComplete && model.downloadError==nil,model.downloadError ?? "Region did not finish")
-        try check(model.downloadedBytes==remaining.bytes,"Estimated offer still transfers only missing bytes")
+        try check(model.downloadedBytes==offeredRemaining,"The checked offer transfers exactly its remaining bytes")
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
         try check(model.offlineBounds.count==plan.tileCount,"All regional tiles become usable in normal exploration")
         try check(!model.hasCoverage(missingCell.bounds.center),"Downloading available terrain never grants access to a gap")
@@ -351,7 +353,9 @@ actor RegionTransferAudit {
         var damaged=try Data(contentsOf:asset);damaged[0] ^= 1;try damaged.write(to:asset,options:.atomic)
         let repair=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(repair.bytes==Int64(tile.mesh.byteCount),"Corrupt regional asset requests only its repair")
-        model.offerRegionDownload(fixture);model.downloadRegionPack()
+        model.offerRegionDownload(fixture)
+        try await wait { model.checkingDownload }
+        model.downloadRegionPack()
         try await wait { model.isSavingOffline }
         try check(model.regionComplete && model.downloadedBytes==Int64(tile.mesh.byteCount),"Fast download verifies saved bytes and repairs only the corrupt asset")
         let streamingCache=cache.appendingPathComponent("streaming-proof")

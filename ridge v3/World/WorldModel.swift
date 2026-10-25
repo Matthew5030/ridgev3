@@ -497,9 +497,9 @@ import CoreGraphics
         regionTotal=pack.sources(in:catalog).count
         if let estimate=WorldRegionDownloadPlan.estimate(pack:pack,catalog:catalog,root:root) {
             regionPlan=estimate
-            return
         }
-        // Compatibility with older catalogues which have no published sizes.
+        // Always resolve saved and resumable bytes. A catalogue-only full-size
+        // offer made every reopening look like a fresh download.
         checkingDownload=true;let ticket=downloadGeneration
         let downloads=WorldRegionDownloadStore(cacheURL:cacheURL)
         downloadTask=Task { [weak self] in
@@ -531,7 +531,7 @@ import CoreGraphics
     }
     func downloadRegionPack() {
         guard !isRemovingDownloads else { return }
-        guard let plan=regionPlan,!isSavingOffline else { return }
+        guard let plan=regionPlan,!isSavingOffline,!checkingDownload else { return }
         guard plan.pack.terrainAvailability(in:catalog).canDownload else {
             regionPlan=nil;downloadError=WorldRegionPack.unavailableMessage
             return

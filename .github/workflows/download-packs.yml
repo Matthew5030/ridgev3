@@ -1,0 +1,19 @@
+name: Download pack publication
+
+on:
+  pull_request:
+    paths:
+      - 'Tools/world_source/**'
+      - '.github/workflows/download-packs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify byte-preserving archives and atomic publication
+        run: python3 -m unittest discover -s Tools/world_source -p 'test_pack_*.py'

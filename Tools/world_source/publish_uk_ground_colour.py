@@ -46,6 +46,8 @@ def finish_archives(stage,catalog):
             fallback.append(archive['id']);continue
         descriptor=build_region(stage,zones,archive['id'],publish=False);results.append(descriptor)
     catalog['regionArchives']=results
+    from pack_region import retain_archive_groups
+    retain_archive_groups(catalog)
     atomic(stage/'catalog.json',raw(catalog))
     result=dict(archives=results,sectionDownloadsOnly=fallback)
     atomic(receipt,raw(result));return result

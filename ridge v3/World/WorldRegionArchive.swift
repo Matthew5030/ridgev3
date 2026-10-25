@@ -1,6 +1,21 @@
 import Foundation
 import CryptoKit
 
+/// Large selections use a few independently resumable files. Individual
+/// archives keep the existing 1 GiB format so older apps can read the catalogue.
+struct WorldRegionArchiveGroup:Decodable,Sendable {
+    let id:String
+    let archiveIDs:[String]
+    func validate(archives:[WorldRegionArchive]) throws {
+        let lookup=Dictionary(archives.map { ($0.id,$0) },uniquingKeysWith:{ first,_ in first })
+        let members=archiveIDs.compactMap { lookup[$0] }.flatMap(\.sourceIDs)
+        guard !id.isEmpty,(1...32).contains(archiveIDs.count),Set(archiveIDs).count==archiveIDs.count,
+              archiveIDs.allSatisfy({ lookup[$0] != nil }),Set(members).count==members.count else {
+            throw RidgeError.message("Invalid region download group.")
+        }
+    }
+}
+
 /// A transport container preserves the existing independently indexed sections.
 /// Each renderer opens only its section range in the shared on-disk file.
 struct WorldRegionArchive:Decodable,Sendable {
@@ -121,7 +136,7 @@ extension WorldRegionDownloadStore {
     /// A new region needs no section metadata requests: manifests arrive in the
     /// same file. Existing saves are checked locally before choosing the bundle.
     func shouldDownloadArchive(_ archive:WorldRegionArchive,regions:[WorldCatalog.Region],root:URL) async throws -> Bool {
-        var missing:Int64=0,total:Int64=0
+        var missing:Int64=0,total:Int64=0,completedSections=0
         for region in regions {
             try Task.checkCancellation()
             let address=root.appendingPathComponent(region.path).absoluteString
@@ -138,6 +153,7 @@ extension WorldRegionDownloadStore {
             }
             let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
             let cached=try await files.cachedAssetHashes(for:assets)
+            if assets.allSatisfy({ cached.contains($0.sha256) }) { completedSections+=1 }
             for asset in assets {
                 total+=Int64(asset.byteCount)
                 if !cached.contains(asset.sha256) { missing+=Int64(asset.byteCount) }
@@ -145,7 +161,27 @@ extension WorldRegionDownloadStore {
         }
         // Preserve sparse repair and overlap reuse, rather than redownloading a
         // whole region just because a small part of it is missing.
-        return missing>0 && (FileManager.default.fileExists(atPath:WorldSectionPack.file(archive.asset,cache:cache).path) || Double(missing)>=Double(total)*0.7)
+        let resumable=FileManager.default.fileExists(atPath:WorldSectionPack.partial(archive.asset,cache:cache).path)
+            || FileManager.default.fileExists(atPath:WorldSectionPack.file(archive.asset,cache:cache).path)
+        return missing>0 && (resumable || (completedSections==0 && Double(missing)>=Double(total)*0.7))
+    }
+    func downloadArchives(_ archives:[WorldRegionArchive],plan:WorldRegionDownloadPlan,
+                          tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void,
+                          progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
+        let members=archives.flatMap(\.sourceIDs)
+        guard (1...32).contains(archives.count),Set(members)==Set(plan.parts.map { $0.region.id }),Set(members).count==members.count else {
+            throw RidgeError.message("Region download chunks do not match the selection.")
+        }
+        let batch=WorldRegionArchiveBatch(tileProgress:tileProgress,progress:progress)
+        for archive in archives {
+            try Task.checkCancellation()
+            let ids=Set(archive.sourceIDs),parts=plan.parts.filter { ids.contains($0.region.id) }
+            let subplan=WorldRegionDownloadPlan(pack:plan.pack,root:plan.root,parts:parts,
+                bytes:parts.reduce(0) { $0+$1.missingBytes },totalBytes:Int64(archive.asset.byteCount),
+                tileCount:parts.reduce(0) { $0+$1.region.tileCount },archive:archive)
+            try await download(subplan,tileProgress:{ await batch.tiles($0) },progress:{ await batch.bytes($0,saved:$1) })
+            await batch.finish(sectionCount:parts.count)
+        }
     }
     func downloadArchive(_ archive:WorldRegionArchive,regions:[WorldCatalog.Region],root:URL,
                          tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void,
@@ -187,5 +223,34 @@ extension WorldRegionDownloadStore {
             try WorldOfflineCoverage.record(section.source.tiles.map { .init(bounds:$0.mesh.bounds,assets:[receipt]) },at:cache,identifier:region.id)
         }
         await progress(transferred,regions.count)
+    }
+}
+
+private actor WorldRegionArchiveBatch {
+    let tileProgress:@Sendable (WorldRegionTileProgress) async -> Void
+    let progress:@Sendable (Int64,Int) async -> Void
+    var completedBytes:Int64=0,currentBytes:Int64=0
+    var completedSections=0,savedTileCount=0
+    var savedFills:[GeoBounds]=[]
+    var lastTiles=WorldRegionTileProgress()
+    init(tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void,progress:@escaping @Sendable (Int64,Int) async -> Void) {
+        self.tileProgress=tileProgress;self.progress=progress
+    }
+    func bytes(_ bytes:Int64,saved:Int) async {
+        currentBytes=bytes
+        await progress(completedBytes+bytes,completedSections+saved)
+    }
+    func tiles(_ value:WorldRegionTileProgress) async {
+        lastTiles=value
+        var combined=value
+        combined.savedFills=savedFills+value.savedFills
+        combined.savedTileCount+=savedTileCount
+        await tileProgress(combined)
+    }
+    func finish(sectionCount:Int) {
+        completedBytes+=currentBytes;currentBytes=0;completedSections+=sectionCount
+        savedFills=WorldOfflineCoverage.displayBounds(savedFills+lastTiles.savedFills+Array(lastTiles.completed))
+        savedTileCount+=lastTiles.savedTileCount+lastTiles.completed.count
+        lastTiles=WorldRegionTileProgress()
     }
 }

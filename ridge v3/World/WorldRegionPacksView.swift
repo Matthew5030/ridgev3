@@ -90,11 +90,11 @@ struct WorldRegionDownloadCard: View {
                         Text(plan.isEstimate ? "Up to \(RidgeTheme.bytes(plan.totalBytes))" : plan.bytes==0 ? "Maps already on your device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.title3.weight(.semibold))
                         Text(plan.isEstimate ? "Terrain, maps & walking paths. Files already saved are reused as the download runs." : "\(RidgeTheme.bytes(plan.totalBytes)) in total · terrain, maps & walking paths").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                         if plan.bytes>0,plan.totalBytes>plan.bytes {
-                            Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) already saved and reused").font(.caption)
+                            Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) already on this device").font(.caption)
                         }
                     }
                     if plan.bytes>0 {
-                        Button(partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
+                        Button((saved?.savedTileCount ?? 0)>0 ? "Download remaining terrain" : partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
                             .buttonStyle(.borderedProminent).controlSize(.large)
                     } else if saved?.savedTileCount ?? 0 == 0 {
                         Button("Use saved maps") { world.downloadRegionPack() }.buttonStyle(.borderedProminent)

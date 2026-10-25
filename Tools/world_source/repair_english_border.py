@@ -262,7 +262,10 @@ def finalize_catalog(a):
         if sum(entries[i]['pack']['byteCount'] for i in ids)+8_000_012>1024**3:continue
         path=stage/'repair-archive-membership.json';atomic(path,raw(dict(regions=[dict(id=archive['id'],cells=[dict(id=i) for i in ids])])));
         descriptor=pack_region(stage,path,archive['id'],publish=False);archives.append(descriptor);rebuilt.append(descriptor)
-    catalog['regionArchives']=archives;atomic(stage/'catalog.json',raw(catalog))
+    catalog['regionArchives']=archives
+    from pack_region import retain_archive_groups
+    retain_archive_groups(catalog)
+    atomic(stage/'catalog.json',raw(catalog))
     atomic(stage/'repair-publication-plan.json',raw(dict(changedSourceIDs=sorted(changed),newSourceIDs=sorted(changed.keys()-{s['id'] for s in json.loads(before)['sources']}),catalogSHA256=sha(raw(catalog)),rebuiltArchives=rebuilt)))
     return catalog,changed,rebuilt
 

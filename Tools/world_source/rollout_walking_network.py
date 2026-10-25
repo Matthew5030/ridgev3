@@ -319,6 +319,7 @@ def run(args):
         source.update(routing=row['routing'], pack=row['pack'])
     # Old regional files remain available; outdated bundles leave the catalogue.
     catalog['regionArchives'] = []
+    catalog.pop('regionArchiveGroups', None)
     catalog['revision'] += '-walking-v2'; catalog['routingVersion'] = 2
     data = raw(catalog)
     if len(data)>=16_000_000: raise ValueError('Oversized catalogue')
