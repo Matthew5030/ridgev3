@@ -78,6 +78,13 @@ struct WorldExploreView: View {
                 store.worldTerrain=nil
                 await world.configure(mode:mapMode,local:localMapServer)
             }
+            // Read-only hardware regression check: open the actual region card
+            // and inspect its remaining download without deleting saved maps.
+            if let argument=ProcessInfo.processInfo.arguments.first(where:{ $0.hasPrefix("--inspect-region=") }),
+               let library=try? WorldRegionPack.loadLibrary(),
+               let pack=(library.areas+library.parks).first(where:{ $0.id==String(argument.dropFirst("--inspect-region=".count)) }) {
+                didFitRegions=true;selectRegion(pack)
+            }
             if !openPendingRoute(),let bounds = visibleBounds { viewportChanged(bounds) }
         }
         .task(id:"\(connectionID)|\(world.catalog?.revision ?? "")|\(world.offlineCoverageRevision)") {
@@ -127,6 +134,7 @@ struct WorldExploreView: View {
                 world.suspend()
             }
             else if value == .active {
+                world.restoreRegionDownloadOffer()
                 if world.catalog == nil && !world.isLoading {
                     Task {
                         await world.configure(mode: mapMode, local: localMapServer,preservingSelection:true)

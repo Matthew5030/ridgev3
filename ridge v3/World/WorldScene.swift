@@ -102,6 +102,11 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     private var flightExitPose: WorldCameraTransition.Pose?
     private var lastAtlasRequest: UUID?
     private var revision = -1
+    private struct DeferredRefresh {
+        var route:[RoutePoint];var segments:[[RoutePoint]];var waypoints:[RouteWaypoint]
+        var command:TerrainCameraCommand;var atlasRequest:UUID?
+    }
+    private var deferredRefresh:DeferredRefresh?
     private var cameraNode = SCNNode()
     private var target = SIMD3<Float>(0,0,0)
     private var distance: Float = 6000
@@ -119,7 +124,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         antialiasingMode = .multisampling4X; preferredFramesPerSecond = 60
         rendersContinuously = false; autoenablesDefaultLighting = false; backgroundColor = UIColor(red: 0.76, green: 0.86, blue: 0.91, alpha: 1)
         navigationGesture = WorldNavigationGesture(target:self,action:#selector(navigateWorld(_:)))
-        navigationGesture.onContactChanged = { [weak self] touching in self?.tourContactChanged(touching) }
+        navigationGesture.onContactChanged = { [weak self] touching in self?.navigationContactChanged(touching) }
         let tap = UITapGestureRecognizer(target:self,action:#selector(tap(_:)))
         tap.require(toFail:navigationGesture)
         addGestureRecognizer(navigationGesture);addGestureRecognizer(tap)
@@ -144,6 +149,10 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         return overview.elevation(point, bounds: source.bounds)
     }
     func refresh(route: [RoutePoint], segments: [[RoutePoint]], waypoints: [RouteWaypoint], command: TerrainCameraCommand, atlasRequest: UUID?) {
+        if navigationGesture.isInteracting,!cameraRig.touring {
+            deferredRefresh=DeferredRefresh(route:route,segments:segments,waypoints:waypoints,command:command,atlasRequest:atlasRequest)
+            return
+        }
         guard let model, let next = model.source, let overview = model.overview else { return }
         let sourceChanged = source?.revision != next.revision || source?.id != next.id
         if sourceChanged {
@@ -292,6 +301,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     }
     private func uploadTerrain() {
         uploadNotification = nil
+        guard !navigationGesture.isInteracting || cameraRig.touring else { return }
         guard let model, let scene else { return }
         let began = CACurrentMediaTime()
         if cameraRig.touring,!uploadQueue.isEmpty {
@@ -350,6 +360,9 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 }
             }
             while contextMaskPending && !Task.isCancelled {
+                if navigationGesture.isInteracting,!cameraRig.touring {
+                    try? await Task.sleep(nanoseconds:100_000_000);continue
+                }
                 contextMaskPending=false
                 guard let distant=model?.distantTerrain else { return }
                 let covered=Set(nodes.keys.compactMap { contextKeys[$0] })
@@ -361,6 +374,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 let preparation=Task.detached(priority:.utility) { (distant.geometry(excluding:covered),distant.seams(boundaries,covered:covered)) }
                 let (geometry,seams)=await preparation.value
                 guard !Task.isCancelled, distantID==distant.id else { return }
+                if navigationGesture.isInteracting,!cameraRig.touring { contextMaskPending=true;continue }
                 let current=Set(nodes.keys.compactMap { contextKeys[$0] })
                 if current != covered { contextMaskPending=true }
                 let material=SCNMaterial();material.lightingModel = .constant
@@ -378,7 +392,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     private func updateOfflineBoundary(force: Bool = false) {
         guard let model, let source else { return }
         let focus=coordinate(target)
-        if force || offlineBoundaryEdges != model.offlineEdges || offlineBoundaryCenter == nil || offlineBoundaryCenter!.distance(to:focus)>250 {
+        if !navigationGesture.isInteracting && (force || offlineBoundaryEdges != model.offlineEdges || offlineBoundaryCenter == nil || offlineBoundaryCenter!.distance(to:focus)>250) {
             offlineBoundaryEdges=model.offlineEdges;offlineBoundaryCenter=focus
             offlineBoundaryNode.geometry=WorldOfflineBoundary.geometry(edges:offlineBoundaryEdges,focus:focus,frame:source.frame,elevation:height)
         }
@@ -436,13 +450,16 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         updateOfflineBoundary()
         guard notify else { return }
         model?.cameraPose = TerrainCameraPose(target: coordinate(target), targetElevationMeters: Double(target.y), yaw: yaw, pitch: pitch, distanceMeters: Double(distance))
+        // Finger movement owns the frame budget. Expand the terrain window and
+        // refine its working set after release, keeping the current map visible.
+        guard !navigationGesture.isInteracting else { return }
         // Coalesce navigation work while keeping the actual camera at gesture
         // rate. A single queued update always consumes the latest pose.
         guard cameraNotification == nil else { return }
         let notification = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.cameraNotification = nil
-            guard !self.cameraRig.touring,self.scene != nil, let pose = self.model?.cameraPose else { return }
+            guard !self.cameraRig.touring,!self.navigationGesture.isInteracting,self.scene != nil, let pose = self.model?.cameraPose else { return }
             self.model?.update(center:pose.target,distance:pose.distanceMeters)
             if self.distance > 12000 && self.flightLink == nil && self.tourSavedPose == nil && !self.navigationGesture.isInteracting { self.beginExit() }
         }
@@ -450,6 +467,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:notification)
     }
     func cancelCameraNotification() {
+        deferredRefresh=nil
         contextMaskGeneration+=1;contextMask?.cancel(); contextMask=nil; contextMaskPending=false
         cameraNotification?.cancel(); cameraNotification = nil
         labelNotification?.cancel(); labelNotification = nil
@@ -751,7 +769,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     }
     private func scheduleLabels() {
         setNeedsDisplay()
-        guard !cameraRig.touring else { return }
+        guard !cameraRig.touring,!navigationGesture.isInteracting else { return }
         // Only placement/decluttering waits for the gesture to settle. The
         // labels themselves are rendered with the terrain on every frame.
         labelNotification?.cancel()
@@ -762,6 +780,25 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         }
         labelNotification = next
         DispatchQueue.main.asyncAfter(deadline:.now()+0.2,execute:next)
+    }
+    private func navigationContactChanged(_ touching:Bool) {
+        tourContactChanged(touching)
+        guard !cameraRig.touring else { return }
+        if touching {
+            cameraNotification?.cancel();cameraNotification=nil
+            labelNotification?.cancel();labelNotification=nil
+            uploadNotification?.cancel();uploadNotification=nil
+        } else {
+            // Cancellation callbacks precede the recognizer clearing contacts.
+            DispatchQueue.main.async { [weak self] in
+                guard let self,self.scene != nil,!self.navigationGesture.isInteracting else { return }
+                if let value=self.deferredRefresh {
+                    self.deferredRefresh=nil
+                    self.refresh(route:value.route,segments:value.segments,waypoints:value.waypoints,command:value.command,atlasRequest:value.atlasRequest)
+                }
+                self.uploadTerrain();self.scheduleLabels();self.scheduleContextMask()
+            }
+        }
     }
     private func updateRouteOverlay() {
         guard let source, let device = device ?? MTLCreateSystemDefaultDevice() else { return }

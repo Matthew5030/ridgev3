@@ -77,12 +77,17 @@ struct WorldCatalog: Decodable, Sendable {
     let sources: [Region]
     var packVersion:Int? = nil
     var regionArchives:[WorldRegionArchive]? = nil
+    var regionArchiveGroups:[WorldRegionArchiveGroup]? = nil
     func validate() throws {
         guard schemaVersion == 1, !revision.isEmpty, sources.count <= 20_000,
               Set(sources.map(\.id)).count == sources.count else { throw RidgeError.message("Unsupported map catalogue.") }
         if let regionArchives {
             guard regionArchives.count<=1000,Set(regionArchives.map(\.id)).count==regionArchives.count else { throw RidgeError.message("Invalid region downloads.") }
             for archive in regionArchives { try archive.validate(sources:sources) }
+        }
+        if let regionArchiveGroups {
+            guard regionArchiveGroups.count<=1000,Set(regionArchiveGroups.map(\.id)).count==regionArchiveGroups.count else { throw RidgeError.message("Invalid region download groups.") }
+            for group in regionArchiveGroups { try group.validate(archives:regionArchives ?? []) }
         }
         for region in sources {
             if let count=region.standardTileCount {
@@ -109,6 +114,16 @@ struct WorldCatalog: Decodable, Sendable {
                 throw RidgeError.message("The map catalogue contains an invalid region.")
             }
         }
+    }
+    func archives(for regionID:String,regions:[Region])->[WorldRegionArchive] {
+        let ids=Set(regions.map(\.id))
+        if let archive=regionArchives?.first(where:{ $0.id==regionID && Set($0.sourceIDs)==ids }) { return [archive] }
+        guard let group=regionArchiveGroups?.first(where:{ $0.id==regionID }) else { return [] }
+        let lookup=Dictionary((regionArchives ?? []).map { ($0.id,$0) },uniquingKeysWith:{ first,_ in first })
+        let archives=group.archiveIDs.compactMap { lookup[$0] }
+        let members=archives.flatMap(\.sourceIDs)
+        guard archives.count==group.archiveIDs.count,Set(members)==ids,Set(members).count==members.count else { return [] }
+        return archives
     }
     /// Retain the current region on a shared edge to prevent back-and-forth loads.
     func region(at point: GeoPoint, retaining id: String? = nil) -> Region? {

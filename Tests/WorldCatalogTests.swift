@@ -38,8 +38,10 @@ actor TileProgressAudit {
         }
         let local=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         try check(local.path=="/world","Local server root")
+        let (catalogData,_)=try await URLSession.shared.data(from:local.appendingPathComponent("catalog.json"))
+        let published=try JSONDecoder().decode(WorldCatalog.self,from:catalogData)
         let liveCount=try await WorldLibrary.checkConnection(root:local)
-        try check(liveCount==2531,"Connection test reads the live catalogue")
+        try check(liveCount==published.sources.count && liveCount>0,"Connection test reads the live catalogue")
         do {
             _=try await WorldLibrary.checkConnection(root:local.appendingPathComponent("missing-library"))
             throw RidgeError.message("Accepted missing live catalogue")
@@ -56,7 +58,7 @@ actor TileProgressAudit {
         await model.configure(mode:"local",local:local.absoluteString)
         guard let catalog=model.catalog else { throw RidgeError.message(model.message ?? "Missing catalogue") }
         let origin=GeoPoint(latitude:53.0685,longitude:-4.0763)
-        try check(catalog.sources.count==2531,"Full catalogue available for choosing an area")
+        try check(catalog.sources.count==published.sources.count,"Full catalogue available for choosing an area")
         let section=catalog.region(at:origin)!
         let selected=WorldRegionPack(id:"connection-test",name:"Connection test",subtitle:"",landmark:"",
                                      cells:[.init(id:section.id,bounds:section.bounds)])

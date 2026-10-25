@@ -301,12 +301,14 @@ actor RegionTransferAudit {
         model.catalog=catalog
         model.offerRegionDownload(incomplete)
         try await wait { model.checkingDownload }
-        try check(model.regionPlan?.isEstimate==true && !model.checkingDownload && model.source==nil,"Model presents the download immediately without rendering or preflight")
+        try check(model.regionPlan?.isEstimate==false && !model.checkingDownload && model.source==nil
+            && (model.regionPlan?.bytes ?? 0)>0 && (model.regionPlan?.bytes ?? 0)<(model.regionPlan?.totalBytes ?? 0),"Model resolves the actual remaining download without rendering terrain")
+        let offeredRemaining=model.regionPlan!.bytes
         model.downloadRegionPack()
         try await wait { model.isSavingOffline }
         try check(model.regionTileProgress.tiles.isEmpty && model.regionTileProgress.active.isEmpty,"Finished animation hands over to saved region shading")
         try check(model.regionComplete && model.downloadError==nil,model.downloadError ?? "Region did not finish")
-        try check(model.downloadedBytes==remaining.bytes,"Estimated offer still transfers only missing bytes")
+        try check(model.downloadedBytes==offeredRemaining,"The checked offer transfers exactly its remaining bytes")
         try check(model.source==nil && model.downloadedDestination==nil && !model.in3D,"Saving a large region never enters 3D")
         try check(model.offlineBounds.count==plan.tileCount,"All regional tiles become usable in normal exploration")
         try check(!model.hasCoverage(missingCell.bounds.center),"Downloading available terrain never grants access to a gap")
@@ -351,7 +353,9 @@ actor RegionTransferAudit {
         var damaged=try Data(contentsOf:asset);damaged[0] ^= 1;try damaged.write(to:asset,options:.atomic)
         let repair=try await store.plan(pack:fixture,catalog:catalog,root:root)
         try check(repair.bytes==Int64(tile.mesh.byteCount),"Corrupt regional asset requests only its repair")
-        model.offerRegionDownload(fixture);model.downloadRegionPack()
+        model.offerRegionDownload(fixture)
+        try await wait { model.checkingDownload }
+        model.downloadRegionPack()
         try await wait { model.isSavingOffline }
         try check(model.regionComplete && model.downloadedBytes==Int64(tile.mesh.byteCount),"Fast download verifies saved bytes and repairs only the corrupt asset")
         let streamingCache=cache.appendingPathComponent("streaming-proof")
@@ -389,11 +393,22 @@ actor RegionTransferAudit {
         try check(reusedBytes==0,"Repeating a fast-plan download transfers zero saved asset bytes")
         model.offerRegionDownload(fixture);model.pauseRegionDownload()
         try await Task.sleep(nanoseconds:100_000_000)
-        try check(!model.checkingDownload && !model.isSavingOffline && model.regionPlan==nil && model.downloadError?.hasPrefix("Paused") == true,"Cancelled region check cannot publish stale results")
+        try check(!model.checkingDownload && !model.isSavingOffline && model.regionPlan==nil && model.regionPaused && model.downloadError==nil,"Cancelled region check stays paused without publishing stale results or an error")
         try check(model.regionTileProgress.active.isEmpty,"Paused download leaves no active tile pulses")
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==plan.tileCount,"Pausing preserves completed receipts")
+        model.restoreRegionDownloadOffer()
+        try await wait { model.checkingDownload }
+        try check(model.regionPaused && !model.isSavingOffline && model.regionPlan?.bytes==0,"Returning to Ridge checks the remainder without starting a transfer")
+        model.pauseRegionDownload()
+        model.resumeRegionDownload();model.pauseRegionDownload()
+        try await Task.sleep(nanoseconds:100_000_000)
+        try check(model.regionPaused && !model.isSavingOffline && !model.checkingDownload && !model.regionComplete,"Pausing during resume preflight prevents a delayed automatic transfer")
+        try damaged.write(to:asset,options:.atomic)
+        model.resumeRegionDownload()
+        try await wait { model.checkingDownload || model.isSavingOffline }
+        try check(model.regionComplete && !model.regionPaused && model.downloadError==nil && model.downloadedBytes==Int64(tile.mesh.byteCount),"One resume action checks and repairs only the missing bytes")
         model.cancelDownload()
-        try check(model.downloadRegion==nil && model.regionPlan==nil && !model.regionComplete,"Switching to custom clears regional selection")
+        try check(model.downloadRegion==nil && model.regionPlan==nil && !model.regionComplete && !model.regionPaused,"Switching to custom clears regional selection and pause state")
         // Updating imagery must read the new index, but keep the previous
         // offline index until the entire replacement section has been saved.
         let refreshRegion=catalog.sources.filter { $0.tileCount>1 }.min { $0.tileCount<$1.tileCount }!

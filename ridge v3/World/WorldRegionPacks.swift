@@ -230,6 +230,35 @@ struct WorldRegionDownloadPlan: Sendable {
     let tileCount:Int
     var isEstimate=false
     var archive:WorldRegionArchive? = nil
+    var archives:[WorldRegionArchive] = []
+
+    /// Opening a completed region is an inventory lookup, not another integrity
+    /// scan of the entire terrain payload. Downloads and tile reads verify data.
+    static func completed(pack:WorldRegionPack,catalog:WorldCatalog,root:URL,cache:URL,saved:[GeoBounds])->Self? {
+        guard let estimate=estimate(pack:pack,catalog:catalog,root:root),saved.count>=estimate.tileCount,
+              let data=try? Data(contentsOf:cache.appendingPathComponent("pins.json")),
+              let pins=try? JSONDecoder().decode(Set<String>.self,from:data) else { return nil }
+        let saved=Set(saved)
+        var sizes:[String:Int]=[:]
+        for part in estimate.parts {
+            let region=part.region
+            guard let pack=region.pack,
+                  let data=try? Data(contentsOf:WorldSectionPack.reference(region.id,cache:cache)),
+                  let installed=try? JSONDecoder().decode(WorldSectionPack.Installed.self,from:data),
+                  installed.sourceID==region.id,installed.asset.sha256==pack.sha256,installed.asset.byteCount==pack.byteCount else { return nil }
+            let physical=installed.container?.asset ?? installed.asset
+            guard pins.contains(physical.sha256),
+                  installed.container.map({ WorldSectionPack.validRegion(physical) && $0.offset>=12 && $0.offset<=physical.byteCount-pack.byteCount }) ?? WorldSectionPack.valid(physical) else { return nil }
+            let size=sizes[physical.sha256] ?? (try? WorldSectionPack.file(physical,cache:cache).resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? -1
+            sizes[physical.sha256]=size
+            let address=root.appendingPathComponent(region.path).absoluteString
+            let index=cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8))+".index")
+            guard size==physical.byteCount,FileManager.default.fileExists(atPath:index.path),
+                  saved.lazy.filter({ region.bounds.contains($0.center) }).count==region.tileCount else { return nil }
+        }
+        return Self(pack:pack,root:root,parts:estimate.parts.map { .init(region:$0.region,missingBytes:0) },
+                    bytes:0,totalBytes:estimate.totalBytes,tileCount:estimate.tileCount)
+    }
 
     /// Catalogue-only offer: no section requests, disk scans or asset hashing.
     static func estimate(pack:WorldRegionPack,catalog:WorldCatalog,root:URL)->Self? {
@@ -241,10 +270,11 @@ struct WorldRegionDownloadPlan: Sendable {
             // Include it conservatively; duplicate/cached bytes are skipped later.
             Part(region:region,missingBytes:region.pack.map { Int64($0.byteCount) } ?? (region.downloadBytes!+Int64(region.routing?.byteCount ?? 0)))
         }
-        let archive=catalog.regionArchives?.first { $0.id==pack.id && Set($0.sourceIDs)==Set(regions.map(\.id)) }
-        let total=archive.map { Int64($0.asset.byteCount) } ?? parts.reduce(Int64(0)) { $0+$1.missingBytes }
+        let archives=catalog.archives(for:pack.id,regions:regions)
+        let archive=archives.count==1 ? archives[0] : nil
+        let total=archives.isEmpty ? parts.reduce(Int64(0)) { $0+$1.missingBytes } : archives.reduce(0) { $0+Int64($1.asset.byteCount) }
         return Self(pack:pack,root:root,parts:parts,bytes:total,totalBytes:total,
-                    tileCount:regions.reduce(0) { $0+$1.tileCount },isEstimate:true,archive:archive)
+                    tileCount:regions.reduce(0) { $0+$1.tileCount },isEstimate:true,archive:archive,archives:archives.count>1 ? archives : [])
     }
 }
 
@@ -324,10 +354,22 @@ actor WorldRegionTileReporter {
 
 actor WorldRegionDownloadStore {
     let cache:URL
-    init(cacheURL:URL? = nil) { cache=WorldOfflineCoverage.cache(cacheURL) }
+    let allowsNetwork:Bool
+    init(cacheURL:URL? = nil,allowsNetwork:Bool = true) { cache=WorldOfflineCoverage.cache(cacheURL);self.allowsNetwork=allowsNetwork }
     private func open(_ region:WorldCatalog.Region,root:URL) async throws -> (WorldSourceStore,WorldSource) {
-        let files=WorldSourceStore(cacheURL:cache)
-        let source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,recoverCoverage:false,stageForDownload:true)
+        let files=WorldSourceStore(cacheURL:cache,allowsNetwork:allowsNetwork)
+        let installed=WorldSectionPack.open(sourceID:region.id,cache:cache)
+        let stable=region.pack.map { installed?.asset.sha256==$0.sha256 } ?? false
+        let address=root.appendingPathComponent(region.path).absoluteString
+        let source:WorldSource
+        do {
+            source=try await files.manifest(address:address,routing:region.routing,preferCached:stable,recoverCoverage:false,stageForDownload:allowsNetwork && !stable)
+        } catch {
+            try Task.checkCancellation()
+            // An offline launch can still inspect a committed local index.
+            // Missing or outdated files remain missing in the integrity scan.
+            source=try await files.manifest(address:address,routing:region.routing,preferCached:true,recoverCoverage:false)
+        }
         guard source.id==region.id,source.bounds==region.bounds,source.tiles.count==region.tileCount else {
             throw RidgeError.message("The map does not match its catalogue.")
         }
@@ -337,10 +379,19 @@ actor WorldRegionDownloadStore {
         guard pack.terrainAvailability(in:catalog).canDownload else { throw RidgeError.message(WorldRegionPack.unavailableMessage) }
         let regions=pack.sources(in:catalog)
         guard !regions.isEmpty else { throw RidgeError.message("Maps for this region are not available from this source yet.") }
+        let archives=catalog.archives(for:pack.id,regions:regions),archiveIDs=Set(archives.flatMap(\.sourceIDs))
         var parts:[WorldRegionDownloadPlan.Part]=[],seen=Set<String>(),total:Int64=0,tiles=0
         await progress(0,regions.count)
         for region in regions {
             try Task.checkCancellation()
+            let address=root.appendingPathComponent(region.path).absoluteString
+            let index=cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8))+".index")
+            if archiveIDs.contains(region.id),let asset=region.pack,!FileManager.default.fileExists(atPath:index.path) {
+                let bytes=Int64(asset.byteCount)
+                parts.append(.init(region:region,missingBytes:bytes));total+=bytes;tiles+=region.tileCount
+                await progress(parts.count,regions.count)
+                continue
+            }
             let (files,source)=try await open(region,root:root)
             let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
             let cached=try await files.cachedAssetHashes(for:assets)
@@ -359,9 +410,17 @@ actor WorldRegionDownloadStore {
             parts.append(.init(region:region,missingBytes:missing));tiles+=source.tiles.count
             await progress(parts.count,regions.count)
         }
-        let candidate=catalog.regionArchives?.first { $0.id==pack.id && Set($0.sourceIDs)==Set(regions.map(\.id)) }
-        if let candidate,try await shouldDownloadArchive(candidate,regions:regions,root:root) {
-            return .init(pack:pack,root:root,parts:parts,bytes:WorldSectionPack.remainingBytes(candidate.asset,cache:cache),totalBytes:Int64(candidate.asset.byteCount),tileCount:tiles,archive:candidate)
+        var archiveBytes:Int64=0,usesArchive=false
+        for archive in archives {
+            let ids=Set(archive.sourceIDs),selected=parts.filter { ids.contains($0.region.id) }
+            if try await shouldDownloadArchive(archive,regions:selected.map(\.region),root:root) {
+                usesArchive=true
+                archiveBytes+=FileManager.default.fileExists(atPath:WorldSectionPack.file(archive.asset,cache:cache).path) ? 0 : WorldSectionPack.remainingBytes(archive.asset,cache:cache)
+            } else { archiveBytes+=selected.reduce(0) { $0+$1.missingBytes } }
+        }
+        if usesArchive {
+            return .init(pack:pack,root:root,parts:parts,bytes:archiveBytes,totalBytes:archives.reduce(0) { $0+Int64($1.asset.byteCount) },tileCount:tiles,
+                archive:archives.count==1 ? archives[0] : nil,archives:archives.count>1 ? archives : [])
         }
         return .init(pack:pack,root:root,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },totalBytes:total,tileCount:tiles)
     }
@@ -372,6 +431,10 @@ actor WorldRegionDownloadStore {
         // operation; it must never allocate or prepare the whole region in RAM.
         if !plan.isEstimate,plan.bytes>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
            capacity < plan.bytes+256*1024*1024 { throw RidgeError.message("There isn’t enough free space for this pack. Free some storage and try again.") }
+        if !plan.archives.isEmpty {
+            try await downloadArchives(plan.archives,plan:plan,tileProgress:tileProgress,progress:progress)
+            return
+        }
         if let archive=plan.archive,try await shouldDownloadArchive(archive,regions:plan.parts.map(\.region),root:plan.root) {
             try await downloadArchive(archive,regions:plan.parts.map(\.region),root:plan.root,tileProgress:tileProgress,progress:progress)
             return

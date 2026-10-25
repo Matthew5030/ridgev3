@@ -523,7 +523,7 @@ struct OfflineAtlasView: View {
                 drawSelection(context: &context, size: size)
                 var savedContext=context
                 if let footprint=downloadFootprint(size:size) { savedContext.clip(to:footprint,style:FillStyle(eoFill:true)) }
-                for bounds in worldSavedDownloadFills where !nativeMapSurface {
+                for bounds in worldSavedDownloadFills where worldDownloading || !nativeMapSurface {
                     let rect=rectangle(bounds,size:size)
                     if CGRect(origin:.zero,size:size).intersects(rect) {
                         savedContext.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.30)))

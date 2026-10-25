@@ -34,25 +34,16 @@ struct WorldRegionDownloadCard: View {
                 Text("Red patches have no terrain and aren’t included in the download. You can explore the available terrain around them.")
                     .font(.caption).foregroundStyle(RidgeTheme.muted)
             }
-            if !pack.standardTerrain(in:world.catalog).isEmpty {
-                Text("Blue areas use standard terrain from 30 m elevation data. LiDAR detail is retained wherever available.")
+            if world.regionPaused {
+                Label("Download paused",systemImage:"pause.circle.fill").font(.headline)
+                Text("Your saved terrain is kept. Resume to finish the whole region.")
                     .font(.caption).foregroundStyle(RidgeTheme.muted)
-            }
-            if let selectWholePark,!world.isSavingOffline,!world.checkingDownload {
-                Button("Select whole park",systemImage:"map",action:selectWholePark).font(.subheadline)
-            }
-            if let saved,saved.savedTileCount>0,!world.isSavingOffline {
-                Button(blocked || partialCoverage ? "Explore saved terrain" : "Explore in 3D",systemImage:"mountain.2") { explore() }
-                    .buttonStyle(.borderedProminent).controlSize(.large)
-                if saved.downloadState == .partial {
-                    Text("Opens the saved part. Download the rest to explore the whole available region.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                }
             }
                 if world.catalog == nil {
                     if world.isLoading { ProgressView("Connecting to map server…") }
                     else if let retryConnection {
                         Button("Retry connection",systemImage:"arrow.clockwise",action:retryConnection)
-                            .buttonStyle(.borderedProminent).controlSize(.large)
+                            .buttonStyle(.borderedProminent).foregroundStyle(.white).controlSize(.large)
                     }
                 } else if blocked {
                     Label("Terrain unavailable",systemImage:"exclamationmark.triangle.fill")
@@ -62,7 +53,7 @@ struct WorldRegionDownloadCard: View {
                 } else if world.regionComplete {
                     Label(partialCoverage ? "Available terrain saved" : "Maps saved",systemImage:"checkmark.circle.fill").font(.headline)
                     Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
-                    if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent) }
+                    if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent).foregroundStyle(.white) }
                 } else if world.checkingDownload {
                     ProgressView(value:Double(world.regionChecked),total:Double(max(1,world.regionTotal)))
                     Text("Checking saved maps · \(world.regionChecked) of \(world.regionTotal) sections").font(.subheadline.monospacedDigit())
@@ -90,22 +81,42 @@ struct WorldRegionDownloadCard: View {
                         Text(plan.isEstimate ? "Up to \(RidgeTheme.bytes(plan.totalBytes))" : plan.bytes==0 ? "Maps already on your device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.title3.weight(.semibold))
                         Text(plan.isEstimate ? "Terrain, maps & walking paths. Files already saved are reused as the download runs." : "\(RidgeTheme.bytes(plan.totalBytes)) in total · terrain, maps & walking paths").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                         if plan.bytes>0,plan.totalBytes>plan.bytes {
-                            Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) already saved and reused").font(.caption)
+                            Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) less to download").font(.caption)
                         }
                     }
                     if plan.bytes>0 {
-                        Button(partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
-                            .buttonStyle(.borderedProminent).controlSize(.large)
+                        Button(world.regionPaused ? "Resume download" : (saved?.savedTileCount ?? 0)>0 ? "Download remaining terrain" : partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
+                            .buttonStyle(.borderedProminent).foregroundStyle(.white).controlSize(.large)
                     } else if saved?.savedTileCount ?? 0 == 0 {
-                        Button("Use saved maps") { world.downloadRegionPack() }.buttonStyle(.borderedProminent)
+                        Button("Use saved maps") { world.downloadRegionPack() }.buttonStyle(.borderedProminent).foregroundStyle(.white)
                     }
                     Text("Saves to storage. It won’t load the whole region into 3D.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                } else if world.regionPaused {
+                    Button("Resume download") { world.resumeRegionDownload() }
+                        .buttonStyle(.borderedProminent).foregroundStyle(.white).controlSize(.large)
                 }
                 if let error=world.downloadError,!blocked {
                     Text(error).font(.subheadline)
-                    if world.regionTotal>0 && !world.isSavingOffline && !world.checkingDownload {
+                    if world.regionTotal>0 && !world.isSavingOffline && !world.checkingDownload && !world.regionPaused {
                         Button("Check remaining download") { world.offerRegionDownload(pack) }.buttonStyle(.bordered)
                     }
+                }
+                if let saved,saved.savedTileCount>0,!world.isSavingOffline {
+                    if saved.downloadState == .saved {
+                        Button("Explore in 3D",systemImage:"mountain.2") { explore() }
+                            .buttonStyle(.borderedProminent).foregroundStyle(.white).controlSize(.large)
+                    } else {
+                        Button("Explore saved part",systemImage:"mountain.2") { explore() }
+                            .buttonStyle(.bordered).controlSize(.large)
+                        Text("The rest of the region is still downloading or paused.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    }
+                }
+                if let selectWholePark,!world.isSavingOffline,!world.checkingDownload {
+                    Button("Select whole park",systemImage:"map",action:selectWholePark).font(.subheadline)
+                }
+                if !pack.standardTerrain(in:world.catalog).isEmpty {
+                    Text("Blue areas use standard terrain from 30 m elevation data. LiDAR detail is retained wherever available.")
+                        .font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 if saved?.savedTileCount ?? 0 > 0 {
                     Button("Remove downloaded maps",role:.destructive) { confirmRemoval=true }
