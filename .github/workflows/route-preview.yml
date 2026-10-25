@@ -33,3 +33,5 @@ jobs:
         run: sh Tools/test_world_flight_glide.sh
       - name: Switchbacks, clearance and responsive speed
         run: sh Tools/test_world_wingsuit_flight.sh
+      - name: Anticipatory pullback and calm route framing
+        run: sh Tools/test_world_flight_composition.sh

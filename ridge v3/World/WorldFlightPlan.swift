@@ -134,6 +134,7 @@ struct WorldFlightPlan {
         var heightAboveGround:Double
         var cameraPoint:GeoPoint? = nil
         var routeTarget:SIMD3<Float>? = nil
+        var fieldOfView=WorldRouteTour.fieldOfView
     }
     /// Convert both eye and velocity together when streaming changes the scene
     /// origin. Steering state stays in the immutable plan frame.
@@ -152,6 +153,7 @@ struct WorldFlightPlan {
     private struct Key {
         var time:Double;var route:Double;var eye:SIMD3<Double>;var ground:Double;var overview:Double
         var bank=0.0
+        var fieldOfView=WorldRouteTour.fieldOfView
         var velocity:SIMD3<Double> = .zero
         var acceleration:SIMD3<Double> = .zero
     }
@@ -175,6 +177,7 @@ struct WorldFlightPlan {
     let reduceMotion:Bool
     let hasSpeedTransition:Bool
     let routeFraming:Bool
+    let adaptiveFraming:Bool
     private var keys:[Key]
     private var segments:[Segment]
     private var lookSegments:[Segment]=[]
@@ -182,10 +185,10 @@ struct WorldFlightPlan {
     var count:Int { keys.count }
 
     init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,terrain:WorldFlightTerrain,frame:GeoBounds,cruiseSpeed:Double,reduceMotion:Bool,
-         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
-        self.routeFraming=routeFraming
+        self.routeFraming=routeFraming;self.adaptiveFraming=adaptiveFraming
         var result:[Key]=[],time=0.0,lastTravel=0.0,lastSpeed=0.0
         var minimumHeights:[Double]=[]
         let desiredSpacing=max(corridor.length/40000,min(3,max(0.5,cruiseSpeed*0.12)))
@@ -277,25 +280,38 @@ struct WorldFlightPlan {
                 result[i].eye.y=max(Double(result[i].ground)+5,result[i].eye.y+offset*weight)
             }
         }
-        if cornerLift>0 {
-            // Retiming belongs to the prepared camera path, not the original
-            // rail. Smoothing shortens corners; using its old distance clock
-            // would otherwise add a slowdown through those corners.
-            var elapsed=0.0
-            result[0].time=0
-            for i in 1..<result.count {
-                let a=corridor.speedLimit(at:result[i-1].route,requested:cruiseSpeed)
-                let b=corridor.speedLimit(at:result[i].route,requested:cruiseSpeed)
-                elapsed += max(0.00001,simd_distance(result[i-1].eye,result[i].eye)*2/max(0.2,a+b))
-                result[i].time=elapsed
-            }
-        }
+        if cornerLift>0 { Self.retime(&result,corridor:corridor,speed:cruiseSpeed) }
         // Solve one C2 cubic trajectory through the timed positions. Estimating
         // derivatives separately and then fitting a higher-order interpolant
         // introduced false curvature and alternating banks between close keys.
         // Endpoint curvature comes from the adjacent chords, avoiding a forced
         // zero-bank knot followed immediately by a full bank.
         Self.solveMotion(&result)
+        // Composition is based on the original prepared motion, never feedback
+        // from the widening camera. Dense bends become one held wide shot.
+        var framingTargets:[SIMD3<Double>]=[]
+        var framingAmount=Array(repeating:0.0,count:result.count)
+        if routeFraming {
+            framingTargets=result.indices.map { i in
+                let point=terrain.subject(at:stations[i]),uv=frame.uv(point.coordinate)
+                var target=SIMD3((uv.u-0.5)*frame.widthMeters,point.elevation ?? result[i].ground,(uv.v-0.5)*frame.depthMeters)
+                let v=SIMD2(result[i].velocity.x,result[i].velocity.z)
+                let forward=simd_length_squared(v)>0.001 ? simd_normalize(v) : SIMD2<Double>(0,-1)
+                let delta=SIMD2(target.x-result[i].eye.x,target.z-result[i].eye.z),shift=max(0,80-simd_dot(delta,forward))
+                target.x+=forward.x*shift;target.z+=forward.y*shift;return target
+            }
+            if adaptiveFraming && !reduceMotion {
+                let composition=Self.composition(result,targets:framingTargets,spacing:spacing,
+                    speedScale:WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed)
+                framingAmount=composition
+                for i in result.indices {
+                    result[i].eye.y+=composition[i]*28
+                    result[i].fieldOfView=WorldRouteTour.fieldOfView+composition[i]*8
+                }
+                Self.retime(&result,corridor:corridor,speed:cruiseSpeed)
+                Self.solveMotion(&result)
+            }
+        }
         let n=result.count
         // Roll anticipates the same trajectory over a short time window.
         // Smooth roll only: heading stays exactly tangent to forward motion.
@@ -313,35 +329,84 @@ struct WorldFlightPlan {
             // cuts a small bend. Prepare this focus curve once, alongside motion.
             // Extend the final leg so the finish cannot pull the camera vertically
             // down or flip it backwards as the eye reaches the last waypoint.
-            var targets=result.indices.map { i -> SIMD3<Double> in
-                let point=terrain.subject(at:stations[i]),uv=frame.uv(point.coordinate)
-                return SIMD3((uv.u-0.5)*frame.widthMeters,point.elevation ?? result[i].ground,(uv.v-0.5)*frame.depthMeters)
-            }
-            // A very tight return may put the nearest route point underneath
-            // or behind the eye. Keep the framing forward through that turn,
-            // retaining the route's lateral bearing without an overhead spin.
-            for i in targets.indices {
-                let v=SIMD2(result[i].velocity.x,result[i].velocity.z)
-                let forward=simd_length_squared(v)>0.001 ? simd_normalize(v) : SIMD2<Double>(0,-1)
-                let delta=SIMD2(targets[i].x-result[i].eye.x,targets[i].z-result[i].eye.z)
-                let shift=max(0,80-simd_dot(delta,forward))
-                targets[i].x+=forward.x*shift;targets[i].z+=forward.y*shift
-            }
-            let radius=max(1,Int(ceil(24/spacing))),window=Double(radius*2+1)
-            for _ in 0..<4 {
-                var prefix=[SIMD3<Double>.zero]
-                for target in targets { prefix.append(prefix.last!+target) }
-                targets=targets.indices.map { i in
-                    let a=max(0,i-radius),b=min(targets.count-1,i+radius)
-                    let padding=targets[0]*Double(max(0,radius-i))+targets.last!*Double(max(0,i+radius-targets.count+1))
-                    return (prefix[b+1]-prefix[a]+padding)/window
-                }
+            let close=Self.smoothTargets(framingTargets,spacing:spacing,span:24)
+            let wide=adaptiveFraming ? Self.smoothTargets(framingTargets,spacing:spacing,span:48) : close
+            let targets=result.indices.map { i in
+                close[i]+(wide[i]-close[i])*(reduceMotion && adaptiveFraming ? 1 : framingAmount[i])
             }
             var focus=result
             for i in focus.indices { focus[i].eye=targets[i] }
             Self.solveMotion(&focus)
             lookSegments=(0..<(focus.count-1)).map { Segment(focus[$0],focus[$0+1]) }
         }
+    }
+    private static func smoothTargets(_ input:[SIMD3<Double>],spacing:Double,span:Double)->[SIMD3<Double>] {
+        var targets=input
+        let radius=max(1,Int(ceil(span/spacing))),window=Double(radius*2+1)
+        for _ in 0..<4 {
+            var prefix=[SIMD3<Double>.zero]
+            for target in targets { prefix.append(prefix.last!+target) }
+            targets=targets.indices.map { i in
+                let a=max(0,i-radius),b=min(targets.count-1,i+radius)
+                let padding=targets[0]*Double(max(0,radius-i))+targets.last!*Double(max(0,i+radius-targets.count+1))
+                return (prefix[b+1]-prefix[a]+padding)/window
+            }
+        }
+        return targets
+    }
+    private static func retime(_ result:inout [Key],corridor:WorldFlightCorridor,speed:Double) {
+        var elapsed=0.0;result[0].time=0
+        for i in 1..<result.count {
+            let a=corridor.speedLimit(at:result[i-1].route,requested:speed),b=corridor.speedLimit(at:result[i].route,requested:speed)
+            elapsed+=max(0.00001,simd_distance(result[i-1].eye,result[i].eye)*2/max(0.2,a+b));result[i].time=elapsed
+        }
+    }
+    /// Anticipate angular work at the chosen playback pace. A forward maximum
+    /// starts widening before a turn, holds through nearby turns, and releases
+    /// slowly. Four bounded convolutions make a smooth, immutable shot profile.
+    private static func composition(_ keys:[Key],targets:[SIMD3<Double>],spacing:Double,speedScale:Double)->[Double] {
+        let n=keys.count
+        let views=keys.indices.map { simd_normalize(targets[$0]-keys[$0].eye) }
+        let headings=keys.map { key -> SIMD2<Double> in
+            let v=SIMD2(key.velocity.x,key.velocity.z)
+            return simd_length_squared(v)>0.001 ? simd_normalize(v) : SIMD2<Double>(0,-1)
+        }
+        var viewArc=Array(repeating:0.0,count:n),turnArc=viewArc
+        for i in 1..<n {
+            viewArc[i]=viewArc[i-1]+acos(min(1,max(-1,simd_dot(views[i],views[i-1]))))
+            turnArc[i]=turnArc[i-1]+acos(min(1,max(-1,simd_dot(headings[i],headings[i-1]))))
+        }
+        let band=max(1,Int(ceil(75/spacing)))
+        var demand=Array(repeating:0.0,count:n)
+        for i in keys.indices {
+            let a=max(0,i-band),b=min(n-1,i+band),seconds=max(0.01,(keys[b].time-keys[a].time)/speedScale)
+            let rate=max(viewArc[b]-viewArc[a],turnArc[b]-turnArc[a])/seconds
+            let view=SIMD2(views[i].x,views[i].z)
+            let bearing=simd_length_squared(view)>0.001 ? acos(min(1,max(-1,simd_dot(simd_normalize(view),headings[i])))) : 0
+            demand[i]=min(1,max(0,max((rate-0.15)/0.75,(bearing-0.26)/0.75)))
+        }
+        let before=max(1,Int(ceil(160/spacing))),ahead=max(1,Int(ceil(280/spacing)))
+        var queue=Array(repeating:0,count:n),head=0,tail=0,added=0,profile=demand
+        for i in keys.indices {
+            let end=min(n-1,i+ahead)
+            while added<=end {
+                while tail>head && demand[queue[tail-1]]<=demand[added] { tail-=1 }
+                queue[tail]=added;tail+=1;added+=1
+            }
+            while tail>head && queue[head]<i-before { head+=1 }
+            profile[i]=demand[queue[head]]
+        }
+        let radius=max(1,Int(ceil(80/spacing))),window=Double(radius*2+1)
+        for _ in 0..<4 {
+            var prefix=Array(repeating:0.0,count:n+1)
+            for i in keys.indices { prefix[i+1]=prefix[i]+profile[i] }
+            profile=keys.indices.map { i in
+                let a=max(0,i-radius),b=min(n-1,i+radius)
+                let pad=Double(max(0,radius-i))*profile[0]+Double(max(0,i+radius-n+1))*profile[n-1]
+                return min(1,max(0,(prefix[b+1]-prefix[a]+pad)/window))
+            }
+        }
+        return profile
     }
     private static func solveMotion(_ result:inout [Key]) {
         let n=result.count
@@ -404,6 +469,6 @@ struct WorldFlightPlan {
         }
         let ground=left.ground+(right.ground-left.ground)*Double(t)
         return Sample(pose:.init(eye:eye,look:routeTarget ?? eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
-                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget)
+                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t))
     }
 }

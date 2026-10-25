@@ -185,7 +185,7 @@ import simd
                 let sample=glide.advance(reference:reference,yaw:time<plan.duration/2 ? 0.5 : 0,pitch:0,speedScale:scale,seconds:dt,frame:frame,reduceMotion:false,clearance:plan.clearance)
                 let target=sample.routeTarget!,direction=simd_normalize(sample.pose.look-sample.pose.eye)
                 largestTurn=max(largestTurn,acos(min(1,max(-1,simd_dot(direction,simd_normalize(previous.pose.look-previous.pose.eye))))))
-                try check(sample.heightAboveGround>=9.95 && sample.heightAboveGround<=26.0,"\(name): lower flight avoids the old 90 m automatic corner lift (\(sample.heightAboveGround) m)")
+                try check(sample.heightAboveGround>=9.95 && sample.heightAboveGround<=54.0,"\(name): adaptive framing retains a bounded height over turns (\(sample.heightAboveGround) m)")
                 try check(simd_dot(direction,simd_normalize(target-sample.pose.eye))>0.99999,"\(name): steering retains the route focus")
                 rig.fly(on:camera,pose:.init(eye:sample.pose.eye,look:sample.pose.look,bank:sample.pose.bank))
                 let axis=camera.simdWorldTransform.columns.2,front = -SIMD3(axis.x,axis.y,axis.z)

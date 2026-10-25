@@ -807,7 +807,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         let atmosphere=WorldAtmosphere.range(cameraDistance:tour.isEntering ? Double(pose.eye.y) : 3000)
         scene?.fogStartDistance=atmosphere.start;scene?.fogEndDistance=atmosphere.end
         let bank=flightPlayback.roll(toward:pose.bank,seconds:step)
-        let fieldOfView=tour.isEntering ? flightArrival?.fieldOfView(elapsed:flightArrivalTime) ?? WorldRouteTour.fieldOfView : WorldRouteTour.fieldOfView
+        let fieldOfView=tour.isEntering ? flightArrival?.fieldOfView(elapsed:flightArrivalTime) ?? prepared.fieldOfView : prepared.fieldOfView
         cameraRig.fly(on:cameraNode,pose:.init(eye:pose.eye,look:pose.eye+direction*80,fieldOfView:fieldOfView,bank:bank,up:pose.up))
         placeLabels.scale(camera:cameraNode,viewport:bounds.size)
         if now-tourLastLabels>=0.25 {

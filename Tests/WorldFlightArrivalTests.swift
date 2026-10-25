@@ -48,7 +48,7 @@ import simd
                 let first=joining.sample(elapsed:0)
                 try check(simd_distance(first.eye,eye)<0.001,"Preview begins at the exact browsing camera")
                 try check(simd_dot(simd_normalize(first.look-first.eye),simd_normalize(look-eye))>0.99999,"Preview preserves the initial viewing direction")
-                try check(joining.fieldOfView(elapsed:0)==43 && joining.fieldOfView(elapsed:joining.duration)==WorldRouteTour.fieldOfView,"The lens blends from browsing into FPV")
+                try check(joining.fieldOfView(elapsed:0)==43 && joining.fieldOfView(elapsed:joining.duration)==start.fieldOfView,"The lens blends from browsing into FPV")
                 try check(joining.duration<=4.2,"The entrance has no fixed eight-second intro")
                 camera.simdPosition=eye;WorldCameraOrientation.aim(camera,at:look,up:up)
                 for time in stride(from:0.0,through:joining.duration,by:0.02) {

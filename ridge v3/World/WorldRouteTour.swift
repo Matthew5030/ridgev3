@@ -113,7 +113,8 @@ struct WorldRouteTourPath {
     var isPlaying = false
     /// Cruise speed in km/h; the previous multiplier hid an absolute turn cap.
     static let speedRange = 10.0...600.0
-    var speed = 600.0
+    nonisolated static let previewCruiseSpeed = 600.0
+    var speed = WorldRouteTour.previewCruiseSpeed
     static let flightClearance = 10.0
     nonisolated static let fieldOfView = 68.0
     static let fpvCornerLift = 12.0
