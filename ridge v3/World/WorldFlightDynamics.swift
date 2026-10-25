@@ -51,7 +51,8 @@ enum WorldFlightTurn {
 /// A bounded steering manoeuvre around the prepared rail. The offset is a
 /// critically damped position, not a camera rotation: its analytic velocity is
 /// added to the rail velocity. Production framing holds the route target in
-/// view while the underlying motion keeps its coordinated glide.
+/// view while the underlying motion keeps its coordinated glide. Framed flight
+/// retains its prepared roll cue, adding only a bounded steering correction.
 /// Positive spline/response weights keep the eye within the sampled lateral
 /// corridor, including a small descent using the prepared clearance buffer.
 /// Release rejoins gently;
@@ -61,6 +62,8 @@ struct WorldFlightGlide {
     private var offset=SIMD3<Double>.zero
     private var derivative=SIMD3<Double>.zero
     private var previousVelocity:SIMD3<Double>?
+    private var previousBaseVelocity:SIMD3<Double>?
+    private var steeringBank=0.0
     mutating func reset() { self=Self() }
     mutating func advance(reference:WorldFlightPlan.Sample,yaw:Float,pitch:Float,
                           speedScale:Double,seconds:Double,frame:GeoBounds,reduceMotion:Bool,clearance:Double=15)->WorldFlightPlan.Sample {
@@ -83,9 +86,21 @@ struct WorldFlightGlide {
         if let previousVelocity,dt>0 {
             let a=(velocity-previousVelocity)/dt,v=SIMD2(velocity.x,velocity.z),square=simd_length_squared(v)
             let curvature=square>0.0001 ? (v.x*a.z-v.y*a.x)/pow(square,1.5) : 0
-            bank=WorldFlightTurn.bank(curvature:curvature,speed:sqrt(square),overview:0)
+            if reference.routeTarget != nil,let previousBaseVelocity {
+                func yawRate(_ old:SIMD3<Double>,_ next:SIMD3<Double>)->Double {
+                    let a=SIMD2(old.x,old.z),b=SIMD2(next.x,next.z)
+                    return atan2(a.x*b.y-a.y*b.x,simd_dot(a,b))/dt
+                }
+                let extra=yawRate(previousVelocity,velocity)-yawRate(previousBaseVelocity,baseVelocity)
+                let limit=6 * Double.pi/180,target=min(limit,max(-limit,-atan(speed*extra/9.81)))
+                steeringBank+=(target-steeringBank)*(1-exp(-dt/0.5))
+                let totalLimit=24.0 * Double.pi/180
+                bank=Float(min(totalLimit,max(-totalLimit,Double(reference.pose.bank)+steeringBank)))
+            } else if reference.routeTarget == nil {
+                bank=WorldFlightTurn.bank(curvature:curvature,speed:sqrt(square),overview:0)
+            }
         }
-        previousVelocity=velocity
+        previousVelocity=velocity;previousBaseVelocity=baseVelocity
         let point=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         var result=reference
         result.pose = .init(eye:eye,look:reference.routeTarget ?? eye+direction*80,focus:point,bank:reduceMotion ? 0 : bank)

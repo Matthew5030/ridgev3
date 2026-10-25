@@ -45,9 +45,10 @@ struct WorldFlightTerrain {
         let samples=distances.map { path.sample(at:$0) },positions=samples.map { local($0.coordinate) }
         var cells:[SIMD2<Int>:[Int]]=[:]
         for i in positions.indices { cells[cell(positions[i]),default:[]].append(i) }
-        let last=path.points.last!,before=path.sample(at:max(0,path.length-40))
-        let end=local(last.coordinate)-local(before.coordinate)
-        let direction=simd_length_squared(end)>0.001 ? simd_normalize(end) : SIMD2<Double>(0,-1)
+        let last=path.points.last!
+        // A tiny kink in the last walking segment must not swivel the gaze
+        // into a new heading as the smooth camera rail finishes straight.
+        let direction=corridor.sample(flightDistance:corridor.length).direction
         return Self.distances(length:corridor.length).map { travel in
             let ahead=travel+140
             if ahead>corridor.length {
@@ -185,7 +186,7 @@ struct WorldFlightPlan {
     var count:Int { keys.count }
 
     init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,terrain:WorldFlightTerrain,frame:GeoBounds,cruiseSpeed:Double,reduceMotion:Bool,
-         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
         self.routeFraming=routeFraming;self.adaptiveFraming=adaptiveFraming
@@ -331,8 +332,8 @@ struct WorldFlightPlan {
             }
         }
         let n=result.count
-        // Roll anticipates the same trajectory over a short time window.
-        // Smooth roll only: heading stays exactly tangent to forward motion.
+        // Unframed flight banks from its trajectory. Route-framed flight below
+        // coordinates its visible heading and roll from one prepared turn.
         var banks=result.map { key -> Double in
             let v=SIMD2(key.velocity.x,key.velocity.z),a=SIMD2(key.acceleration.x,key.acceleration.z),square=simd_length_squared(v)
             let curvature=square>0.0001 ? (v.x*a.y-v.y*a.x)/pow(square,1.5) : 0
@@ -354,12 +355,69 @@ struct WorldFlightPlan {
             }
             // Apply pitch after horizontal composition and from the final eye
             // height. Focus filtering and pullback cannot tip a climb down.
-            let targets=Self.slopeFraming(result,targets:groundTargets,grades:terrainGrades,influence:terrainInfluence,spacing:spacing)
+            var targets=Self.slopeFraming(result,targets:groundTargets,grades:terrainGrades,influence:terrainInfluence,spacing:spacing)
+            if coordinatedTurns {
+                targets=Self.turnFraming(result,targets:targets,stations:stations,spacing:spacing)
+                if !reduceMotion {
+                    let banks=Self.turnBanks(result,targets:targets,spacing:spacing,speedScale:WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed)
+                    for i in result.indices { result[i].bank=banks[i] }
+                    keys=result
+                }
+            }
             var focus=result
             for i in focus.indices { focus[i].eye=targets[i] }
             Self.solveMotion(&focus)
             lookSegments=(0..<(focus.count-1)).map { Segment(focus[$0],focus[$0+1]) }
         }
+    }
+    private static func unwrappedHeadings(_ keys:[Key],targets:[SIMD3<Double>])->[Double] {
+        var result:[Double]=[]
+        for i in keys.indices {
+            let delta=targets[i]-keys[i].eye
+            var angle=atan2(delta.x,-delta.z)
+            if let previous=result.last { angle=previous+atan2(sin(angle-previous),cos(angle-previous)) }
+            result.append(angle)
+        }
+        return result
+    }
+    /// Filter heading itself, rather than chasing nearby focus points through
+    /// each bend. Pitch retains the accepted terrain framing. A forward cone
+    /// stops a short return from becoming a turn of the head across the rail.
+    private static func turnFraming(_ keys:[Key],targets:[SIMD3<Double>],stations:[Double],spacing:Double)->[SIMD3<Double>] {
+        let angles=Self.unwrappedHeadings(keys,targets:targets)
+        let smooth=Self.smoothTargets(angles.map { SIMD3<Double>(0,$0,0) },spacing:spacing,span:100)
+        return keys.indices.map { i in
+            let eye=keys[i].eye,delta=targets[i]-eye
+            let originalRange=max(1,simd_length(SIMD2(delta.x,delta.z))),range=max(120,originalRange)
+            let weight=Self.ease(min(stations[i],stations.last!-stations[i])/160)
+            let heading=angles[i]+(smooth[i].y-angles[i])*weight
+            let course=atan2(keys[i].velocity.x,-keys[i].velocity.z)
+            let offset=atan2(sin(heading-course),cos(heading-course))
+            let forwardHeading=course+0.9*tanh(offset/0.9)
+            // Retain the accepted route composition in narrow turns. Smoothing
+            // cannot replace a sideways swivel with a view that loses the path.
+            let correction=atan2(sin(forwardHeading-angles[i]),cos(forwardHeading-angles[i]))
+            let limit=12.0 * Double.pi/180
+            let azimuth=angles[i]+limit*tanh(correction/limit)
+            return eye+SIMD3(sin(azimuth)*range,delta.y*range/originalRange,-cos(azimuth)*range)
+        }
+    }
+    /// One continuous roll cue for the visible turn, prepared in playback time.
+    /// Look ahead by the runtime roll response so the bank begins before the
+    /// heading swings. Small corrections do not repeatedly flap the horizon.
+    private static func turnBanks(_ keys:[Key],targets:[SIMD3<Double>],spacing:Double,speedScale:Double)->[Double] {
+        let headings=Self.unwrappedHeadings(keys,targets:targets),n=keys.count
+        let radius=max(1,Int(ceil(35/spacing)))
+        let banks=keys.indices.map { i -> SIMD3<Double> in
+            let a=max(0,i-radius),b=min(n-1,i+radius)
+            let rate=(headings[b]-headings[a])/max(0.001,keys[b].time-keys[a].time)*speedScale
+            let limit=(24-6*keys[i].overview) * .pi/180
+            let amount=Self.ease(abs(rate)/0.08)
+            return SIMD3(0,-limit*tanh(rate/0.5)*amount,0)
+        }
+        let smooth=Self.smoothTargets(banks,spacing:spacing,span:60)
+        let ahead=max(1,Int(ceil(0.45*simd_length(keys[0].velocity)*speedScale/spacing)))
+        return keys.indices.map { smooth[min(n-1,$0+ahead)].y }
     }
     /// Keep the route's horizontal bearing while looking with the terrain:
     /// up on climbs, down on descents. Flat ground retains its accepted focus.
