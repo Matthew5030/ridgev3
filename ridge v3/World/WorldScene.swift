@@ -621,16 +621,21 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             do {
                 let terrain:WorldFlightTerrain
                 if let cached { terrain=cached } else {
-                    let points=WorldFlightTerrain.clearancePoints(corridor:corridor)
-                    let (lanes,places)=try await model.prepareFlightElevations(points)
+                    let geometry=Task.detached(priority:.userInitiated) {
+                        (WorldFlightTerrain.clearancePoints(corridor:corridor),WorldFlightTerrain.focusPoints(path:path,corridor:corridor))
+                    }
+                    let (points,focus)=await withTaskCancellationHandler(operation:{ await geometry.value },onCancel:{ geometry.cancel() })
+                    try Task.checkCancellation()
+                    let (allHeights,places)=try await model.prepareFlightElevations(points+focus.map(\.coordinate))
+                    let lanes=Array(allHeights.prefix(points.count)),focusHeights=Array(allHeights.dropFirst(points.count))
                     let stations=WorldFlightTerrain.distances(length:corridor.length)
                     let heights=stations.indices.map { lanes[$0*5+2] }
                     let clearanceHeights=stations.indices.map { i in lanes[(i*5)..<(i*5+5)].compactMap { $0 }.max() }
-                    terrain=WorldFlightTerrain(path:path,corridor:corridor,heights:heights,places:places,clearanceHeights:clearanceHeights)
+                    terrain=WorldFlightTerrain(path:path,corridor:corridor,heights:heights,places:places,clearanceHeights:clearanceHeights,focusPoints:focus,focusHeights:focusHeights)
                 }
                 try Task.checkCancellation()
                 let build=Task.detached(priority:.userInitiated) {
-                    try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift)
+                    try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift,routeFraming:true)
                 }
                 let plan=try await withTaskCancellationHandler(operation:{try await build.value},onCancel:{build.cancel()})
                 guard let self,self.flightPreparationID==token,self.tour?.sessionID==session,self.tour?.isPresented==true,!Task.isCancelled else { return }

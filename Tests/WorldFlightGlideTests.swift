@@ -1,8 +1,10 @@
 import Foundation
+import SceneKit
 import simd
 
 @main struct WorldFlightGlideTests {
     @MainActor static func main() throws {
+        setbuf(stdout,nil)
         var checks=0
         func check(_ value:Bool,_ message:String) throws { checks+=1;if !value { throw NSError(domain:message,code:1) } }
         func point(_ x:Double,_ z:Double)->RoutePoint {
@@ -51,7 +53,7 @@ import simd
         try check(lanePoints.count==stations.count*5,"Bounded five-lane terrain preparation")
         for i in stations.indices {
             try check(lanePoints[i*5+2].distance(to:rail.sample(flightDistance:stations[i]).point)<0.01,"Centre lane is unchanged")
-            try check(abs(lanePoints[i*5].distance(to:lanePoints[i*5+4])-160)<0.2,"Clearance covers the entire steering width")
+            try check(abs(lanePoints[i*5].distance(to:lanePoints[i*5+4])-WorldFlightGlide.lateralLimit*2)<0.2,"Clearance covers the entire steering width")
         }
         let sideHeights:[Float?]=stations.map { distance in
             let x=(distance-2500.0)/100.0
@@ -76,19 +78,19 @@ import simd
                 let offset=sample.pose.eye-reference.pose.eye,heading=simd_normalize(sample.pose.look-sample.pose.eye),delta=sample.pose.eye-last.pose.eye
                 try check(simd_dot(heading,simd_normalize(sample.velocity))>0.99999,"Steered gaze and travel share one velocity")
                 try check(simd_dot(heading,simd_normalize(delta))>0.9995,"Steering turns forward instead of sliding sideways")
-                try check(abs(offset.x)<=80.01 && offset.y>=(-0.01) && offset.y<=60.01,"Steering stays inside its prepared clearance corridor")
+                try check(abs(offset.x)<=Float(WorldFlightGlide.lateralLimit)+0.01 && offset.y>=(-0.01) && offset.y<=12.01,"Steering stays inside its prepared clearance corridor")
                 try check(sample.speed>=speed*0.95 && sample.speed<speed*1.4,"Steering keeps forward momentum")
                 if seconds>2 && seconds<5 {
                     try check(sample.pose.eye.x>reference.pose.eye.x+(speed>20 ? 0.1 : 0.01),"Dragging right changes the actual flight path")
                     try check(sample.pose.look.y>sample.pose.eye.y,"Dragging upward makes the flight climb")
                 }
-                if seconds>1 && seconds<3 && sample.pose.bank < -0.003 { bankedRight=true }
+                if seconds>1 && seconds<3 && sample.pose.bank < (speed>20 ? -0.003 : -0.0005) { bankedRight=true }
                 if seconds>7 && sample.pose.bank > 0.003 { bankedBack=true }
                 if seconds<7 { maxOffset=max(maxOffset,Double(simd_length(offset)));peakBank=max(peakBank,abs(sample.pose.bank)) }
                 if tick==Int(4*hz) { middle=sample }
                 last=sample
             }
-            try check(maxOffset>(speed>20 ? 5 : 0.1) && peakBank>0.003,"Steering makes a visible coordinated bank and manoeuvre")
+            try check(maxOffset>(speed>20 ? 5 : 0.1) && peakBank>(speed>20 ? 0.003 : 0.0005),"Steering makes a visible coordinated bank and manoeuvre")
             try check(bankedRight,"Right steering banks into the turn")
             if speed>20 { try check(bankedBack,"Rejoining banks back towards the route") }
             let finish=straight.sample(time:time)
@@ -119,7 +121,7 @@ import simd
                 let heading=simd_normalize(sample.pose.look-sample.pose.eye),movement=sample.pose.eye-last.pose.eye
                 try check(simd_dot(heading,simd_normalize(movement))>0.9995,"Steering through turns retains forward gaze")
                 try check(sample.speed>plan.cruiseSpeed*0.45,"Changing steering through switchbacks cannot stall the flight")
-                try check(simd_length(SIMD2(sample.pose.eye.x-reference.pose.eye.x,sample.pose.eye.z-reference.pose.eye.z))<80.01,"Curved flight stays in its corridor")
+                try check(simd_length(SIMD2(sample.pose.eye.x-reference.pose.eye.x,sample.pose.eye.z-reference.pose.eye.z))<Float(WorldFlightGlide.lateralLimit)+0.01,"Curved flight stays in its corridor")
                 last=sample
             }
         }
@@ -130,7 +132,7 @@ import simd
             let reference=straight.sample(time:Double(tick)/60)
             let sample=glide.advance(reference:reference,yaw:tick<500 ? 3 : -3,pitch:tick<500 ? 1 : -1,speedScale:speed/25,seconds:1/60,frame:frame,reduceMotion:true)
             let offset=sample.pose.eye-reference.pose.eye
-            try check(simd_length(SIMD2(offset.x,offset.z))<=80.01 && offset.y>=(-10.01) && sample.heightAboveGround>=4.99,"Changing speed or steering direction cannot overshoot the corridor")
+            try check(simd_length(SIMD2(offset.x,offset.z))<=Float(WorldFlightGlide.lateralLimit)+0.01 && offset.y>=(-10.01) && sample.heightAboveGround>=4.99,"Changing speed or steering direction cannot overshoot the corridor")
             try check(sample.pose.bank==0,"Reduce Motion keeps a level horizon while steering")
             last=sample
         }
@@ -154,6 +156,50 @@ import simd
         glide.reset()
         let reset=glide.advance(reference:straight.sample(time:0),yaw:0,pitch:0,speedScale:1,seconds:0,frame:frame,reduceMotion:false)
         try check(reset.pose.eye==straight.sample(time:0).pose.eye,"Seek/restart discards steering displacement")
+        let mountain=WorldFlightTerrain(path:path,corridor:rail,heights:stations.map { _ in Float?(1000) },focusHeights:stations.map { _ in Float?(1000) })
+        let mountainPlan=try WorldFlightPlan(path:path,corridor:rail,terrain:mountain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10,routeFraming:true)
+        let mountainSample=mountainPlan.sample(time:5)
+        try check(abs(mountainSample.routeTarget!.y-1000)<0.01,"Route focus uses saved terrain height, including stale or absent route elevations")
+        let mountainRebased=WorldFlightPlan.converted(mountainSample,from:frame,to:rebased)
+        try check(geographic(mountainSample.routeTarget!,frame).distance(to:geographic(mountainRebased.routeTarget!,rebased))<0.02,"Scene rebasing preserves the route focus as well as the camera")
+        // Exercise the production route-framing mode at the chosen 600 km/h.
+        let tour=WorldRouteTour()
+        try check(tour.speed==600 && abs(tour.metersPerSecond-600/3.6)<0.001,"Preview opens at the single chosen 600 km/h pace")
+        for (name,points) in [
+            ("straight",[point(0,0),point(0,-2000)]),
+            ("bend",[point(0,0),point(0,-700),point(600,-700)]),
+            ("kink",[point(0,0),point(0,-300),point(75,-370),point(0,-440),point(0,-1000)]),
+            ("return",[point(0,0),point(0,-500),point(0,0)]),
+            ("overlapping returns",[point(0,0),point(0,-350),point(20,-40),point(40,-320),point(10,0)]),
+            ("switchbacks",[point(0,0),point(0,-160),point(80,-160),point(80,-240),point(0,-240),point(0,-500)])] {
+            let path=WorldRouteTourPath(segments:[points])!,rail=WorldFlightCorridor(path:path,tolerance:160,routeCentred:true)
+            let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:WorldFlightTerrain.distances(length:rail.length).map { _ in Float?(100) })
+            let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,
+                clearance:WorldRouteTour.flightClearance,cornerLift:WorldRouteTour.fpvCornerLift,routeFraming:true)
+            let camera=SCNNode();camera.camera=SCNCamera();let rig=WorldCameraRig();rig.beginTour(on:camera)
+            var previous=plan.sample(time:0),largestTurn:Float=0,largestAimError:Float=0
+            let dt=1.0/60,scale=tour.metersPerSecond/25
+            var glide=WorldFlightGlide()
+            for time in stride(from:dt*scale,to:plan.duration,by:dt*scale) {
+                let reference=plan.sample(time:time)
+                let sample=glide.advance(reference:reference,yaw:time<plan.duration/2 ? 0.5 : 0,pitch:0,speedScale:scale,seconds:dt,frame:frame,reduceMotion:false,clearance:plan.clearance)
+                let target=sample.routeTarget!,direction=simd_normalize(sample.pose.look-sample.pose.eye)
+                largestTurn=max(largestTurn,acos(min(1,max(-1,simd_dot(direction,simd_normalize(previous.pose.look-previous.pose.eye))))))
+                try check(sample.heightAboveGround>=9.95 && sample.heightAboveGround<=26.0,"\(name): lower flight avoids the old 90 m automatic corner lift (\(sample.heightAboveGround) m)")
+                try check(simd_dot(direction,simd_normalize(target-sample.pose.eye))>0.99999,"\(name): steering retains the route focus")
+                rig.fly(on:camera,pose:.init(eye:sample.pose.eye,look:sample.pose.look,bank:sample.pose.bank))
+                let axis=camera.simdWorldTransform.columns.2,front = -SIMD3(axis.x,axis.y,axis.z)
+                try check(simd_dot(front,simd_normalize(target-sample.pose.eye))>0.99999,"\(name): real camera centres the planned route focus while banking")
+                let horizontal=simd_normalize(SIMD2(direction.x,direction.z)),travel=simd_normalize(SIMD2(sample.velocity.x,sample.velocity.z))
+                largestAimError=max(largestAimError,acos(min(1,max(-1,simd_dot(horizontal,travel)))))
+                try check(simd_dot(horizontal,travel)>0,"\(name): the guided view never looks backwards through a turn")
+                previous=sample
+            }
+            print("Route framing \(name) at 600 km/h: maximum frame turn \(largestTurn) rad, maximum framing bearing \(largestAimError) rad")
+            try check(largestTurn<0.06,"\(name): route framing cannot produce a sudden camera spin")
+            let finish=plan.sample(time:plan.duration)
+            try check(simd_dot(simd_normalize(finish.pose.look-finish.pose.eye),simd_normalize(finish.velocity))>0.95,"\(name): the finish keeps looking down the final leg")
+        }
         print("PASS \(checks) terrain-envelope, forward-steering, release, bank and frame-continuity checks")
     }
 }

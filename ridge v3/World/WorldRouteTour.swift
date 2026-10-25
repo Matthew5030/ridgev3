@@ -113,10 +113,10 @@ struct WorldRouteTourPath {
     var isPlaying = false
     /// Cruise speed in km/h; the previous multiplier hid an absolute turn cap.
     static let speedRange = 10.0...600.0
-    var speed = 150.0
-    static let flightClearance = 15.0
+    var speed = 600.0
+    static let flightClearance = 10.0
     nonisolated static let fieldOfView = 68.0
-    static let fpvCornerLift = 90.0
+    static let fpvCornerLift = 12.0
     static let preparedSpeed = 25.0
     var clearance:Double { Self.flightClearance }
     private(set) var actualHeight = 0.0
@@ -133,7 +133,7 @@ struct WorldRouteTourPath {
 
     @discardableResult func open(route: RidgeRoute, startingAtWaypoint waypoint: UUID? = nil) -> Bool {
         guard let path=WorldRouteTourPath(segments:route.segments.isEmpty ? [route.points] : route.segments.map(\.points)) else { return false }
-        self.path=path;corridor=WorldFlightCorridor(path:path,tolerance:160)
+        self.path=path;corridor=WorldFlightCorridor(path:path,tolerance:160,routeCentred:true)
         sessionID=UUID();isPreparing=true;isEntering=true;isRevealing=false;entryElapsed=0;isTerrainReady=false;entryStartedAt=Date();actualMetersPerSecond=0;actualHeight=0
         progress=waypoint.map { path.distance(toWaypoint:$0,in:route)/path.length } ?? 0
         seekRevision+=1; message=nil

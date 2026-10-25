@@ -22,7 +22,7 @@ struct WorldFlightCorridor {
     var length: Double { knots.last?.flight ?? 0 }
     var routeLength: Double { knots.last?.route ?? 0 }
 
-    init(path: WorldRouteTourPath, tolerance:Double=100) {
+    init(path: WorldRouteTourPath, tolerance:Double=100,routeCentred:Bool=false) {
         let tolerance=max(5,min(500,tolerance))
         origin=path.points[0].coordinate
         longitudeScale=max(0.01,cos(origin.latitude * .pi/180))
@@ -102,10 +102,10 @@ struct WorldFlightCorridor {
         // original ordered route separately; only its camera rail is condensed.
         let narrowBundle=tolerance>100 && reach>50 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(tolerance*0.6,reach*0.3) }
         let elongatedReturn=(oneReturn || narrowBundle) && simd_length(end)<min(30,reach*0.2) && reach>0.5 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(80,max(3,tolerance*0.75)) }
-        if elongatedReturn && tolerance<100 {
+        if elongatedReturn && (tolerance<100 || routeCentred) {
             // Follow both legs, with a small racetrack turnaround. An oval of
             // the entire journey starts sideways and desynchronizes progress.
-            let side=SIMD2(-axis.y,axis.x),r=min(tolerance,max(1,reach*0.2)),run=reach-r
+            let side=SIMD2(-axis.y,axis.x),r=min(routeCentred ? 60 : tolerance,max(1,reach*0.2)),run=reach-r
             let entry=axis*run-side*r,exit=axis*run+side*r,peakRoute=path.distances[peak]
             curve(.zero,axis*(run/3),axis*(run*2/3)-side*r,entry,0,peakRoute*run/reach)
             let count=max(32,Int(ceil(.pi*r)))

@@ -67,7 +67,7 @@ import simd
         try check(tour.isRevealing && !tour.canAdvance,"The door shot and descent hold route progress until the glide begins")
         tour.finishEntry()
         try check(tour.canAdvance && !tour.isEntering,"Completing the reveal releases forward playback")
-        try check(tour.clearance==15,"The FPV preview retains its low straight-line clearance")
+        try check(tour.clearance==10,"The FPV preview retains its low straight-line clearance")
         tour.speed=10
         try check(abs(tour.metersPerSecond-10.0/3.6)<0.001,"Cruise control is in real km/h")
         tour.speed=60

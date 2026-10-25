@@ -11,7 +11,7 @@ import simd
         for size in [500.0,8000] { for aspect in [0.5,1.4] { for progress in [0.0,0.5] {
             let path=WorldRouteTourPath(segments:[[point(0,0),point(0,-size),point(size/3,-size)]])!,rail=WorldFlightCorridor(path:path,tolerance:160)
             let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:WorldFlightTerrain.distances(length:rail.length).map {_ in Float?(100)})
-            let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:15,cornerLift:WorldRouteTour.fpvCornerLift)
+            let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:WorldRouteTour.flightClearance,cornerLift:WorldRouteTour.fpvCornerLift,routeFraming:true)
             let start=plan.sample(time:plan.time(at:path.length*progress)),entry=WorldFlightArrival(path:path,flight:start,frame:frame,aspect:aspect)
             let direction=simd_normalize(entry.opening.look-entry.opening.eye)
             try check(direction.y < -0.05 && direction.y > -0.25,"FPV retains its shallow forward entrance")

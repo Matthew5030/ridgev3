@@ -50,13 +50,14 @@ enum WorldFlightTurn {
 
 /// A bounded steering manoeuvre around the prepared rail. The offset is a
 /// critically damped position, not a camera rotation: its analytic velocity is
-/// added to the rail velocity, and that same vector determines where we look.
+/// added to the rail velocity. Production framing holds the route target in
+/// view while the underlying motion keeps its coordinated glide.
 /// Positive spline/response weights keep the eye within the sampled lateral
 /// corridor, including a small descent using the prepared clearance buffer.
 /// Release rejoins gently;
 /// pause/seek never integrate hidden movement.
 struct WorldFlightGlide {
-    static let lateralLimit=80.0
+    static let lateralLimit=24.0
     private var offset=SIMD3<Double>.zero
     private var derivative=SIMD3<Double>.zero
     private var previousVelocity:SIMD3<Double>?
@@ -68,11 +69,11 @@ struct WorldFlightGlide {
         let forward=simd_length_squared(horizontal)>0.00001 ? simd_normalize(horizontal) : SIMD2<Double>(0,-1)
         let right=SIMD3(-forward.y,0,forward.x)
         let descent=min(10,max(0,clearance-5))
-        let vertical=(pitch<0 ? descent : 60)*tanh(Double(pitch)*2)
+        let vertical=(pitch<0 ? descent : 12)*tanh(Double(pitch)*2)
         let target=right*(Self.lateralLimit*tanh(Double(yaw)*1.5))+SIMD3(0,vertical,0)
         // Response is spatial: slow flight turns gently over the same corridor
         // rather than making a fast sideways step at a low selected speed.
-        let responseSpeed=min(64.8,speed),travel=responseSpeed*dt,omega=1/(Self.lateralLimit*0.9)
+        let responseSpeed=min(64.8,speed),travel=responseSpeed*dt,omega=1/72.0
         let error=offset-target,impulse=derivative+error*omega,decay=exp(-omega*travel)
         offset=target+(error+impulse*travel)*decay
         derivative=(derivative-impulse*(omega*travel))*decay
@@ -87,7 +88,7 @@ struct WorldFlightGlide {
         previousVelocity=velocity
         let point=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         var result=reference
-        result.pose = .init(eye:eye,look:eye+direction*80,focus:point,bank:reduceMotion ? 0 : bank)
+        result.pose = .init(eye:eye,look:reference.routeTarget ?? eye+direction*80,focus:point,bank:reduceMotion ? 0 : bank)
         result.velocity=SIMD3<Float>(velocity);result.speed=simd_length(velocity)
         result.heightAboveGround += offset.y;result.cameraPoint=point
         return result

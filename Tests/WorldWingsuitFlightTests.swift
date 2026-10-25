@@ -17,16 +17,20 @@ import simd
             let path=tour.path!,rail=tour.corridor!
             let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:WorldFlightTerrain.distances(length:rail.length).map {_ in Float?(100)})
             let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:WorldRouteTour.preparedSpeed,reduceMotion:false,clearance:tour.clearance,cornerLift:WorldRouteTour.fpvCornerLift)
-            var maxError=0.0,bankSign:Float=0
+            var maxError=0.0
+            if name=="overlapping-switchbacks" {
+                var reversals=0,last=0.0
+                for travel in stride(from:0.0,through:rail.length,by:2) {
+                    let along=rail.sample(flightDistance:travel).direction.y
+                    if abs(along)>0.5 { if last*along<0 { reversals+=1 };last=along }
+                }
+                try check(reversals==1,"Overlapping switchbacks form one forward/return sweep, without repeated turnaround loops")
+            }
             for time in stride(from:0.0,through:plan.duration,by:0.05) {
                 let sample=plan.sample(time:time),route=path.sample(at:sample.routeDistance).coordinate
-                if name=="overlapping-switchbacks",abs(sample.pose.bank)>0.002 {
-                    if bankSign==0 { bankSign=sample.pose.bank }
-                    try check(bankSign*sample.pose.bank>0,"Overlapping switchbacks form one sweep, without alternating turnaround loops")
-                }
                 let error=route.distance(to:sample.pose.focus);maxError=max(maxError,error)
                 try check(error<800,"\(name): a broad flight remains in the route neighbourhood (\(error))")
-                try check(sample.heightAboveGround>14.5 && sample.heightAboveGround<130,"FPV stays low on straights and makes a bounded anticipatory lift over busy turns")
+                try check(sample.heightAboveGround>tour.clearance-0.5 && sample.heightAboveGround<tour.clearance+WorldRouteTour.fpvCornerLift+4,"FPV stays low on straights and makes a bounded anticipatory lift over busy turns")
                 let v=SIMD2(sample.velocity.x,sample.velocity.z),gaze=SIMD2(sample.pose.look.x-sample.pose.eye.x,sample.pose.look.z-sample.pose.eye.z)
                 try check(simd_dot(simd_normalize(v),simd_normalize(gaze))>0.99999,"FPV horizontal heading stays aligned to actual forward travel")
                 try check(simd_length(v)>Float(plan.cruiseSpeed*0.7),"Switchbacks cannot stall or trap the FPV camera")
@@ -34,7 +38,7 @@ import simd
             if name=="switchbacks" {
                 let middle=plan.sample(time:plan.duration*0.5),heading=simd_normalize(SIMD2(middle.velocity.x,middle.velocity.z))
                 try check(simd_dot(heading,SIMD2<Float>(0,-1))>0.98,"A cluster of 80 m switchbacks is crossed in one forward pass")
-                try check(middle.heightAboveGround>35,"FPV gains height over the skipped switchback cluster")
+                try check(middle.heightAboveGround>tour.clearance+3,"FPV gains height over the skipped switchback cluster")
             }
             var slow=WorldFlightPlayback(),fast=WorldFlightPlayback();slow.reset(speed:30/3.6);fast.reset(speed:240/3.6)
             var a=0.0,b=0.0

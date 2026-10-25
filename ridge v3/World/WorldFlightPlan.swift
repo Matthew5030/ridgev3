@@ -7,6 +7,8 @@ struct WorldFlightTerrain {
     let heights:[Float]
     let available:[Bool]
     private let clearanceHeights:[Float]
+    private let subjects:[RoutePoint]
+    private let subjectDistances:[Double]
     let places:[MapPlace]
     private let origin:GeoPoint
     private let scale:Double
@@ -29,14 +31,67 @@ struct WorldFlightTerrain {
             }
         }
     }
-    init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,heights:[Float?],places:[MapPlace]=[],clearanceHeights:[Float?]? = nil) {
+    /// Project the forward flight rail onto the walking path geometrically.
+    /// Ordered walking distance can reverse through a skipped switchback while
+    /// the camera still travels forward; it must not drag the gaze backwards.
+    static func focusPoints(path:WorldRouteTourPath,corridor:WorldFlightCorridor)->[RoutePoint] {
+        let origin=path.points[0].coordinate,scale=max(0.01,cos(origin.latitude * .pi/180))
+        func local(_ point:GeoPoint)->SIMD2<Double> {
+            SIMD2((point.longitude-origin.longitude)*111195*scale,(origin.latitude-point.latitude)*111195)
+        }
+        func cell(_ p:SIMD2<Double>)->SIMD2<Int> { SIMD2(Int(floor(p.x/160)),Int(floor(p.y/160))) }
+        let step=max(8,path.length/40000)
+        var distances=Array(stride(from:0.0,to:path.length,by:step));distances.append(path.length)
+        let samples=distances.map { path.sample(at:$0) },positions=samples.map { local($0.coordinate) }
+        var cells:[SIMD2<Int>:[Int]]=[:]
+        for i in positions.indices { cells[cell(positions[i]),default:[]].append(i) }
+        let last=path.points.last!,before=path.sample(at:max(0,path.length-40))
+        let end=local(last.coordinate)-local(before.coordinate)
+        let direction=simd_length_squared(end)>0.001 ? simd_normalize(end) : SIMD2<Double>(0,-1)
+        return Self.distances(length:corridor.length).map { travel in
+            let ahead=travel+140
+            if ahead>corridor.length {
+                let delta=direction*(ahead-corridor.length)
+                return RoutePoint(coordinate:.init(latitude:last.coordinate.latitude-delta.y/111195,
+                    longitude:last.coordinate.longitude+delta.x/(111195*scale)),elevation:last.elevation)
+            }
+            let point=local(corridor.sample(flightDistance:ahead).point),key=cell(point)
+            var best=Double.infinity,index=0
+            for y in -2...2 { for x in -2...2 {
+                for i in cells[key &+ SIMD2(x,y)] ?? [] {
+                    let error=simd_length_squared(point-positions[i]);if error<best { best=error;index=i }
+                }
+            } }
+            if !best.isFinite {
+                for i in positions.indices {
+                    let error=simd_length_squared(point-positions[i]);if error<best { best=error;index=i }
+                }
+            }
+            var distance=distances[index]
+            for a in max(0,index-1)...min(positions.count-2,index) {
+                let delta=positions[a+1]-positions[a],square=simd_length_squared(delta)
+                let t=square>0 ? min(1,max(0,simd_dot(point-positions[a],delta)/square)) : 0
+                let error=simd_length_squared(point-positions[a]-delta*t)
+                if error<best { best=error;distance=distances[a]+(distances[a+1]-distances[a])*t }
+            }
+            return path.sample(at:distance)
+        }
+    }
+    init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,heights:[Float?],places:[MapPlace]=[],clearanceHeights:[Float?]? = nil,focusPoints:[RoutePoint]? = nil,focusHeights:[Float?]? = nil) {
         let distances=Self.distances(length:corridor.length)
+        subjectDistances=distances
+        let focus=focusPoints ?? Self.focusPoints(path:path,corridor:corridor)
         let samples=distances.map { corridor.sample(flightDistance:$0) }
         origin=samples[0].point;scale=max(0.01,cos(origin.latitude * .pi/180))
         let origin=self.origin,scale=self.scale
         points=samples.map { SIMD2(($0.point.longitude-origin.longitude)*111195*scale,(origin.latitude-$0.point.latitude)*111195) }
         let preparedHeights=samples.indices.map { i in heights[i] ?? Float(path.sample(at:samples[i].routeDistance).elevation ?? 0) }
         self.heights=preparedHeights
+        subjects=focus.indices.map { i in
+            let height=focusHeights?[i] ?? nil
+            let elevation=focusHeights == nil ? (focus[i].elevation ?? Double(preparedHeights[i])) : Double(height ?? preparedHeights[i])
+            return RoutePoint(coordinate:focus[i].coordinate,elevation:elevation)
+        }
         self.clearanceHeights=preparedHeights.indices.map { max(preparedHeights[$0],clearanceHeights?[$0] ?? preparedHeights[$0]) }
         available=heights.map { $0 != nil };self.places=places.sorted { $0.id<$1.id }
         for i in points.indices { cells[Self.cell(points[i]),default:[]].append(i) }
@@ -54,6 +109,16 @@ struct WorldFlightTerrain {
     }
     func elevation(_ p:GeoPoint)->Float { nearest(p).map { heights[$0] } ?? 0 }
     func clearanceElevation(_ p:GeoPoint)->Float { nearest(p).map { clearanceHeights[$0] } ?? 0 }
+    func subject(at travel:Double)->RoutePoint {
+        var a=0,b=subjects.count-1
+        while a+1<b { let m=(a+b)/2;if subjectDistances[m]<=travel { a=m } else { b=m } }
+        let t=min(1,max(0,(travel-subjectDistances[a])/max(0.001,subjectDistances[b]-subjectDistances[a])))
+        let x=subjects[a],y=subjects[b]
+        let elevation:Double?=x.elevation.flatMap { left in y.elevation.map { left+($0-left)*t } }
+        return .init(coordinate:.init(latitude:x.coordinate.latitude+(y.coordinate.latitude-x.coordinate.latitude)*t,
+                                     longitude:x.coordinate.longitude+(y.coordinate.longitude-x.coordinate.longitude)*t),elevation:elevation)
+    }
+
 }
 
 /// Immutable camera choreography, prepared before playback. This includes the
@@ -68,6 +133,7 @@ struct WorldFlightPlan {
         var velocity:SIMD3<Float>
         var heightAboveGround:Double
         var cameraPoint:GeoPoint? = nil
+        var routeTarget:SIMD3<Float>? = nil
     }
     /// Convert both eye and velocity together when streaming changes the scene
     /// origin. Steering state stays in the immutable plan frame.
@@ -80,6 +146,7 @@ struct WorldFlightPlan {
         var result=sample
         result.pose.eye=point(sample.pose.eye);result.pose.look=point(sample.pose.look)
         result.velocity=point(sample.pose.eye+sample.velocity)-result.pose.eye
+        result.routeTarget=sample.routeTarget.map { point($0) }
         return result
     }
     private struct Key {
@@ -107,15 +174,18 @@ struct WorldFlightPlan {
     let clearance:Double
     let reduceMotion:Bool
     let hasSpeedTransition:Bool
+    let routeFraming:Bool
     private var keys:[Key]
     private var segments:[Segment]
+    private var lookSegments:[Segment]=[]
     var duration:Double { keys.last?.time ?? 0 }
     var count:Int { keys.count }
 
     init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,terrain:WorldFlightTerrain,frame:GeoBounds,cruiseSpeed:Double,reduceMotion:Bool,
-         clearance:Double=20,cornerLift:Double=0,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
+        self.routeFraming=routeFraming
         var result:[Key]=[],time=0.0,lastTravel=0.0,lastSpeed=0.0
         var minimumHeights:[Double]=[]
         let desiredSpacing=max(corridor.length/40000,min(3,max(0.5,cruiseSpeed*0.12)))
@@ -238,6 +308,40 @@ struct WorldFlightPlan {
         for i in stride(from:n-2,through:0,by:-1) { let w=1-exp(-(result[i+1].time-result[i].time)/0.5);banks[i]=banks[i+1]+(banks[i]-banks[i+1])*w }
         for i in result.indices { result[i].bank=banks[i] }
         keys=result;segments=(0..<(result.count-1)).map { Segment(result[$0],result[$0+1]) }
+        if routeFraming {
+            // The route is the visual subject, including when the smooth rail
+            // cuts a small bend. Prepare this focus curve once, alongside motion.
+            // Extend the final leg so the finish cannot pull the camera vertically
+            // down or flip it backwards as the eye reaches the last waypoint.
+            var targets=result.indices.map { i -> SIMD3<Double> in
+                let point=terrain.subject(at:stations[i]),uv=frame.uv(point.coordinate)
+                return SIMD3((uv.u-0.5)*frame.widthMeters,point.elevation ?? result[i].ground,(uv.v-0.5)*frame.depthMeters)
+            }
+            // A very tight return may put the nearest route point underneath
+            // or behind the eye. Keep the framing forward through that turn,
+            // retaining the route's lateral bearing without an overhead spin.
+            for i in targets.indices {
+                let v=SIMD2(result[i].velocity.x,result[i].velocity.z)
+                let forward=simd_length_squared(v)>0.001 ? simd_normalize(v) : SIMD2<Double>(0,-1)
+                let delta=SIMD2(targets[i].x-result[i].eye.x,targets[i].z-result[i].eye.z)
+                let shift=max(0,80-simd_dot(delta,forward))
+                targets[i].x+=forward.x*shift;targets[i].z+=forward.y*shift
+            }
+            let radius=max(1,Int(ceil(24/spacing))),window=Double(radius*2+1)
+            for _ in 0..<4 {
+                var prefix=[SIMD3<Double>.zero]
+                for target in targets { prefix.append(prefix.last!+target) }
+                targets=targets.indices.map { i in
+                    let a=max(0,i-radius),b=min(targets.count-1,i+radius)
+                    let padding=targets[0]*Double(max(0,radius-i))+targets.last!*Double(max(0,i+radius-targets.count+1))
+                    return (prefix[b+1]-prefix[a]+padding)/window
+                }
+            }
+            var focus=result
+            for i in focus.indices { focus[i].eye=targets[i] }
+            Self.solveMotion(&focus)
+            lookSegments=(0..<(focus.count-1)).map { Segment(focus[$0],focus[$0+1]) }
+        }
     }
     private static func solveMotion(_ result:inout [Key]) {
         let n=result.count
@@ -288,8 +392,18 @@ struct WorldFlightPlan {
             let next=convert(eye+velocity);eye=convert(eye);velocity=next-eye
         }
         let direction=simd_length_squared(velocity)>0.00001 ? simd_normalize(velocity) : SIMD3<Float>(0,0,-1)
+        var routeTarget:SIMD3<Float>?=lookSegments.isEmpty ? nil : SIMD3<Float>(lookSegments[a].sample(Double(t)).position)
+        if let outputFrame,outputFrame != frame,let target=routeTarget {
+            let geo=frame.point(u:Double(target.x)/frame.widthMeters+0.5,v:Double(target.z)/frame.depthMeters+0.5),uv=outputFrame.uv(geo)
+            routeTarget=SIMD3(Float((uv.u-0.5)*outputFrame.widthMeters),target.y,Float((uv.v-0.5)*outputFrame.depthMeters))
+        }
+        if var target=routeTarget {
+            let v=SIMD2(velocity.x,velocity.z),forward=simd_length_squared(v)>0.001 ? simd_normalize(v) : SIMD2<Float>(0,-1)
+            let delta=SIMD2(target.x-eye.x,target.z-eye.z),shift=max(0,60-simd_dot(delta,forward))
+            target.x+=forward.x*shift;target.z+=forward.y*shift;routeTarget=target
+        }
         let ground=left.ground+(right.ground-left.ground)*Double(t)
-        return Sample(pose:.init(eye:eye,look:eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
-                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint)
+        return Sample(pose:.init(eye:eye,look:routeTarget ?? eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
+                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget)
     }
 }
