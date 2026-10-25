@@ -48,6 +48,11 @@ struct WorldRegionDownloadCard: View {
                     Text("Opens the saved part. Download the rest to explore the whole available region.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }
+            if world.regionPaused {
+                Label("Download paused",systemImage:"pause.circle.fill").font(.headline)
+                Text("Your saved terrain is kept. Resume to finish the whole region.")
+                    .font(.caption).foregroundStyle(RidgeTheme.muted)
+            }
                 if world.catalog == nil {
                     if world.isLoading { ProgressView("Connecting to map server…") }
                     else if let retryConnection {
@@ -90,20 +95,23 @@ struct WorldRegionDownloadCard: View {
                         Text(plan.isEstimate ? "Up to \(RidgeTheme.bytes(plan.totalBytes))" : plan.bytes==0 ? "Maps already on your device" : "\(RidgeTheme.bytes(plan.bytes)) to download").font(.title3.weight(.semibold))
                         Text(plan.isEstimate ? "Terrain, maps & walking paths. Files already saved are reused as the download runs." : "\(RidgeTheme.bytes(plan.totalBytes)) in total · terrain, maps & walking paths").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                         if plan.bytes>0,plan.totalBytes>plan.bytes {
-                            Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) already on this device").font(.caption)
+                            Text("\(RidgeTheme.bytes(plan.totalBytes-plan.bytes)) less to download").font(.caption)
                         }
                     }
                     if plan.bytes>0 {
-                        Button((saved?.savedTileCount ?? 0)>0 ? "Download remaining terrain" : partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
+                        Button(world.regionPaused ? "Resume download" : (saved?.savedTileCount ?? 0)>0 ? "Download remaining terrain" : partialCoverage ? "Download available terrain" : "Download region") { world.downloadRegionPack() }
                             .buttonStyle(.borderedProminent).controlSize(.large)
                     } else if saved?.savedTileCount ?? 0 == 0 {
                         Button("Use saved maps") { world.downloadRegionPack() }.buttonStyle(.borderedProminent)
                     }
                     Text("Saves to storage. It won’t load the whole region into 3D.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                } else if world.regionPaused {
+                    Button("Resume download") { world.resumeRegionDownload() }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
                 }
                 if let error=world.downloadError,!blocked {
                     Text(error).font(.subheadline)
-                    if world.regionTotal>0 && !world.isSavingOffline && !world.checkingDownload {
+                    if world.regionTotal>0 && !world.isSavingOffline && !world.checkingDownload && !world.regionPaused {
                         Button("Check remaining download") { world.offerRegionDownload(pack) }.buttonStyle(.bordered)
                     }
                 }

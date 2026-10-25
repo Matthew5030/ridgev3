@@ -134,6 +134,7 @@ struct WorldExploreView: View {
                 world.suspend()
             }
             else if value == .active {
+                world.restoreRegionDownloadOffer()
                 if world.catalog == nil && !world.isLoading {
                     Task {
                         await world.configure(mode: mapMode, local: localMapServer,preservingSelection:true)

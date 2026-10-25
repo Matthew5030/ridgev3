@@ -393,11 +393,22 @@ actor RegionTransferAudit {
         try check(reusedBytes==0,"Repeating a fast-plan download transfers zero saved asset bytes")
         model.offerRegionDownload(fixture);model.pauseRegionDownload()
         try await Task.sleep(nanoseconds:100_000_000)
-        try check(!model.checkingDownload && !model.isSavingOffline && model.regionPlan==nil && model.downloadError?.hasPrefix("Paused") == true,"Cancelled region check cannot publish stale results")
+        try check(!model.checkingDownload && !model.isSavingOffline && model.regionPlan==nil && model.regionPaused && model.downloadError==nil,"Cancelled region check stays paused without publishing stale results or an error")
         try check(model.regionTileProgress.active.isEmpty,"Paused download leaves no active tile pulses")
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==plan.tileCount,"Pausing preserves completed receipts")
+        model.restoreRegionDownloadOffer()
+        try await wait { model.checkingDownload }
+        try check(model.regionPaused && !model.isSavingOffline && model.regionPlan?.bytes==0,"Returning to Ridge checks the remainder without starting a transfer")
+        model.pauseRegionDownload()
+        model.resumeRegionDownload();model.pauseRegionDownload()
+        try await Task.sleep(nanoseconds:100_000_000)
+        try check(model.regionPaused && !model.isSavingOffline && !model.checkingDownload && !model.regionComplete,"Pausing during resume preflight prevents a delayed automatic transfer")
+        try damaged.write(to:asset,options:.atomic)
+        model.resumeRegionDownload()
+        try await wait { model.checkingDownload || model.isSavingOffline }
+        try check(model.regionComplete && !model.regionPaused && model.downloadError==nil && model.downloadedBytes==Int64(tile.mesh.byteCount),"One resume action checks and repairs only the missing bytes")
         model.cancelDownload()
-        try check(model.downloadRegion==nil && model.regionPlan==nil && !model.regionComplete,"Switching to custom clears regional selection")
+        try check(model.downloadRegion==nil && model.regionPlan==nil && !model.regionComplete && !model.regionPaused,"Switching to custom clears regional selection and pause state")
         // Updating imagery must read the new index, but keep the previous
         // offline index until the entire replacement section has been saved.
         let refreshRegion=catalog.sources.filter { $0.tileCount>1 }.min { $0.tileCount<$1.tileCount }!
