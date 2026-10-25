@@ -28,27 +28,7 @@ struct WorldRouteTourControls: View {
                     .accessibilityValue("\(Int(tour.progress*100)) percent")
                 Text("\(Int(tour.progress*100))%").font(.caption.monospacedDigit()).frame(minWidth:36)
             }
-            VStack(spacing:4) {
-                HStack {
-                    Text("Cruise speed").font(.caption.weight(.semibold))
-                    Spacer()
-                    Text("\(Int(tour.speed)) km/h").font(.subheadline.monospacedDigit().weight(.semibold))
-                }
-                Slider(value:Binding(get:{tour.speed},set:{tour.speed=$0.rounded()}),in:WorldRouteTour.speedRange,step:10)
-                    .accessibilityLabel("Preview cruise speed")
-                    .accessibilityValue("\(Int(tour.speed)) kilometres per hour")
-                HStack(spacing:6) {
-                    ForEach([30.0,90,180,360,600],id:\.self) { speed in
-                        Button { tour.speed=speed } label: {
-                            Text("\(Int(speed))").font(.caption.monospacedDigit().weight(.semibold))
-                                .frame(maxWidth:.infinity,minHeight:36)
-                                .background(abs(tour.speed-speed)<1 ? RidgeTheme.forest.opacity(0.16) : Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:7))
-                        }.buttonStyle(.plain).accessibilityLabel("Fly at \(Int(speed)) kilometres per hour")
-                    }
-                }
-                Text("Flying \(Int(tour.actualKilometersPerHour.rounded())) km/h · slows gently for turns")
-                    .font(.caption2.monospacedDigit()).foregroundStyle(RidgeTheme.muted)
-            }
+            WorldPreviewSpeedControl(tour: tour)
 
             HStack {
                 Label("Low flight",systemImage:"viewfinder")
@@ -72,3 +52,29 @@ struct WorldRouteTourControls: View {
     }
 }
 
+struct WorldPreviewSpeedControl: View {
+    @Bindable var tour: WorldRouteTour
+    var body: some View {
+            VStack(spacing:8) {
+                HStack {
+                    Text("Cruise speed").font(.caption.weight(.semibold))
+                    Spacer()
+                    Text("\(Int(tour.speed)) km/h").font(.subheadline.monospacedDigit().weight(.semibold))
+                }
+                Slider(value:Binding(get:{tour.speed},set:{tour.speed=$0.rounded()}),in:WorldRouteTour.speedRange,step:10)
+                    .accessibilityLabel("Preview cruise speed")
+                    .accessibilityValue("\(Int(tour.speed)) kilometres per hour")
+                HStack(spacing:6) {
+                    ForEach([30.0,90,180,360,600],id:\.self) { speed in
+                        Button { tour.speed=speed } label: {
+                            Text("\(Int(speed))").font(.caption.monospacedDigit().weight(.semibold))
+                                .frame(maxWidth:.infinity,minHeight:36)
+                                .background(abs(tour.speed-speed)<1 ? RidgeTheme.forest.opacity(0.16) : Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:7))
+                        }.buttonStyle(.plain).accessibilityLabel("Fly at \(Int(speed)) kilometres per hour")
+                    }
+                }
+                Text("Flying \(Int(tour.actualKilometersPerHour.rounded())) km/h · slows gently for turns")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(RidgeTheme.muted)
+            }.foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
+    }
+}

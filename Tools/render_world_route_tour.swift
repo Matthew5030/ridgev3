@@ -77,6 +77,31 @@ import simd
             RoutePoint(coordinate:route[index].coordinate,elevation:250+100*sin(Double(index)/18)+Double(index)*2)
         },mode:"track")])
         let profile=RouteEngine.elevationProfile(plotRoute.segments)
+        func render<V:View>(_ view:V,width:CGFloat,height:CGFloat,name:String) throws {
+            let hosting=NSHostingView(rootView:view.frame(width:width,height:height).environment(\.colorScheme,.light))
+            let size=CGSize(width:width,height:height)
+            let window=NSWindow(contentRect:CGRect(origin:.zero,size:size),styleMask:.borderless,backing:.buffered,defer:false)
+            window.contentView=hosting;hosting.frame=CGRect(origin:.zero,size:size);hosting.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until:Date().addingTimeInterval(0.05));window.displayIfNeeded()
+            let bitmap=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!
+            hosting.cacheDisplay(in:hosting.bounds,to:bitmap)
+            try bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent(name+".png"))
+        }
+        for width:CGFloat in [320,390,844] {
+            for editing in [false,true] {
+                try render(WorldRouteActionBar(route:example,editing:editing,busy:false,pathsReady:true,canUndo:true,details:{},onAction:{ _ in }),
+                    width:width,height:64,name:"quiet-route-\(editing ? "editing" : "saved")-\(Int(width))")
+            }
+            let player=WorldRouteTour();player.open(route:plotRoute);player.finishEntry();player.isPreparing=false;player.seek(to:0.35)
+            try render(WorldRoutePlaybackBar(tour:player,showsElevation:.constant(false),hasElevation:true),
+                width:width,height:56,name:"quiet-player-\(Int(width))")
+        }
+        for section in WorldRouteDetailsSection.allCases {
+            let panel=WorldRouteEditorPanel(route:example,editing:true,busy:false,pathsReady:true,canUndo:true,canRedo:false,
+                selectedWaypoint:nil,movingWaypoint:nil,inserting:false,summary:"0.9 km · 5 waypoints",tour:WorldRouteTour(),dismiss:{},onAction:{ _ in },
+                section:.constant(section),elevationSamples:profile,compact:true)
+            try render(panel,width:390,height:440,name:"phone-details-\(section.id.rawValue.lowercased())")
+        }
         for width: CGFloat in [390,1024] {
             for fraction in [0.2,0.75] {
                 let preview=WorldRouteTour();preview.open(route:plotRoute);preview.seek(to:fraction);preview.pause()
@@ -163,9 +188,11 @@ import simd
             try bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("camera-\(name).png"))
             if name=="banked-turn" {
                 var entry=plan.sample(time:0);entry.velocity *= Float(150.0/3.6/plan.cruiseSpeed)
-                let arrival=WorldFlightArrival(path:path,flight:entry,frame:frame,aspect:1000.0/700)
+                let opening=WorldRouteTourCamera.Pose(eye:entry.pose.eye+SIMD3<Float>(240,600,300),look:entry.pose.eye,focus:entry.pose.focus)
+                let arrival=WorldFlightArrival(path:path,flight:entry,frame:frame,aspect:1000.0/700,from:opening,fieldOfView:43)
                 for fraction in [0.0,0.45,0.80,1.0] {
                     let pose=arrival.sample(elapsed:arrival.hold+(arrival.duration-arrival.hold)*fraction)
+                    camera.camera!.fieldOfView=CGFloat(arrival.fieldOfView(elapsed:arrival.duration*fraction))
                     camera.simdPosition=pose.eye;WorldCameraOrientation.aim(camera,at:pose.look,bank:pose.bank,up:pose.up)
                     let image=renderer.snapshot(atTime:0,with:CGSize(width:1000,height:700),antialiasingMode:.multisampling4X)
                     let bitmap=NSBitmapImageRep(data:image.tiffRepresentation!)!
