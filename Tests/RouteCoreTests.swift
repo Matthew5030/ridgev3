@@ -17,13 +17,14 @@ struct RouteCoreTests {
         try gpxRoundTrip()
         try gpxValidation()
         try pathRouting()
+        if CommandLine.arguments.count > 2 { try realRoadCrossing(URL(fileURLWithPath: CommandLine.arguments[2])) }
         try directRouting()
         try overviewCoverage()
         try pathContinuity()
         try regionAssociation()
         try routeStatistics()
         try await persistence()
-        if CommandLine.arguments.count > 1 { try bundledPeakRoute(directory: URL(fileURLWithPath: CommandLine.arguments[1])) }
+        if CommandLine.arguments.count > 1, !CommandLine.arguments[1].isEmpty { try bundledPeakRoute(directory: URL(fileURLWithPath: CommandLine.arguments[1])) }
         print("RouteCore: \(assertions) assertions passed")
     }
 
@@ -78,6 +79,11 @@ struct RouteCoreTests {
     }
 
     static func pathRouting() throws {
+        let small = RouteEngine.graphLimits(physicalMemory: 4 * 1024 * 1024 * 1024)
+        let large = RouteEngine.graphLimits(physicalMemory: 8 * 1024 * 1024 * 1024)
+        try expect(small.nodes == 250_000 && small.edges == 750_000, "Low-memory devices retain their original graph bounds")
+        try expect(large.nodes >= 1_000_000 && large.edges >= 1_200_000, "The iPad admits the real London neighbourhood")
+        try expect(large.nodes <= 1_250_000 && large.edges <= 3_000_000, "Dense routing stays bounded")
         let graph = WalkingGraph(nodes: [node(0, 0), node(1, 0.001), node(2, 0.002)], edges: [edge(0, 1), edge(1, 2)])
         let route = try RouteEngine.walkingSegment(from: coordinate(0.0002, 0.0001), to: coordinate(0.0018, 0.0001), graph: graph)
         try expect(abs(route.points.first!.coordinate.longitude - 0.0002) < 0.00000001, "Path did not snap to edge interior")
@@ -95,25 +101,65 @@ struct RouteCoreTests {
             try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: forbidden) }
         }
         let road = WalkingGraph(nodes: [node(0, 0), node(1, 0.001)], edges: [edge(0, 1, 120, true, "", "residential")])
-        try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: road) }
+        let residential = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: road)
+        try expect(residential.points.count == 2, "Untagged residential road was excluded")
         for access in ["public", "unknown", "permissive"] {
             let normalizedPath = WalkingGraph(nodes: [node(0, 0), node(1, 0.001)], edges: [edge(0, 1, 120, true, access, "footpath")])
             let path = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: normalizedPath)
             try expect(path.points.count == 2, "Normalized footpath was incorrectly excluded")
         }
-        for kind in ["minorRoad", "majorRoad"] {
+        for kind in ["majorRoad", "motorway", "motorway_link", "cycleway"] {
             let unknownRoad = WalkingGraph(nodes: [node(0, 0), node(1, 0.001)], edges: [edge(0, 1, 120, true, "unknown", kind)])
             try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: unknownRoad) }
         }
         let ambiguousMajorRoad = WalkingGraph(nodes: [node(0, 0), node(1, 0.001)], edges: [edge(0, 1, 120, true, "public", "majorRoad")])
         try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: ambiguousMajorRoad) }
-        try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(1), to: coordinate(0.001), graph: graph) }
+        let distant = try RouteEngine.walkingSegment(from: coordinate(0.0002, 0.1), to: coordinate(0.0018, 0.1), graph: graph)
+        try expect(distant.points.first?.coordinate.latitude == 0 && distant.points.last?.coordinate.latitude == 0, "Distant taps did not snap to the closest path")
+        try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(0, 0.01), to: coordinate(0.001), graph: graph, snapDistance: 150) }
+        for limit in [Double.nan, 0, -1] {
+            try expectError(.noNearbyPath) { _ = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: graph, snapDistance: limit) }
+        }
+        // Two footpaths connect through an ordinary road, including old normalized packs.
+        for kind in ["minorRoad", "residential", "living_street", "unclassified", "tertiary", "secondary", "primary", "trunk"] {
+            let linked = WalkingGraph(nodes: (0...3).map { node($0, Double($0) * 0.001) }, edges: [edge(0, 1), edge(1, 2, 120, true, "unknown", kind), edge(2, 3)])
+            for (from, to) in [(0.0002, 0.0028), (0.0028, 0.0002)] {
+                let connected = try RouteEngine.walkingSegment(from: coordinate(from), to: coordinate(to), graph: linked)
+                try expect(connected.points.contains { $0.coordinate == coordinate(0.001) } && connected.points.contains { $0.coordinate == coordinate(0.002) }, "Road link did not join footpaths in both directions: \(kind)")
+            }
+            for access in ["no", "private", "customers", "destination", "delivery", "agricultural", "forestry"] {
+                var restricted = linked
+                restricted.edges[1].access = access
+                try expectError(.disconnectedPaths) { _ = try RouteEngine.walkingSegment(from: coordinate(0.0002), to: coordinate(0.0028), graph: restricted) }
+            }
+        }
+        // Geometry alone must never join paths at a bridge or across a small gap.
+        let separate = WalkingGraph(nodes: [node(0, 0), node(1, 0.001), node(2, 0.001), node(3, 0.002)], edges: [edge(0, 1), edge(2, 3)])
+        try expectError(.disconnectedPaths) { _ = try RouteEngine.walkingSegment(from: coordinate(0.0002), to: coordinate(0.0018), graph: separate) }
         let malformed = WalkingGraph(nodes: graph.nodes, edges: [edge(0, 9)])
         try expectError(.invalidGraph) { _ = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.001), graph: malformed) }
         // An expensive direct edge must not beat the shorter connected path.
         let detour = WalkingGraph(nodes: [node(0, 0), node(1, 0.001), node(2, 0.002)], edges: [edge(0, 1), edge(1, 2), edge(0, 2, 2_000)])
         let shortest = try RouteEngine.walkingSegment(from: coordinate(0), to: coordinate(0.002), graph: detour)
         try expect(shortest.points.contains { $0.coordinate == coordinate(0.001) }, "Dijkstra did not find the shortest network path")
+    }
+
+    static func realRoadCrossing(_ url: URL) throws {
+        struct Fixture: Decodable { var graph: WalkingGraph; var start: GeoPoint; var finish: GeoPoint }
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
+        var graph = fixture.graph
+        if let full = ProcessInfo.processInfo.environment["RIDGE_WALKING_GRAPH_AUDIT"] {
+            graph = try JSONDecoder().decode(WalkingGraph.self, from: Data(contentsOf: URL(fileURLWithPath: full)))
+        }
+        for (start, finish) in [(fixture.start, fixture.finish), (fixture.finish, fixture.start)] {
+            let route = try RouteEngine.walkingSegment(from: start, to: finish, graph: graph)
+            try expect(route.points.first!.coordinate.distance(to: start) < 0.01 && route.points.last!.coordinate.distance(to: finish) < 0.01, "Real A-road connection moved its endpoints")
+            try expect(route.points.count > 2, "Real crossing skipped mapped network geometry")
+        }
+        // Reproduce the old blanket road exclusion on the same original topology.
+        graph.edges = graph.edges.filter { ["path", "footpath", "footway", "bridleway", "steps", "track", "pedestrian"].contains($0.kind) }
+        try expectError(.disconnectedPaths) { _ = try RouteEngine.walkingSegment(from: fixture.start, to: fixture.finish, graph: graph) }
+        print("Real Snowdon A-road connection routes in both directions; excluding roads reproduces the failure")
     }
 
     static func terrain() -> LoadedTerrain {
@@ -171,8 +217,10 @@ struct RouteCoreTests {
         try expectError(.pathStartMismatch) {
             _ = try RouteEngine.segment(from: coordinate(0.002, 0.0052), to: coordinate(0.008, 0.0051), mode: .paths, terrain: terrain)
         }
+        let farStart = try RouteEngine.snap(coordinate(0.002, 0.009), terrain: terrain)
+        try expect(farStart.coordinate == coordinate(0.002, 0.005), "First waypoint did not snap beyond 150 metres")
         let snappedStart = try RouteEngine.snap(coordinate(0.002, 0.0052), terrain: terrain)
-        let continuous = try RouteEngine.segment(from: snappedStart.coordinate, to: coordinate(0.008, 0.0051), mode: .paths, terrain: terrain)
+        let continuous = try RouteEngine.segment(from: snappedStart.coordinate, to: coordinate(0.008, 0.009), mode: .paths, terrain: terrain)
         try expect(continuous.points.first?.coordinate == snappedStart.coordinate, "A path leg moved the already-snapped start")
         try expect(continuous.points.last?.coordinate.latitude == 0.005, "Path destination was not snapped")
     }

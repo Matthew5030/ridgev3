@@ -97,7 +97,7 @@ private struct FlowFailure: Error, CustomStringConvertible { let description: St
         try check(Array(extendedRoute.segments.prefix(originalRoute.segments.count)) == originalRoute.segments, "Existing route geometry is preserved exactly")
         try check(extendedRoute.segments.last?.mode == "direct", "Added detail retains the manual line instead of inventing a followed path")
         try check(extendedRoute.regionID == expanded.manifest.id, "Saved route associates with the extended area")
-        try check(store.editing && store.planningMode == .direct, "Editing mode resumes")
+        try check(store.editing && store.planningMode == .paths, "Editing resumes with path following; legacy segment stays intact")
         try check(store.undoStack.count == originalUndo.count + 1 && store.undoStack.allSatisfy { $0.regionID == expanded.manifest.id }, "Undo history remains valid in the expanded area")
         try check(store.camera.action == .restore(pose), "Viewpoint is restored in geographic metres")
         try check(store.pendingExtension == nil && store.extensionError == nil, "Completed proposal is cleared")

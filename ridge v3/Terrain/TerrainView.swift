@@ -4,7 +4,7 @@ import MetalKit
 /// One fixed, fully local relief model. Camera gestures never request more data.
 @MainActor
 struct TerrainView: UIViewRepresentable {
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
+    private let gestureStyle = TerrainGestureStyle.moveWithOneFinger
     var terrain: LoadedTerrain
     var route: [RoutePoint]
     var waypoints: [RouteWaypoint]

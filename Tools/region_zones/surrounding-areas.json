@@ -1,0 +1,362 @@
+[
+  {
+    "group": "northern-isles",
+    "latitude": true,
+    "cuts": [
+      59.6
+    ],
+    "names": [
+      [
+        "orkney",
+        "Orkney"
+      ],
+      [
+        "shetland",
+        "Shetland"
+      ]
+    ]
+  },
+  {
+    "group": "north-west-scotland",
+    "latitude": false,
+    "cuts": [
+      -6.1,
+      -4.9
+    ],
+    "names": [
+      [
+        "outer-hebrides",
+        "Outer Hebrides"
+      ],
+      [
+        "skye-wester-ross",
+        "Skye & Wester Ross"
+      ],
+      [
+        "sutherland",
+        "Sutherland"
+      ]
+    ]
+  },
+  {
+    "group": "north-east-scotland",
+    "latitude": true,
+    "cuts": [
+      57.5
+    ],
+    "names": [
+      [
+        "aberdeenshire",
+        "Aberdeenshire"
+      ],
+      [
+        "caithness-moray",
+        "Caithness & Moray"
+      ]
+    ]
+  },
+  {
+    "group": "central-highlands",
+    "latitude": false,
+    "cuts": [
+      -4.1
+    ],
+    "names": [
+      [
+        "lochaber",
+        "Lochaber"
+      ],
+      [
+        "cairngorms",
+        "Cairngorms"
+      ]
+    ]
+  },
+  {
+    "group": "argyll-western-isles",
+    "latitude": true,
+    "cuts": [
+      56.2
+    ],
+    "names": [
+      [
+        "argyll-islay",
+        "Argyll & Islay"
+      ],
+      [
+        "mull-small-isles",
+        "Mull & Small Isles"
+      ]
+    ]
+  },
+  {
+    "group": "central-scotland",
+    "latitude": false,
+    "cuts": [
+      -3.7
+    ],
+    "names": [
+      [
+        "lomond-trossachs",
+        "Lomond & Trossachs"
+      ],
+      [
+        "fife-lothians",
+        "Fife & Lothians"
+      ]
+    ]
+  },
+  {
+    "group": "southern-scotland",
+    "latitude": false,
+    "cuts": [
+      -3.7
+    ],
+    "names": [
+      [
+        "galloway",
+        "Galloway"
+      ],
+      [
+        "scottish-borders",
+        "Scottish Borders"
+      ]
+    ]
+  },
+  {
+    "group": "northern-ireland",
+    "latitude": false,
+    "cuts": [
+      -6.7
+    ],
+    "names": [
+      [
+        "fermanagh-sperrins",
+        "Fermanagh & Sperrins"
+      ],
+      [
+        "antrim-down",
+        "Antrim & Down"
+      ]
+    ]
+  },
+  {
+    "group": "north-east-england",
+    "latitude": true,
+    "cuts": [
+      55.1
+    ],
+    "names": [
+      [
+        "tyne-wear-durham",
+        "Tyne, Wear & Durham"
+      ],
+      [
+        "northumberland",
+        "Northumberland"
+      ]
+    ]
+  },
+  {
+    "group": "cumbria",
+    "latitude": true,
+    "cuts": [
+      54.5
+    ],
+    "names": [
+      [
+        "south-lakes",
+        "South Lakes"
+      ],
+      [
+        "north-lakes",
+        "North Lakes"
+      ]
+    ]
+  },
+  {
+    "group": "dales-north-pennines",
+    "latitude": true,
+    "cuts": [
+      54.0
+    ],
+    "names": [
+      [
+        "yorkshire-dales",
+        "Yorkshire Dales"
+      ],
+      [
+        "north-pennines",
+        "North Pennines"
+      ]
+    ]
+  },
+  {
+    "group": "north-east-yorkshire",
+    "latitude": true,
+    "cuts": [
+      53.8
+    ],
+    "names": [
+      [
+        "yorkshire-wolds",
+        "Yorkshire Wolds"
+      ],
+      [
+        "north-york-moors",
+        "North York Moors"
+      ]
+    ]
+  },
+  {
+    "group": "peak-district-midlands",
+    "latitude": true,
+    "cuts": [
+      52.55,
+      53.0
+    ],
+    "names": [
+      [
+        "central-midlands",
+        "Central Midlands"
+      ],
+      [
+        "trent-valley",
+        "Trent Valley"
+      ],
+      [
+        "peak-district",
+        "Peak District"
+      ]
+    ]
+  },
+  {
+    "group": "north-wales",
+    "latitude": false,
+    "cuts": [
+      -3.7
+    ],
+    "names": [
+      [
+        "eryri-anglesey",
+        "Eryri & Anglesey"
+      ],
+      [
+        "clwyd-berwyn",
+        "Clwyd & Berwyn"
+      ]
+    ]
+  },
+  {
+    "group": "mid-south-wales",
+    "latitude": false,
+    "cuts": [
+      -4.2
+    ],
+    "names": [
+      [
+        "pembrokeshire-ceredigion",
+        "Pembrokeshire & Ceredigion"
+      ],
+      [
+        "bannau-mid-wales",
+        "Bannau & Mid Wales"
+      ]
+    ]
+  },
+  {
+    "group": "east-anglia",
+    "latitude": false,
+    "cuts": [
+      0.0,
+      0.8
+    ],
+    "names": [
+      [
+        "fens-cambridgeshire",
+        "Fens & Cambridgeshire"
+      ],
+      [
+        "suffolk-west-norfolk",
+        "Suffolk & West Norfolk"
+      ],
+      [
+        "broads-east-coast",
+        "Broads & East Coast"
+      ]
+    ]
+  },
+  {
+    "group": "marches-cotswolds",
+    "latitude": true,
+    "cuts": [
+      52.05
+    ],
+    "names": [
+      [
+        "severn-cotswolds",
+        "Severn & Cotswolds"
+      ],
+      [
+        "shropshire-marches",
+        "Shropshire & Marches"
+      ]
+    ]
+  },
+  {
+    "group": "south-east",
+    "latitude": false,
+    "cuts": [
+      -0.4,
+      0.65
+    ],
+    "names": [
+      [
+        "surrey-south-downs",
+        "Surrey & South Downs"
+      ],
+      [
+        "london-weald",
+        "London & Weald"
+      ],
+      [
+        "kent-east-sussex",
+        "Kent & East Sussex"
+      ]
+    ]
+  },
+  {
+    "group": "central-south",
+    "latitude": false,
+    "cuts": [
+      -2.3
+    ],
+    "names": [
+      [
+        "somerset-west-dorset",
+        "Somerset & West Dorset"
+      ],
+      [
+        "wessex",
+        "Wessex"
+      ]
+    ]
+  },
+  {
+    "group": "devon-cornwall",
+    "latitude": false,
+    "cuts": [
+      -4.5
+    ],
+    "names": [
+      [
+        "cornwall-scilly",
+        "Cornwall & Scilly"
+      ],
+      [
+        "devon",
+        "Devon"
+      ]
+    ]
+  }
+]

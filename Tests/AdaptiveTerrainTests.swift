@@ -41,6 +41,20 @@ import zlib
         rejects("unbounded allocation") { try invalid.validate() }
         rejects("inflate over limit") { _ = try AdaptiveTerrainCodec.inflate(compressed,byteCount:Int.max) }
         rejects("inflate wrong output size") { _ = try AdaptiveTerrainCodec.inflate(compressed,byteCount:raw.count+1) }
+        // Dense city routing graphs can exceed the terrain tile limit. Only
+        // the section reader opts into the separately bounded graph allowance.
+        let large = Data(repeating:65,count:16_777_217)
+        var largeSize = compressBound(uLong(large.count))
+        var largeCompressed = Data(count:Int(largeSize))
+        let largeStatus = largeCompressed.withUnsafeMutableBytes { out in large.withUnsafeBytes { input in
+            compress2(out.bindMemory(to:Bytef.self).baseAddress!, &largeSize,input.bindMemory(to:Bytef.self).baseAddress!,uLong(large.count),6)
+        } }
+        expect(largeStatus == Z_OK,"Large graph fixture compression");largeCompressed.count=Int(largeSize)
+        rejects("Terrain keeps its original decompression limit") { _ = try AdaptiveTerrainCodec.inflate(largeCompressed,byteCount:large.count) }
+        let largeDecoded = try AdaptiveTerrainCodec.inflate(largeCompressed,byteCount:large.count,maximumByteCount:64_000_000)
+        expect(largeDecoded == large,"Large routing graphs decode within the explicit allowance")
+        rejects("Routing allowance remains bounded") { _ = try AdaptiveTerrainCodec.inflate(largeCompressed,byteCount:large.count,maximumByteCount:Int.max) }
+
         var extra = raw;extra.append(0)
         rejects("trailing topology") { _ = try AdaptiveTerrainCodec.reconstruct(extra) }
         var malformed = raw;malformed[32] = 3

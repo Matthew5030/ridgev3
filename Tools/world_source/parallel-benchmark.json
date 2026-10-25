@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-04",
+  "cpuCores": 12,
+  "memoryGiB": 24,
+  "sourceSection": "z10-x500-y333",
+  "baseline": [
+    {
+      "regions": 6,
+      "seconds": 103.03,
+      "sources": 6,
+      "tiles": 1520,
+      "bytes": 161731664,
+      "peakCPUPercent": 210.0,
+      "peakSummedRSSMiB": 3309.2,
+      "scheduling": {
+        "requestedRegions": 6,
+        "tileWorkers": 2,
+        "regions": 6,
+        "parentResidentBytes": 559300608,
+        "memoryReservationFraction": 0.65
+      }
+    },
+    {
+      "regions": 1,
+      "seconds": 129.22,
+      "sources": 6,
+      "tiles": 1520,
+      "bytes": 161731664,
+      "peakCPUPercent": 96.4,
+      "peakSummedRSSMiB": 637.3,
+      "scheduling": {
+        "requestedRegions": 1,
+        "tileWorkers": 2,
+        "regions": 1,
+        "parentResidentBytes": 558546944,
+        "memoryReservationFraction": 0.65
+      }
+    }
+  ],
+  "inProcessCodec": [
+    {
+      "regions": 6,
+      "seconds": 86.83,
+      "sources": 6,
+      "tiles": 1520,
+      "bytes": 161731664,
+      "peakCPUPercent": 189.7,
+      "peakSummedRSSMiB": 3456.9,
+      "scheduling": {
+        "requestedRegions": 6,
+        "tileWorkers": 2,
+        "regions": 6,
+        "parentResidentBytes": 558612480,
+        "memoryReservationFraction": 0.65
+      }
+    },
+    {
+      "regions": 1,
+      "seconds": 86.84,
+      "sources": 6,
+      "tiles": 1520,
+      "bytes": 161731664,
+      "peakCPUPercent": 100.0,
+      "peakSummedRSSMiB": 674.8,
+      "scheduling": {
+        "requestedRegions": 1,
+        "tileWorkers": 2,
+        "regions": 1,
+        "parentResidentBytes": 558874624,
+        "memoryReservationFraction": 0.65
+      }
+    },
+    {
+      "regions": 4,
+      "seconds": 46.49,
+      "sources": 6,
+      "tiles": 1520,
+      "bytes": 161731664,
+      "peakCPUPercent": 292.0,
+      "peakSummedRSSMiB": 2536.8,
+      "scheduling": {
+        "requestedRegions": 4,
+        "tileWorkers": 2,
+        "regions": 4,
+        "parentResidentBytes": 558432256,
+        "memoryReservationFraction": 0.65
+      }
+    }
+  ],
+  "equivalence": [
+    {
+      "regionWorkers": 1,
+      "identicalFiles": 4578
+    },
+    {
+      "regionWorkers": 4,
+      "identicalFiles": 4578
+    },
+    {
+      "regionWorkers": 6,
+      "identicalFiles": 4578
+    }
+  ],
+  "selectedRegionWorkers": 4,
+  "tileWorkersPerRegion": 2,
+  "notes": [
+    "Sequential benchmark runs on the same Mac; OS file caches may affect timings.",
+    "RSS sums include shared pages and are not private physical footprint.",
+    "This is a six-region sample, not a guaranteed national speedup."
+  ]
+}

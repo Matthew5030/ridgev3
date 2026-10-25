@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var store = AppStore()
+    @State private var world = WorldModel()
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         ZStack {
@@ -10,9 +11,9 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 Group {
                     switch store.tab {
-                    case .explore: ExploreView(store: store)
+                    case .explore: WorldExploreView(store: store, world: world)
                     case .areas: OfflinePacksView(store: store)
-                    case .routes: RouteLibraryView(store: store)
+                    case .routes: RouteLibraryView(store: store, world: world)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 tabBar.disabled(store.isPreparing)
@@ -36,7 +37,7 @@ struct ContentView: View {
             case .failure(let error): store.errorMessage = error.localizedDescription
             }
         }
-        .fullScreenCover(isPresented: Binding(get: { store.activeTerrain != nil || store.extensionInProgress }, set: { if !$0 { store.closeTerrain() } })) {
+        .fullScreenCover(isPresented: Binding(get: { (!store.isWorldBrowsing && store.activeTerrain != nil) || store.extensionInProgress }, set: { if !$0 { store.closeTerrain() } })) {
             Group {
                 if let terrain = store.activeTerrain { TerrainPlannerView(store: store, terrain: terrain) }
                 else if store.extensionInProgress { PreparationOverlay(store: store) }
@@ -48,17 +49,17 @@ struct ContentView: View {
                 Button("OK", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
         .overlay(alignment: .top) {
-            if let notice = store.notice, store.activeTerrain == nil {
+            if let notice = store.notice, store.activeTerrain == nil && store.tab != .explore {
                 Text(notice).font(.subheadline.weight(.medium)).foregroundStyle(RidgeTheme.paper)
                     .padding(16).background(RidgeTheme.ink, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     .padding(.horizontal, 20).padding(.top, 70).allowsHitTesting(false)
             }
-        }
+        }.environment(world)
     }
 
     private var tabBar: some View {
         HStack(spacing: 6) {
-            ForEach(MainTab.allCases, id: \.self) { tab in
+            ForEach([MainTab.explore, .routes], id: \.self) { tab in
                 Button { store.tab = tab } label: {
                     HStack(spacing: 8) {
                         Image(systemName: tab == .explore ? "globe.europe.africa" : tab == .areas ? "square.stack.3d.up" : "point.topleft.down.to.point.bottomright.curvepath")

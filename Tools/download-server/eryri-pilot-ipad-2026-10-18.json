@@ -1,0 +1,15 @@
+{
+  "regionSeconds": "32.37539196014404",
+  "region": "park-eryri",
+  "regionOffline": "passed",
+  "phase": "complete",
+  "sectionsOfflineSeconds": "13.881823062896729",
+  "sections": "57",
+  "state": "complete",
+  "tiles": "13424",
+  "sectionsSeconds": "66.24971795082092",
+  "sectionsOffline": "passed",
+  "regionOfflineSeconds": "13.880375027656555",
+  "sectionsBytes": "884699005",
+  "regionBytes": "891698257"
+}

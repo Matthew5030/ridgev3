@@ -1,0 +1,3214 @@
+{
+  "sourcePack": "/Users/matthewbilella/Desktop/ridgev3/ridge v3/ridge v3/Resources/RidgeData.bundle/regions/eryri-grid",
+  "manifestSHA256": "8c2330fbc6d51369100d16d4fa18a4ae9f3be84f3330d62308be89d8cf21aa44",
+  "sourceName": "Eryri",
+  "sourceKind": "Locally retained legacy Eryri atlas, not the current illustrated experiment or full published park.",
+  "selection": "Two Crib Goch cells plus deterministic file-size quantiles among locally available native tiles; not a UK-representative sample.",
+  "availableTiles": 1863,
+  "sampleCount": 16,
+  "decodeRepeats": 9,
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "python": "3.12.14",
+    "pillow": "12.3.0",
+    "numpy": "2.3.5"
+  },
+  "scope": "Encoded native images only; existing previews, network, disk I/O, mip generation, GPU upload and render timings excluded. Warm in-memory Pillow decode to RGB on Mac.",
+  "edgeMetric": "3x3 dilation of reference adjacent RGB channel differences >=20; proxy for fine detail, not a semantic path/contour mask.",
+  "geometry": "One fixed 4 m Crib Goch mesh reused by every profile. No terrain simplification or source changes.",
+  "totals": {
+    "original": {
+      "label": "Original PNG",
+      "bytes": 3966338,
+      "exact": true,
+      "decodeMedianMs": 5.545750000237604,
+      "worstEdgeP99": 0.0,
+      "maxChannel": 0,
+      "meanTileMAE": 0.0,
+      "savingPercent": 0.0
+    },
+    "png9": {
+      "label": "Optimised PNG \u00b7 lossless",
+      "bytes": 3660505,
+      "exact": true,
+      "decodeMedianMs": 5.293416500080639,
+      "worstEdgeP99": 0.0,
+      "maxChannel": 0,
+      "meanTileMAE": 0.0,
+      "savingPercent": 7.710714518026451
+    },
+    "webp-lossless": {
+      "label": "WebP \u00b7 lossless",
+      "bytes": 2262684,
+      "exact": true,
+      "decodeMedianMs": 3.3380624995515973,
+      "worstEdgeP99": 0.0,
+      "maxChannel": 0,
+      "meanTileMAE": 0.0,
+      "savingPercent": 42.95281945209914
+    },
+    "palette256": {
+      "label": "PNG \u00b7 256 colours",
+      "bytes": 2774575,
+      "exact": false,
+      "decodeMedianMs": 2.0319579998613335,
+      "worstEdgeP99": 1.0,
+      "maxChannel": 3,
+      "meanTileMAE": 0.0004733070178074234,
+      "savingPercent": 30.046934981335426
+    },
+    "palette128": {
+      "label": "PNG \u00b7 128 colours",
+      "bytes": 2651825,
+      "exact": false,
+      "decodeMedianMs": 1.9644795002022875,
+      "worstEdgeP99": 27.0,
+      "maxChannel": 27,
+      "meanTileMAE": 0.036574508336588346,
+      "savingPercent": 33.14172922227001
+    },
+    "palette64": {
+      "label": "PNG \u00b7 64 colours",
+      "bytes": 2319851,
+      "exact": false,
+      "decodeMedianMs": 1.8206459999419167,
+      "worstEdgeP99": 67.0,
+      "maxChannel": 79,
+      "meanTileMAE": 0.20374777548048995,
+      "savingPercent": 41.511515155793575
+    },
+    "webp90": {
+      "label": "WebP \u00b7 quality 90",
+      "bytes": 1024624,
+      "exact": false,
+      "decodeMedianMs": 4.319187500186672,
+      "worstEdgeP99": 28.0,
+      "maxChannel": 51,
+      "meanTileMAE": 0.9516772626720149,
+      "savingPercent": 74.16700240877101
+    },
+    "split": {
+      "label": "Small base + exact residual",
+      "bytes": 8516625,
+      "exact": true,
+      "decodeMedianMs": 5.99772949999533,
+      "worstEdgeP99": 0.0,
+      "maxChannel": 0,
+      "meanTileMAE": 0.0,
+      "savingPercent": -114.72262323584124
+    }
+  },
+  "tiles": [
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.08074842648101,
+          "maxLongitude": -4.05029296875,
+          "minLatitude": 53.07634210907817,
+          "minLongitude": -4.0576171875
+        },
+        "byteCount": 330522,
+        "file": "cartography-c026-r029.png",
+        "height": 1032,
+        "sha256": "b2dd86c49ac5282d4cf951c36931781498b4d67ef7e10962dc618643863ff0f0",
+        "width": 1032
+      },
+      "edgePixels": 208934,
+      "variants": {
+        "original": {
+          "bytes": 330522,
+          "encodeMs": 0.0008329998308909126,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 330522,
+              "sha256": "b2dd86c49ac5282d4cf951c36931781498b4d67ef7e10962dc618643863ff0f0"
+            }
+          },
+          "decodeMedianMs": 5.036624999775086,
+          "decodeP95Ms": 5.2780085998165305
+        },
+        "png9": {
+          "bytes": 309271,
+          "encodeMs": 274.8516669998935,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 309271,
+              "sha256": "90ab4279b468d21672b7d65baeabad04b95eff9a01812dc5268486110ec94ac2"
+            }
+          },
+          "decodeMedianMs": 4.754542000227957,
+          "decodeP95Ms": 5.101574800210074
+        },
+        "webp-lossless": {
+          "bytes": 185230,
+          "encodeMs": 1061.5111670003898,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 185230,
+              "sha256": "c84de4ab0f56e724f2680fa1664731aeb780f75c50ca5a1685a5e153a790aff1"
+            }
+          },
+          "decodeMedianMs": 3.718957999808481,
+          "decodeP95Ms": 4.037016399888671
+        },
+        "palette256": {
+          "bytes": 227471,
+          "encodeMs": 61.39812499986874,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 227471,
+              "sha256": "0dee63401131c96f6bd31b80dde75627a95afbee42d6a1ea5edd1da8cee0e0c1"
+            }
+          },
+          "decodeMedianMs": 2.2402909999073017,
+          "decodeP95Ms": 2.511025000239897
+        },
+        "palette128": {
+          "bytes": 227471,
+          "encodeMs": 62.300250000589585,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 227471,
+              "sha256": "0dee63401131c96f6bd31b80dde75627a95afbee42d6a1ea5edd1da8cee0e0c1"
+            }
+          },
+          "decodeMedianMs": 2.1953750001557637,
+          "decodeP95Ms": 2.4277498003357323
+        },
+        "palette64": {
+          "bytes": 211167,
+          "encodeMs": 62.0188330003657,
+          "error": {
+            "exact": false,
+            "mae": 0.09793769905654708,
+            "maxChannel": 51,
+            "p99Pixel": 5.0,
+            "edgeMAE": 0.41215886356457065,
+            "edgeP99": 26.0,
+            "pixelsOver8Percent": 0.2706981251126735
+          },
+          "files": {
+            "image.png": {
+              "bytes": 211167,
+              "sha256": "fd56cca03bc40927c32f28d56b1b4ec7c13561a0ecf5e19d47d61dbbd83a34aa"
+            }
+          },
+          "decodeMedianMs": 2.108458000293467,
+          "decodeP95Ms": 2.3941088002175093
+        },
+        "webp90": {
+          "bytes": 117664,
+          "encodeMs": 47.48624999956519,
+          "error": {
+            "exact": false,
+            "mae": 1.2944543972717986,
+            "maxChannel": 47,
+            "p99Pixel": 11.0,
+            "edgeMAE": 2.9289424730616687,
+            "edgeP99": 20.0,
+            "pixelsOver8Percent": 2.6281097890751757
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 117664,
+              "sha256": "7f5332361d73885f4676cc918b578466409a09ec90e3c812f3d4bd799f963ae7"
+            }
+          },
+          "decodeMedianMs": 6.631416999880457,
+          "decodeP95Ms": 6.98222520040872
+        },
+        "split": {
+          "bytes": 742801,
+          "encodeMs": 746.0597089993826,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 60004,
+              "sha256": "11d25be678dc5c0628e6b608b98514f50fbdb7226e1587e1a32dc2123a49b08b"
+            },
+            "residual.zlib": {
+              "bytes": 682707,
+              "sha256": "a8281e574a4347b29cac80deff4d20e9db424e8f263436b37ad2dff1b7558387"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.41524999991816,
+          "decodeP95Ms": 6.51854200004891
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.07634210907817,
+          "maxLongitude": -4.05029296875,
+          "minLatitude": 53.07193579167533,
+          "minLongitude": -4.0576171875
+        },
+        "byteCount": 467932,
+        "file": "cartography-c026-r030.png",
+        "height": 1032,
+        "sha256": "b2d5114a7d91f43ea0289892ea20b499e1c35450b91881d35cea2a14ceb83b08",
+        "width": 1032
+      },
+      "edgePixels": 190492,
+      "variants": {
+        "original": {
+          "bytes": 467932,
+          "encodeMs": 0.0015000005078036338,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 467932,
+              "sha256": "b2d5114a7d91f43ea0289892ea20b499e1c35450b91881d35cea2a14ceb83b08"
+            }
+          },
+          "decodeMedianMs": 9.133833000305458,
+          "decodeP95Ms": 9.470291200159409
+        },
+        "png9": {
+          "bytes": 432396,
+          "encodeMs": 360.3214169997955,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 432396,
+              "sha256": "e7b31feeb940e2ec337ae41263683741d5c89b44c93c720fce51769abce4603a"
+            }
+          },
+          "decodeMedianMs": 8.799291999821435,
+          "decodeP95Ms": 9.431783000218275
+        },
+        "webp-lossless": {
+          "bytes": 264972,
+          "encodeMs": 206.5354579999621,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 264972,
+              "sha256": "597c8394828f83cad7b92ddee972ccbb35c2560a3020411119021a1ac7fa4050"
+            }
+          },
+          "decodeMedianMs": 4.5271669996509445,
+          "decodeP95Ms": 4.810391200044251
+        },
+        "palette256": {
+          "bytes": 308092,
+          "encodeMs": 71.52058399969974,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 308092,
+              "sha256": "42978638d1c888b7576be530e1b26660ee02042d11009a10bd1f109fdfa1febd"
+            }
+          },
+          "decodeMedianMs": 2.7070000005551265,
+          "decodeP95Ms": 2.8643499996178434
+        },
+        "palette128": {
+          "bytes": 306140,
+          "encodeMs": 71.45508299981884,
+          "error": {
+            "exact": false,
+            "mae": 0.0009918399334975863,
+            "maxChannel": 2,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0033002260812352575,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 306140,
+              "sha256": "52bd2749b56d9870f53193f39d951c22b36d510b5b1d53ac99755a9d3a3e545e"
+            }
+          },
+          "decodeMedianMs": 2.651208000315819,
+          "decodeP95Ms": 2.9192419999162666
+        },
+        "palette64": {
+          "bytes": 287725,
+          "encodeMs": 72.99975000023551,
+          "error": {
+            "exact": false,
+            "mae": 0.12019729132864611,
+            "maxChannel": 50,
+            "p99Pixel": 5.0,
+            "edgeMAE": 0.47524480468121144,
+            "edgeP99": 26.0,
+            "pixelsOver8Percent": 0.18525404122348418
+          },
+          "files": {
+            "image.png": {
+              "bytes": 287725,
+              "sha256": "c5d0a8d49b25d1f64734f9b3af42b144ca86f04b715d28bcb5b52a28a6a010f7"
+            }
+          },
+          "decodeMedianMs": 2.562374999797612,
+          "decodeP95Ms": 2.793974599990179
+        },
+        "webp90": {
+          "bytes": 110174,
+          "encodeMs": 47.71266700026899,
+          "error": {
+            "exact": false,
+            "mae": 1.2548653050698075,
+            "maxChannel": 51,
+            "p99Pixel": 11.0,
+            "edgeMAE": 2.917798822697716,
+            "edgeP99": 18.0,
+            "pixelsOver8Percent": 2.5184408989844362
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 110174,
+              "sha256": "551e741a72cbcf67ffed31cb6b4f4ab126562f0fc8e68e217e238b5e663f8259"
+            }
+          },
+          "decodeMedianMs": 6.336208999528026,
+          "decodeP95Ms": 6.633825000062643
+        },
+        "split": {
+          "bytes": 828947,
+          "encodeMs": 1330.8954999993148,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 72181,
+              "sha256": "9cbe5709447a541988cc443d2d498ea53f49a2fd0d461f5d824e02a6c961b24e"
+            },
+            "residual.zlib": {
+              "bytes": 756676,
+              "sha256": "88e92602333acc860d9fc4471d89fed5a6dc1c918c1834d4ebebb178fc4aee7f"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.813375000092492,
+          "decodeP95Ms": 6.952525200176751
+        }
+      },
+      "inspectionCrop": [
+        4,
+        4,
+        192,
+        192
+      ]
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.19933067057299,
+          "maxLongitude": -4.2333984375,
+          "minLatitude": 53.19494592682486,
+          "minLongitude": -4.24072265625
+        },
+        "byteCount": 59214,
+        "file": "cartography-c001-r002.png",
+        "height": 1032,
+        "sha256": "4f921b448ba705e256ec676899bb391eb82741f3554f244834e5f93700ac66c8",
+        "width": 1032
+      },
+      "edgePixels": 37312,
+      "variants": {
+        "original": {
+          "bytes": 59214,
+          "encodeMs": 0.0012909995348309167,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 59214,
+              "sha256": "4f921b448ba705e256ec676899bb391eb82741f3554f244834e5f93700ac66c8"
+            }
+          },
+          "decodeMedianMs": 3.628000000389875,
+          "decodeP95Ms": 3.8101750000350876
+        },
+        "png9": {
+          "bytes": 52255,
+          "encodeMs": 45.098791999407695,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 52255,
+              "sha256": "67b402d24076513552978f628163bbe0421d5974119248f20b8052bbb518fc38"
+            }
+          },
+          "decodeMedianMs": 3.717749999850639,
+          "decodeP95Ms": 3.8342999996530125
+        },
+        "webp-lossless": {
+          "bytes": 29856,
+          "encodeMs": 43.43108300054155,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 29856,
+              "sha256": "c04770db112232a5e11e1886b48bdfe9cf431246db0e1735dbf5efbecdcd9dec"
+            }
+          },
+          "decodeMedianMs": 2.0265839993953705,
+          "decodeP95Ms": 2.321574799861992
+        },
+        "palette256": {
+          "bytes": 41205,
+          "encodeMs": 34.9854169999162,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 41205,
+              "sha256": "2aeeaaea5aa90710b1a7dba00b8b82a3b8d0bea5cb82c3e0c8d980d1f17bd205"
+            }
+          },
+          "decodeMedianMs": 1.2449590003598132,
+          "decodeP95Ms": 1.366883999799029
+        },
+        "palette128": {
+          "bytes": 41205,
+          "encodeMs": 34.658542000215675,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 41205,
+              "sha256": "2aeeaaea5aa90710b1a7dba00b8b82a3b8d0bea5cb82c3e0c8d980d1f17bd205"
+            }
+          },
+          "decodeMedianMs": 1.260750000255939,
+          "decodeP95Ms": 1.605192200440797
+        },
+        "palette64": {
+          "bytes": 41205,
+          "encodeMs": 34.24141699997563,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 41205,
+              "sha256": "2aeeaaea5aa90710b1a7dba00b8b82a3b8d0bea5cb82c3e0c8d980d1f17bd205"
+            }
+          },
+          "decodeMedianMs": 1.2790000000677537,
+          "decodeP95Ms": 1.6307002000758075
+        },
+        "webp90": {
+          "bytes": 22988,
+          "encodeMs": 28.56354100003955,
+          "error": {
+            "exact": false,
+            "mae": 1.0092270221140556,
+            "maxChannel": 41,
+            "p99Pixel": 7.0,
+            "edgeMAE": 3.392706546598056,
+            "edgeP99": 24.0,
+            "pixelsOver8Percent": 0.6325679045730425
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 22988,
+              "sha256": "13220b6496bf8cd80edd2b45be31768e30acac65695af3dc28a77070d9da57d8"
+            }
+          },
+          "decodeMedianMs": 2.690000000256987,
+          "decodeP95Ms": 2.948675400512002
+        },
+        "split": {
+          "bytes": 162052,
+          "encodeMs": 156.00241700030892,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 14598,
+              "sha256": "540a44b093a78b8da64e723b3106b9c49cde0c5c27f3ab9c8699d148722b0d98"
+            },
+            "residual.zlib": {
+              "bytes": 147364,
+              "sha256": "b83e61e7ff3b6cfc983aec22d5b51cfd2defeaf0cf6bd3ba592ba7ee91b5f191"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.009417000110261,
+          "decodeP95Ms": 5.1846085998477065
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 52.98380944361853,
+          "maxLongitude": -4.24072265625,
+          "minLatitude": 52.97940312621569,
+          "minLongitude": -4.248046875
+        },
+        "byteCount": 121002,
+        "file": "cartography-c000-r051.png",
+        "height": 1032,
+        "sha256": "b4af2e00290fcf095e30dd6bb23a301880d94ffb7c8a7d35264803cb2d4391a1",
+        "width": 1032
+      },
+      "edgePixels": 47223,
+      "variants": {
+        "original": {
+          "bytes": 121002,
+          "encodeMs": 0.0016249996406259015,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 121002,
+              "sha256": "b4af2e00290fcf095e30dd6bb23a301880d94ffb7c8a7d35264803cb2d4391a1"
+            }
+          },
+          "decodeMedianMs": 3.4799579998434638,
+          "decodeP95Ms": 3.743000200302049
+        },
+        "png9": {
+          "bytes": 109245,
+          "encodeMs": 108.88108400013152,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 109245,
+              "sha256": "b7d4ee6222002d7a5c2cd80e8d16d9fe9b46b31637180f59fbb2e8512d5768dc"
+            }
+          },
+          "decodeMedianMs": 3.2190000001719454,
+          "decodeP95Ms": 3.3744836000551004
+        },
+        "webp-lossless": {
+          "bytes": 64844,
+          "encodeMs": 68.50612500056741,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 64844,
+              "sha256": "3ba0714358e95931ba6f748417e3bd90094dde5b1621330feda6e08b0b4f76a0"
+            }
+          },
+          "decodeMedianMs": 2.3825420003049658,
+          "decodeP95Ms": 2.5321581999378395
+        },
+        "palette256": {
+          "bytes": 86745,
+          "encodeMs": 41.46641700026521,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 86745,
+              "sha256": "f423a2a3159f1ec8cab0982bdeaafa1fc8f7c9ec0b6ec8879e01047abafc67f7"
+            }
+          },
+          "decodeMedianMs": 1.5619159994457732,
+          "decodeP95Ms": 1.626383400071063
+        },
+        "palette128": {
+          "bytes": 86745,
+          "encodeMs": 42.39558300014323,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 86745,
+              "sha256": "f423a2a3159f1ec8cab0982bdeaafa1fc8f7c9ec0b6ec8879e01047abafc67f7"
+            }
+          },
+          "decodeMedianMs": 1.6145000008691568,
+          "decodeP95Ms": 1.8714251998972031
+        },
+        "palette64": {
+          "bytes": 85842,
+          "encodeMs": 42.22550000031333,
+          "error": {
+            "exact": false,
+            "mae": 0.02369085892274102,
+            "maxChannel": 17,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.49166013736244346,
+            "edgeP99": 17.0,
+            "pixelsOver8Percent": 0.1715454299621417
+          },
+          "files": {
+            "image.png": {
+              "bytes": 85842,
+              "sha256": "6f74a6afac525fad1997cf6979b6fdd7a7dfa5c78e6f114457fc611ae6883110"
+            }
+          },
+          "decodeMedianMs": 1.562958999784314,
+          "decodeP95Ms": 1.6981161999865435
+        },
+        "webp90": {
+          "bytes": 30316,
+          "encodeMs": 32.52466699996148,
+          "error": {
+            "exact": false,
+            "mae": 0.7323011813192316,
+            "maxChannel": 43,
+            "p99Pixel": 8.0,
+            "edgeMAE": 3.4961494751851148,
+            "edgeP99": 28.0,
+            "pixelsOver8Percent": 0.9368802956553091
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 30316,
+              "sha256": "95a9afedb6a5fedf25c1605ed8710407c16438da4609968fa275289bf74c1e06"
+            }
+          },
+          "decodeMedianMs": 3.184500000315893,
+          "decodeP95Ms": 3.3748502004527836
+        },
+        "split": {
+          "bytes": 277535,
+          "encodeMs": 329.8772090001876,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 25430,
+              "sha256": "6f7526c6219290b884a6c99085d23a8f3637a942efd71701b3bce339ad686d2e"
+            },
+            "residual.zlib": {
+              "bytes": 252015,
+              "sha256": "42f47912543671134ee5a4bfb47dde0110ea9bd7cb50593a37d33ff770bfbf70"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.161582999789971,
+          "decodeP95Ms": 5.413433800094936
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.208100158069264,
+          "maxLongitude": -4.10888671875,
+          "minLatitude": 53.20371541432113,
+          "minLongitude": -4.1162109375
+        },
+        "byteCount": 140761,
+        "file": "cartography-c018-r000.png",
+        "height": 1032,
+        "sha256": "d91fe10dbc6062935947ea808eaa68227d24a723197bb472a07650f889cdf85d",
+        "width": 1032
+      },
+      "edgePixels": 37151,
+      "variants": {
+        "original": {
+          "bytes": 140761,
+          "encodeMs": 0.0015000005078036338,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 140761,
+              "sha256": "d91fe10dbc6062935947ea808eaa68227d24a723197bb472a07650f889cdf85d"
+            }
+          },
+          "decodeMedianMs": 4.324333000113256,
+          "decodeP95Ms": 4.616358000021137
+        },
+        "png9": {
+          "bytes": 126805,
+          "encodeMs": 119.83470799987117,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 126805,
+              "sha256": "339a90acd21ec01a5d2053f86a02ac600c6f9853c779b0f9f0e80b04d1296134"
+            }
+          },
+          "decodeMedianMs": 4.052041999784706,
+          "decodeP95Ms": 4.152149800211191
+        },
+        "webp-lossless": {
+          "bytes": 77618,
+          "encodeMs": 77.088332999665,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 77618,
+              "sha256": "5d060df8961e875c85515701267554861df5ba53cda90677de0384fce05d345d"
+            }
+          },
+          "decodeMedianMs": 2.6115410000784323,
+          "decodeP95Ms": 2.7301246000206447
+        },
+        "palette256": {
+          "bytes": 99002,
+          "encodeMs": 44.94737500044721,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 99002,
+              "sha256": "5f85295a4c65d2787b2b05923d636ceed1fab23aebcada8b50c738c07d902869"
+            }
+          },
+          "decodeMedianMs": 1.6846250000526197,
+          "decodeP95Ms": 1.8093672000759398
+        },
+        "palette128": {
+          "bytes": 99002,
+          "encodeMs": 44.76474999955826,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 99002,
+              "sha256": "5f85295a4c65d2787b2b05923d636ceed1fab23aebcada8b50c738c07d902869"
+            }
+          },
+          "decodeMedianMs": 1.6765000000305008,
+          "decodeP95Ms": 1.796608000404376
+        },
+        "palette64": {
+          "bytes": 98197,
+          "encodeMs": 44.45824999947945,
+          "error": {
+            "exact": false,
+            "mae": 0.000981198545760471,
+            "maxChannel": 4,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.003947852457986774,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 98197,
+              "sha256": "6f74311d23f292863228147585c768a23a50db329d6ca7ee5c68739a23e86fdf"
+            }
+          },
+          "decodeMedianMs": 1.5854170005695778,
+          "decodeP95Ms": 1.7657336000411306
+        },
+        "webp90": {
+          "bytes": 24370,
+          "encodeMs": 32.27970899934007,
+          "error": {
+            "exact": false,
+            "mae": 0.7268002098231277,
+            "maxChannel": 34,
+            "p99Pixel": 6.0,
+            "edgeMAE": 2.8437188770154234,
+            "edgeP99": 15.0,
+            "pixelsOver8Percent": 0.5705035755062797
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 24370,
+              "sha256": "d3435c20b47de4061ce3ce1d10874e4b91bd12ba4b80534ce4c31ba95373de2e"
+            }
+          },
+          "decodeMedianMs": 2.854416999980458,
+          "decodeP95Ms": 3.0052835998503724
+        },
+        "split": {
+          "bytes": 263853,
+          "encodeMs": 384.11404100043,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 25169,
+              "sha256": "b6c3668a184fe0a40929bc24ee91984b8ea21bf7720dafcff275b5f314395b99"
+            },
+            "residual.zlib": {
+              "bytes": 238594,
+              "sha256": "7d85589ad37076c9a38eb4ba705887080ca7470c9744553e259b12cc24568502"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.2475419997790596,
+          "decodeP95Ms": 5.286182800045935
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.137944258099104,
+          "maxLongitude": -3.837890625,
+          "minLatitude": 53.13355951435097,
+          "minLongitude": -3.84521484375
+        },
+        "byteCount": 158603,
+        "file": "cartography-c055-r016.png",
+        "height": 1032,
+        "sha256": "59d76cdd2e60f96d8800c3bf6283570c7c23d867a3b3ee301424c71df13c1a08",
+        "width": 1032
+      },
+      "edgePixels": 72813,
+      "variants": {
+        "original": {
+          "bytes": 158603,
+          "encodeMs": 0.0012500004231696948,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 158603,
+              "sha256": "59d76cdd2e60f96d8800c3bf6283570c7c23d867a3b3ee301424c71df13c1a08"
+            }
+          },
+          "decodeMedianMs": 4.836000000068452,
+          "decodeP95Ms": 5.2748916003110935
+        },
+        "png9": {
+          "bytes": 143539,
+          "encodeMs": 176.1882910004715,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 143539,
+              "sha256": "15c0013f7ebc17becc8dfae7e68d36ac44eac13101b681dab083362f036a69c2"
+            }
+          },
+          "decodeMedianMs": 4.6693329995832755,
+          "decodeP95Ms": 4.853916200409003
+        },
+        "webp-lossless": {
+          "bytes": 91050,
+          "encodeMs": 92.04750000026252,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 91050,
+              "sha256": "a812725bd5afc5ba6dadb0a37f93323395cf00ffdc2c3b69bcd396b2092481b7"
+            }
+          },
+          "decodeMedianMs": 2.8641670005526976,
+          "decodeP95Ms": 3.1054080000103568
+        },
+        "palette256": {
+          "bytes": 128427,
+          "encodeMs": 44.5537499999773,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 128427,
+              "sha256": "68d159b3e941fcc9fc118d3e6f9b8b9951ef8780b18bdb4a3275d276d23add96"
+            }
+          },
+          "decodeMedianMs": 1.8212079994555097,
+          "decodeP95Ms": 2.0716671997433878
+        },
+        "palette128": {
+          "bytes": 127910,
+          "encodeMs": 45.57595899950684,
+          "error": {
+            "exact": false,
+            "mae": 0.00036493700298459626,
+            "maxChannel": 1,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.00045321577190886243,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 127910,
+              "sha256": "0c9e613b571ced5f55d1b2084bdc45433c23133bacc0c0bc101d7db75992fde3"
+            }
+          },
+          "decodeMedianMs": 1.8263330002810108,
+          "decodeP95Ms": 1.9946163998611155
+        },
+        "palette64": {
+          "bytes": 117043,
+          "encodeMs": 46.96858300030726,
+          "error": {
+            "exact": false,
+            "mae": 0.14005725066602567,
+            "maxChannel": 40,
+            "p99Pixel": 3.0,
+            "edgeMAE": 1.300070042437477,
+            "edgeP99": 40.0,
+            "pixelsOver8Percent": 0.4837449672495643
+          },
+          "files": {
+            "image.png": {
+              "bytes": 117043,
+              "sha256": "b944fa638b5f0d8c68e1d44b71f843c5a7de392f540cea09c17159042ea74468"
+            }
+          },
+          "decodeMedianMs": 1.6878750002433662,
+          "decodeP95Ms": 1.7751335999491857
+        },
+        "webp90": {
+          "bytes": 40610,
+          "encodeMs": 35.09095899971726,
+          "error": {
+            "exact": false,
+            "mae": 0.7814409190152836,
+            "maxChannel": 39,
+            "p99Pixel": 11.0,
+            "edgeMAE": 3.5364335123306736,
+            "edgeP99": 22.0,
+            "pixelsOver8Percent": 1.5015624061054023
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 40610,
+              "sha256": "6666e5c4219ab515050c5058565faf7183e074c1f45146bca7aff42015176d94"
+            }
+          },
+          "decodeMedianMs": 3.5664159995576483,
+          "decodeP95Ms": 3.685550000045623
+        },
+        "split": {
+          "bytes": 368987,
+          "encodeMs": 523.9281250005661,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 31834,
+              "sha256": "aeb51fe043fdb8fef7d71405b4cc1130508ad76e41fbdddff489e70502cebf95"
+            },
+            "residual.zlib": {
+              "bytes": 337063,
+              "sha256": "85a4e9a864d0c4efe8a3a532d9193e3bdd9dc2f0a68f3aaea0c39510883d5f47"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.527874999643245,
+          "decodeP95Ms": 5.953741800476564
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.07634210907817,
+          "maxLongitude": -3.8671875,
+          "minLatitude": 53.07193579167533,
+          "minLongitude": -3.87451171875
+        },
+        "byteCount": 173652,
+        "file": "cartography-c051-r030.png",
+        "height": 1032,
+        "sha256": "3251fa19dedd27b789a30a6d130eed0014e3cbe7523dcab3c938c0e2c34cebc2",
+        "width": 1032
+      },
+      "edgePixels": 28016,
+      "variants": {
+        "original": {
+          "bytes": 173652,
+          "encodeMs": 0.000791999809734989,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 173652,
+              "sha256": "3251fa19dedd27b789a30a6d130eed0014e3cbe7523dcab3c938c0e2c34cebc2"
+            }
+          },
+          "decodeMedianMs": 5.408500000157801,
+          "decodeP95Ms": 5.777650399795675
+        },
+        "png9": {
+          "bytes": 157620,
+          "encodeMs": 164.80554200006736,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 157620,
+              "sha256": "8e540aacec3e231dff3e5e97b3febeb6a2562603bad6972267b87aae117aad59"
+            }
+          },
+          "decodeMedianMs": 5.1100830005452735,
+          "decodeP95Ms": 5.3607251997163985
+        },
+        "webp-lossless": {
+          "bytes": 93060,
+          "encodeMs": 92.43862500079558,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 93060,
+              "sha256": "ef902013d612017c892a09969829daa3d35129d3799db281a6ecba93fb9fab97"
+            }
+          },
+          "decodeMedianMs": 2.8134169997429126,
+          "decodeP95Ms": 2.944925200063153
+        },
+        "palette256": {
+          "bytes": 116336,
+          "encodeMs": 49.646583999674476,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 116336,
+              "sha256": "75b275a1718cf573d67a6ce3501ea28f5ed2b2e98d233915f1d04d49f516a680"
+            }
+          },
+          "decodeMedianMs": 1.661415999478777,
+          "decodeP95Ms": 1.908017200003087
+        },
+        "palette128": {
+          "bytes": 116336,
+          "encodeMs": 48.97900000014488,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 116336,
+              "sha256": "75b275a1718cf573d67a6ce3501ea28f5ed2b2e98d233915f1d04d49f516a680"
+            }
+          },
+          "decodeMedianMs": 1.7008750000968575,
+          "decodeP95Ms": 1.9487328003378934
+        },
+        "palette64": {
+          "bytes": 116336,
+          "encodeMs": 49.63487500026531,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 116336,
+              "sha256": "75b275a1718cf573d67a6ce3501ea28f5ed2b2e98d233915f1d04d49f516a680"
+            }
+          },
+          "decodeMedianMs": 1.7975000000660657,
+          "decodeP95Ms": 1.8898161999459262
+        },
+        "webp90": {
+          "bytes": 22454,
+          "encodeMs": 33.197415999893565,
+          "error": {
+            "exact": false,
+            "mae": 0.6546850900386595,
+            "maxChannel": 37,
+            "p99Pixel": 5.0,
+            "edgeMAE": 2.7894536455358843,
+            "edgeP99": 17.0,
+            "pixelsOver8Percent": 0.42515473829697736
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 22454,
+              "sha256": "d303e471ed9016ca534f4110b4783cf9a9eed57c1b77d1b1fa12a15c2ecac56f"
+            }
+          },
+          "decodeMedianMs": 2.8654170000663726,
+          "decodeP95Ms": 3.0369084000994917
+        },
+        "split": {
+          "bytes": 269095,
+          "encodeMs": 533.0816249997952,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 28280,
+              "sha256": "2b02a50b652ffe79be5e9baee5d8d049ea0204a27f9a830052a2aeec6b3c7637"
+            },
+            "residual.zlib": {
+              "bytes": 240725,
+              "sha256": "a4c21cdea31ad5a0d377152d00bc2391e4bdf88f7bf098a35dcd7def475aa957"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.361249999623396,
+          "decodeP95Ms": 5.416500200044538
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 52.99262207842421,
+          "maxLongitude": -3.84521484375,
+          "minLatitude": 52.98821576102137,
+          "minLongitude": -3.8525390625
+        },
+        "byteCount": 187129,
+        "file": "cartography-c054-r049.png",
+        "height": 1032,
+        "sha256": "222cb4f314c47dc2a642b85bc0da81241aac14dd88b8ceaa0930348a10f9ae0f",
+        "width": 1032
+      },
+      "edgePixels": 58444,
+      "variants": {
+        "original": {
+          "bytes": 187129,
+          "encodeMs": 0.001166000402008649,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 187129,
+              "sha256": "222cb4f314c47dc2a642b85bc0da81241aac14dd88b8ceaa0930348a10f9ae0f"
+            }
+          },
+          "decodeMedianMs": 6.072000000131084,
+          "decodeP95Ms": 6.488674999854993
+        },
+        "png9": {
+          "bytes": 171291,
+          "encodeMs": 180.8736670000144,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 171291,
+              "sha256": "6b92d383bce43f5c2a50532de6ff7270809458e1ce003210287da1adee364e0a"
+            }
+          },
+          "decodeMedianMs": 5.939415999819175,
+          "decodeP95Ms": 6.377933800104074
+        },
+        "webp-lossless": {
+          "bytes": 97186,
+          "encodeMs": 97.94641600001341,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 97186,
+              "sha256": "fab19f4f40108737e9c03508ef12493133c284132951745bbc96da6e739ce42f"
+            }
+          },
+          "decodeMedianMs": 3.0091660000834963,
+          "decodeP95Ms": 3.2040334001067095
+        },
+        "palette256": {
+          "bytes": 127273,
+          "encodeMs": 49.0419590005331,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 127273,
+              "sha256": "286be973edb253243d022ba9aca0cbf275209c81aa7e12b7c49df337cbf4c167"
+            }
+          },
+          "decodeMedianMs": 1.8154579993279185,
+          "decodeP95Ms": 2.0844336000664043
+        },
+        "palette128": {
+          "bytes": 127273,
+          "encodeMs": 48.583833000520826,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 127273,
+              "sha256": "286be973edb253243d022ba9aca0cbf275209c81aa7e12b7c49df337cbf4c167"
+            }
+          },
+          "decodeMedianMs": 1.7711249993226374,
+          "decodeP95Ms": 2.111283799786179
+        },
+        "palette64": {
+          "bytes": 125103,
+          "encodeMs": 48.81079200004024,
+          "error": {
+            "exact": false,
+            "mae": 0.006235227249964946,
+            "maxChannel": 3,
+            "p99Pixel": 1.0,
+            "edgeMAE": 0.05012775762553327,
+            "edgeP99": 1.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 125103,
+              "sha256": "390848ac1f19eaa2b2e05d55b47d1c359411c14916dd98e26e353b51ab66a687"
+            }
+          },
+          "decodeMedianMs": 1.8758750002234592,
+          "decodeP95Ms": 2.127566400122305
+        },
+        "webp90": {
+          "bytes": 41844,
+          "encodeMs": 34.86787500060018,
+          "error": {
+            "exact": false,
+            "mae": 0.7925899635438576,
+            "maxChannel": 46,
+            "p99Pixel": 11.0,
+            "edgeMAE": 3.9973992197659296,
+            "edgeP99": 28.0,
+            "pixelsOver8Percent": 1.449263115197404
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 41844,
+              "sha256": "ad22f8d476c4e91909c9dbbec1e728fb10d3f35703462978852e30c98a850c43"
+            }
+          },
+          "decodeMedianMs": 3.6833750000369037,
+          "decodeP95Ms": 3.823491399816703
+        },
+        "split": {
+          "bytes": 371360,
+          "encodeMs": 528.9629999997487,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 35142,
+              "sha256": "b20bcf26780e4a466b4c9a225df9732e9ed331d67f275ec9f7a5f10dd304dce7"
+            },
+            "residual.zlib": {
+              "bytes": 336128,
+              "sha256": "3ae3ef6c4eeb9be5404abb4f25ee33b4312ff2271c71383c1db9604fc0d00146"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.778875000032713,
+          "decodeP95Ms": 5.955133400129853
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.00584103063274,
+          "maxLongitude": -4.24072265625,
+          "minLatitude": 53.00143471322989,
+          "minLongitude": -4.248046875
+        },
+        "byteCount": 202583,
+        "file": "cartography-c000-r046.png",
+        "height": 1032,
+        "sha256": "20a8f2c6a67685824dbc4bf9d2ac32717dd6ac2e8c47c1f878b30eb56ac6e3f2",
+        "width": 1032
+      },
+      "edgePixels": 72033,
+      "variants": {
+        "original": {
+          "bytes": 202583,
+          "encodeMs": 0.0013750004654866643,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 202583,
+              "sha256": "20a8f2c6a67685824dbc4bf9d2ac32717dd6ac2e8c47c1f878b30eb56ac6e3f2"
+            }
+          },
+          "decodeMedianMs": 5.139416999554669,
+          "decodeP95Ms": 5.256783600088966
+        },
+        "png9": {
+          "bytes": 183544,
+          "encodeMs": 319.52445800015994,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 183544,
+              "sha256": "a71f0fed1b73e2f87d0bbd4b1ce5962d3e094ddad26a101e1fe19465941f595d"
+            }
+          },
+          "decodeMedianMs": 4.8713750002207235,
+          "decodeP95Ms": 5.012367200288281
+        },
+        "webp-lossless": {
+          "bytes": 116370,
+          "encodeMs": 114.64845800037438,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 116370,
+              "sha256": "b5053bc974ac9a4068087b5466404a567cefc9e626da39e34b4e82ada8719ede"
+            }
+          },
+          "decodeMedianMs": 3.25362499916082,
+          "decodeP95Ms": 3.343466199839895
+        },
+        "palette256": {
+          "bytes": 149699,
+          "encodeMs": 67.14283299970703,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 149699,
+              "sha256": "8b5f34b8500a1331a6c88bb654a0c6afc44bfefe0c72244036917d5401797724"
+            }
+          },
+          "decodeMedianMs": 1.9359170000825543,
+          "decodeP95Ms": 2.14173319945985
+        },
+        "palette128": {
+          "bytes": 149699,
+          "encodeMs": 69.18483399931574,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 149699,
+              "sha256": "8b5f34b8500a1331a6c88bb654a0c6afc44bfefe0c72244036917d5401797724"
+            }
+          },
+          "decodeMedianMs": 1.8959159997393726,
+          "decodeP95Ms": 2.2811167997133452
+        },
+        "palette64": {
+          "bytes": 149651,
+          "encodeMs": 69.95974999972532,
+          "error": {
+            "exact": false,
+            "mae": 4.2878532940728724e-05,
+            "maxChannel": 1,
+            "p99Pixel": 0.0,
+            "edgeMAE": 9.255017376295124e-06,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 149651,
+              "sha256": "bdb08355905e120998621686bcc90f6915d7645b3bbbe0f61a7aff49b0c5f674"
+            }
+          },
+          "decodeMedianMs": 1.9732089995159185,
+          "decodeP95Ms": 2.275983800427639
+        },
+        "webp90": {
+          "bytes": 37360,
+          "encodeMs": 36.866374999590334,
+          "error": {
+            "exact": false,
+            "mae": 0.5803409125052581,
+            "maxChannel": 25,
+            "p99Pixel": 11.0,
+            "edgeMAE": 3.0786676476985084,
+            "edgeP99": 19.0,
+            "pixelsOver8Percent": 1.5400591911543777
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 37360,
+              "sha256": "333ac72511ae7cf76b2af948ce14a01544827ec92d39df1def54b39a4a0de268"
+            }
+          },
+          "decodeMedianMs": 3.417167000407062,
+          "decodeP95Ms": 3.5987498000395135
+        },
+        "split": {
+          "bytes": 398243,
+          "encodeMs": 837.3707920000015,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 38351,
+              "sha256": "a5570331ff2c802ab93e51f1bee2745b2b2cfc0eb0f4ff4ae4d6ee22970c970f"
+            },
+            "residual.zlib": {
+              "bytes": 359802,
+              "sha256": "460b37f9b4ea2ce9f2c8f30cb3b257eeef53be029dca1c09cf587b56eee9a9bd"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.709667000701302,
+          "decodeP95Ms": 5.804232999980741
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.00584103063274,
+          "maxLongitude": -3.837890625,
+          "minLatitude": 53.00143471322989,
+          "minLongitude": -3.84521484375
+        },
+        "byteCount": 216927,
+        "file": "cartography-c055-r046.png",
+        "height": 1032,
+        "sha256": "06441cc53aade02581864f26a5ea2f90f2abe65d77267a989945baabfd810160",
+        "width": 1032
+      },
+      "edgePixels": 120468,
+      "variants": {
+        "original": {
+          "bytes": 216927,
+          "encodeMs": 0.00145800004247576,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 216927,
+              "sha256": "06441cc53aade02581864f26a5ea2f90f2abe65d77267a989945baabfd810160"
+            }
+          },
+          "decodeMedianMs": 3.5475829999995767,
+          "decodeP95Ms": 3.805300000385614
+        },
+        "png9": {
+          "bytes": 195308,
+          "encodeMs": 313.785999999709,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 195308,
+              "sha256": "0cde6dc20b4cd87e01f504aed4c9afa70d88fd9c4ccf79b4cf7f9f7ea8e79b1e"
+            }
+          },
+          "decodeMedianMs": 3.267416999733541,
+          "decodeP95Ms": 3.5106332003124407
+        },
+        "webp-lossless": {
+          "bytes": 127904,
+          "encodeMs": 119.22779199994693,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 127904,
+              "sha256": "af2379749d8d3dba2d9aa404c58ee1d2c5202fef42dec9c9d0d84e8e44bc5953"
+            }
+          },
+          "decodeMedianMs": 3.4224999999423744,
+          "decodeP95Ms": 3.559383399988292
+        },
+        "palette256": {
+          "bytes": 178570,
+          "encodeMs": 48.34558400034439,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 178570,
+              "sha256": "6a30890cb3032038cf3c20dccbc19e446ac19e390a0620c50718d4f0a4f2b4c1"
+            }
+          },
+          "decodeMedianMs": 2.158249999411055,
+          "decodeP95Ms": 2.3664584001380717
+        },
+        "palette128": {
+          "bytes": 169692,
+          "encodeMs": 48.62229200080037,
+          "error": {
+            "exact": false,
+            "mae": 0.017708208140536426,
+            "maxChannel": 6,
+            "p99Pixel": 1.0,
+            "edgeMAE": 0.01713594758220717,
+            "edgeP99": 1.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 169692,
+              "sha256": "55aa055e28a8cc90fed6a43537bcb8345266edbd1171eb68cb0840df8c94ba50"
+            }
+          },
+          "decodeMedianMs": 2.082707999761624,
+          "decodeP95Ms": 2.394149599967932
+        },
+        "palette64": {
+          "bytes": 134295,
+          "encodeMs": 48.0058339999232,
+          "error": {
+            "exact": false,
+            "mae": 0.5077497471105502,
+            "maxChannel": 67,
+            "p99Pixel": 12.0,
+            "edgeMAE": 2.975027946563956,
+            "edgeP99": 67.0,
+            "pixelsOver8Percent": 2.2753477855898083
+          },
+          "files": {
+            "image.png": {
+              "bytes": 134295,
+              "sha256": "6915a581ec96c4702208d0b61dfd7a6f6086c842a78b1419604a2db796e87d9c"
+            }
+          },
+          "decodeMedianMs": 1.8437919998177676,
+          "decodeP95Ms": 1.945683200028725
+        },
+        "webp90": {
+          "bytes": 63464,
+          "encodeMs": 39.45062499951746,
+          "error": {
+            "exact": false,
+            "mae": 1.021708743965707,
+            "maxChannel": 39,
+            "p99Pixel": 12.0,
+            "edgeMAE": 3.507094553463714,
+            "edgeP99": 22.0,
+            "pixelsOver8Percent": 2.7589988582416924
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 63464,
+              "sha256": "7e50ba7c94eebd53cf484156b50d5195be8977ea149e319520186b97c8dd68fa"
+            }
+          },
+          "decodeMedianMs": 4.218875000333355,
+          "decodeP95Ms": 4.499291600041033
+        },
+        "split": {
+          "bytes": 554309,
+          "encodeMs": 752.1052079991932,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 40687,
+              "sha256": "886ccb70b2907524095163dd79858aec5b009351c3be5f2c5a63bc51617c10c2"
+            },
+            "residual.zlib": {
+              "bytes": 513532,
+              "sha256": "c663d1a3fb32f9f459b6e5c7059f33cc87f85d1fc01874a655af350606d2f169"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 5.912124999667867,
+          "decodeP95Ms": 6.130358399786928
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.18617643932859,
+          "maxLongitude": -4.0283203125,
+          "minLatitude": 53.18179169558046,
+          "minLongitude": -4.03564453125
+        },
+        "byteCount": 229443,
+        "file": "cartography-c029-r005.png",
+        "height": 1032,
+        "sha256": "6555d11ee9afa745c2d5cee6a565c106eb22c48b9b7c186931d4bd6b1639c091",
+        "width": 1032
+      },
+      "edgePixels": 91304,
+      "variants": {
+        "original": {
+          "bytes": 229443,
+          "encodeMs": 0.0009169998520519584,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 229443,
+              "sha256": "6555d11ee9afa745c2d5cee6a565c106eb22c48b9b7c186931d4bd6b1639c091"
+            }
+          },
+          "decodeMedianMs": 6.346500000290689,
+          "decodeP95Ms": 6.575083000097948
+        },
+        "png9": {
+          "bytes": 210802,
+          "encodeMs": 236.58341700047458,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 210802,
+              "sha256": "3e51d99b545e506d3dad3bbba6d753cc7d576cf616e901971b684365027b3c46"
+            }
+          },
+          "decodeMedianMs": 6.033832999492006,
+          "decodeP95Ms": 6.295616999886988
+        },
+        "webp-lossless": {
+          "bytes": 122778,
+          "encodeMs": 114.01904200010904,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 122778,
+              "sha256": "abf031e5c4eab0026f741ba620722941ea869ccc520b752a3ff6c37d62a27bd2"
+            }
+          },
+          "decodeMedianMs": 3.2489589993929258,
+          "decodeP95Ms": 3.4342997996645863
+        },
+        "palette256": {
+          "bytes": 161189,
+          "encodeMs": 56.61808300010307,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 161189,
+              "sha256": "169b0ccec48fd56af148985715a4364197291f9e738fd0f8f4c274103ae60c22"
+            }
+          },
+          "decodeMedianMs": 1.992249999602791,
+          "decodeP95Ms": 2.0977665999453166
+        },
+        "palette128": {
+          "bytes": 161189,
+          "encodeMs": 55.92533300023206,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 161189,
+              "sha256": "169b0ccec48fd56af148985715a4364197291f9e738fd0f8f4c274103ae60c22"
+            }
+          },
+          "decodeMedianMs": 1.9939590001740726,
+          "decodeP95Ms": 2.1401582000180497
+        },
+        "palette64": {
+          "bytes": 159609,
+          "encodeMs": 55.8061669999006,
+          "error": {
+            "exact": false,
+            "mae": 0.0024559696933277248,
+            "maxChannel": 5,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.004610969946552177,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 159609,
+              "sha256": "c7c1638366853d187e799f836e24aaa104d18600b6a11a1c0528e59ed0402c15"
+            }
+          },
+          "decodeMedianMs": 1.9992910001747077,
+          "decodeP95Ms": 2.1500748005564674
+        },
+        "webp90": {
+          "bytes": 59394,
+          "encodeMs": 38.26141700028529,
+          "error": {
+            "exact": false,
+            "mae": 0.8829087419626225,
+            "maxChannel": 38,
+            "p99Pixel": 11.0,
+            "edgeMAE": 3.3118921405414876,
+            "edgeP99": 23.0,
+            "pixelsOver8Percent": 2.035259299320954
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 59394,
+              "sha256": "02b240217ba7cc03107c4c56216d67729d6e8bb0ba137b7414a4c7e6773e68e3"
+            }
+          },
+          "decodeMedianMs": 4.419500000039989,
+          "decodeP95Ms": 4.553533200305537
+        },
+        "split": {
+          "bytes": 494013,
+          "encodeMs": 711.7732500000784,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 43005,
+              "sha256": "b7c4f86322bdaa3d745fc3fea35ba5e172d697d6006ef30c2d4ceabd9cd7cdb2"
+            },
+            "residual.zlib": {
+              "bytes": 450918,
+              "sha256": "b0a07645f6c97d69e1c48a5b8fd27f56c13740a59c6730b693ac3f6e423e9763"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.083334000322793,
+          "decodeP95Ms": 6.199075000040466
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.014653665438416,
+          "maxLongitude": -4.1015625,
+          "minLatitude": 53.01024734803558,
+          "minLongitude": -4.10888671875
+        },
+        "byteCount": 247402,
+        "file": "cartography-c019-r044.png",
+        "height": 1032,
+        "sha256": "351a5d97209636fb45dd1be9504221b8851e2b452e8d4e82a5b58fc2dee6e875",
+        "width": 1032
+      },
+      "edgePixels": 149739,
+      "variants": {
+        "original": {
+          "bytes": 247402,
+          "encodeMs": 0.001291999979002867,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 247402,
+              "sha256": "351a5d97209636fb45dd1be9504221b8851e2b452e8d4e82a5b58fc2dee6e875"
+            }
+          },
+          "decodeMedianMs": 6.246875000215368,
+          "decodeP95Ms": 6.330549600352242
+        },
+        "png9": {
+          "bytes": 231723,
+          "encodeMs": 212.8174579993356,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 231723,
+              "sha256": "f7d6827d0d26b57b14b5e187375b51a8b25a21731bca2c239407ccdc59642cc5"
+            }
+          },
+          "decodeMedianMs": 5.989291999867419,
+          "decodeP95Ms": 6.18485859959037
+        },
+        "webp-lossless": {
+          "bytes": 170084,
+          "encodeMs": 318.0759159995432,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 170084,
+              "sha256": "6cba3c9d83bf731e9f015ee184e31a7217b902dfa2f72671f23099faf043f57e"
+            }
+          },
+          "decodeMedianMs": 4.962875000273925,
+          "decodeP95Ms": 5.189015999894764
+        },
+        "palette256": {
+          "bytes": 167470,
+          "encodeMs": 48.34762500013312,
+          "error": {
+            "exact": false,
+            "mae": 0.003201492798910322,
+            "maxChannel": 2,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0063109811071264,
+            "edgeP99": 1.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 167470,
+              "sha256": "543ffb4e3ea64178983fd77da49f0398ed362e627136c0c9a1a47da31a70fee1"
+            }
+          },
+          "decodeMedianMs": 2.071666000119876,
+          "decodeP95Ms": 2.297283199732192
+        },
+        "palette128": {
+          "bytes": 143320,
+          "encodeMs": 46.966834000159,
+          "error": {
+            "exact": false,
+            "mae": 0.17122556236604372,
+            "maxChannel": 24,
+            "p99Pixel": 4.0,
+            "edgeMAE": 0.5796196493008947,
+            "edgeP99": 24.0,
+            "pixelsOver8Percent": 0.24778784327864914
+          },
+          "files": {
+            "image.png": {
+              "bytes": 143320,
+              "sha256": "6f94e2965074a426d24b2bbe503a3a110016ce802c5b4b8450b03db1263296bc"
+            }
+          },
+          "decodeMedianMs": 1.9350000002305023,
+          "decodeP95Ms": 2.277383200271288
+        },
+        "palette64": {
+          "bytes": 103192,
+          "encodeMs": 47.22708400004194,
+          "error": {
+            "exact": false,
+            "mae": 0.7582833814073674,
+            "maxChannel": 50,
+            "p99Pixel": 11.0,
+            "edgeMAE": 3.041409830883515,
+            "edgeP99": 50.0,
+            "pixelsOver8Percent": 2.5600362057568655
+          },
+          "files": {
+            "image.png": {
+              "bytes": 103192,
+              "sha256": "d06976332ca1ba647aefe85915fe5991d2fdfd914b6b27c8e831e315337688f6"
+            }
+          },
+          "decodeMedianMs": 1.6596249997746781,
+          "decodeP95Ms": 1.7495996000434388
+        },
+        "webp90": {
+          "bytes": 90882,
+          "encodeMs": 43.513833000361046,
+          "error": {
+            "exact": false,
+            "mae": 1.2198185205216032,
+            "maxChannel": 45,
+            "p99Pixel": 16.0,
+            "edgeMAE": 3.7963011195034917,
+            "edgeP99": 26.0,
+            "pixelsOver8Percent": 3.7511830719307735
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 90882,
+              "sha256": "4fe21e218e95351eb95e737115be3246272365245ab0015920f2618e9a7e6aeb"
+            }
+          },
+          "decodeMedianMs": 5.493874999956461,
+          "decodeP95Ms": 5.819158600388619
+        },
+        "split": {
+          "bytes": 752565,
+          "encodeMs": 677.8970830000617,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 60660,
+              "sha256": "f263f58ec862d84125c1bf3a7ce3d8cd87b31fa5832f7c6bc6180c196c320b8f"
+            },
+            "residual.zlib": {
+              "bytes": 691815,
+              "sha256": "d79fc0f0dfff5cfe50ea79503e276c5d6e2f945940c8793fd750a9fb8c8ca68e"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.555542000569403,
+          "decodeP95Ms": 6.775175199618388
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.04109156985545,
+          "maxLongitude": -4.16748046875,
+          "minLatitude": 53.036685252452614,
+          "minLongitude": -4.1748046875
+        },
+        "byteCount": 269298,
+        "file": "cartography-c010-r038.png",
+        "height": 1032,
+        "sha256": "277a221952aa7c448692bcc112e3c4e491a620f6a89fc57a67934f83b28a8a87",
+        "width": 1032
+      },
+      "edgePixels": 175606,
+      "variants": {
+        "original": {
+          "bytes": 269298,
+          "encodeMs": 0.001666000571276527,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 269298,
+              "sha256": "277a221952aa7c448692bcc112e3c4e491a620f6a89fc57a67934f83b28a8a87"
+            }
+          },
+          "decodeMedianMs": 6.662540999968769,
+          "decodeP95Ms": 6.836950400065689
+        },
+        "png9": {
+          "bytes": 251712,
+          "encodeMs": 281.9106249999095,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 251712,
+              "sha256": "feb75e9031c33951761f5ecfa5619edda8c321731d9df66d4b169bcd00566cd0"
+            }
+          },
+          "decodeMedianMs": 6.324083000436076,
+          "decodeP95Ms": 6.475191599747632
+        },
+        "webp-lossless": {
+          "bytes": 139216,
+          "encodeMs": 120.9404170003836,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 139216,
+              "sha256": "89592e491889b114f73a4c694b1ad2b63d6ca1885e5a70f399bc508c7b08e02d"
+            }
+          },
+          "decodeMedianMs": 3.6845829999947455,
+          "decodeP95Ms": 3.8088666000476223
+        },
+        "palette256": {
+          "bytes": 190553,
+          "encodeMs": 48.49999999987631,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 190553,
+              "sha256": "586069b6b0dcf3b3faf5a5b08cecfffa4bd4b401a0bb47543a77c48929e841be"
+            }
+          },
+          "decodeMedianMs": 2.1197080004640156,
+          "decodeP95Ms": 2.3016669996650307
+        },
+        "palette128": {
+          "bytes": 160283,
+          "encodeMs": 47.625541999877896,
+          "error": {
+            "exact": false,
+            "mae": 0.1105305295154538,
+            "maxChannel": 16,
+            "p99Pixel": 1.0,
+            "edgeMAE": 0.34657699623019717,
+            "edgeP99": 16.0,
+            "pixelsOver8Percent": 0.578484616309116
+          },
+          "files": {
+            "image.png": {
+              "bytes": 160283,
+              "sha256": "d15a1649bad03dc93b50b4fbd5112e605bdac55b66f785ef9b4cba78e28f31ad"
+            }
+          },
+          "decodeMedianMs": 2.0094580004297313,
+          "decodeP95Ms": 2.1789918000649777
+        },
+        "palette64": {
+          "bytes": 114188,
+          "encodeMs": 47.209792000103334,
+          "error": {
+            "exact": false,
+            "mae": 0.5116964500330509,
+            "maxChannel": 68,
+            "p99Pixel": 17.0,
+            "edgeMAE": 2.015204491873854,
+            "edgeP99": 44.0,
+            "pixelsOver8Percent": 2.1386372513671055
+          },
+          "files": {
+            "image.png": {
+              "bytes": 114188,
+              "sha256": "769cc890e17dae504ca3313359f121142d4b9902afaf7417cceade6307ac45ce"
+            }
+          },
+          "decodeMedianMs": 1.7607500003578025,
+          "decodeP95Ms": 1.9289503999971203
+        },
+        "webp90": {
+          "bytes": 98042,
+          "encodeMs": 45.0061250003273,
+          "error": {
+            "exact": false,
+            "mae": 1.1271251477275004,
+            "maxChannel": 39,
+            "p99Pixel": 15.0,
+            "edgeMAE": 3.5974757886025155,
+            "edgeP99": 21.0,
+            "pixelsOver8Percent": 4.498020701880896
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 98042,
+              "sha256": "143359388fedc683e20e9808d41e0de6ab5f96f41c018986300385d2eec12f84"
+            }
+          },
+          "decodeMedianMs": 5.713583000215294,
+          "decodeP95Ms": 5.891616599546978
+        },
+        "split": {
+          "bytes": 695974,
+          "encodeMs": 718.0626660001508,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 55572,
+              "sha256": "278e9652de0f9eb4a6cc0f123889e66bab9cc0d14e8fd74b1d2f637f7320fbff"
+            },
+            "residual.zlib": {
+              "bytes": 640312,
+              "sha256": "49fdfad06f4acd254100644a3f2c1c2f9d91bf6c49465453c688c5b79496f8fe"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.596750000426255,
+          "decodeP95Ms": 6.7319164003492915
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.12917477060283,
+          "maxLongitude": -4.10888671875,
+          "minLatitude": 53.1247900268547,
+          "minLongitude": -4.1162109375
+        },
+        "byteCount": 291896,
+        "file": "cartography-c018-r018.png",
+        "height": 1032,
+        "sha256": "addcf1e9d1f97b6d3b6712b3628f55a8f7781fd92ec1a86e32880e722359ed56",
+        "width": 1032
+      },
+      "edgePixels": 131846,
+      "variants": {
+        "original": {
+          "bytes": 291896,
+          "encodeMs": 0.001499999598308932,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 291896,
+              "sha256": "addcf1e9d1f97b6d3b6712b3628f55a8f7781fd92ec1a86e32880e722359ed56"
+            }
+          },
+          "decodeMedianMs": 5.683000000317406,
+          "decodeP95Ms": 5.829008199725649
+        },
+        "png9": {
+          "bytes": 271850,
+          "encodeMs": 293.6472080000385,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 271850,
+              "sha256": "d89cf7e4b3fb15a0796ac785a82aef0239244633a7ad7cd34435cbdf3fe3a139"
+            }
+          },
+          "decodeMedianMs": 5.476749999616004,
+          "decodeP95Ms": 5.638741599796049
+        },
+        "webp-lossless": {
+          "bytes": 194890,
+          "encodeMs": 337.05887500036624,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 194890,
+              "sha256": "fdae148f00c74ec0543297d4dd4ba3be70bcf8084468fefdae802397f256f33c"
+            }
+          },
+          "decodeMedianMs": 5.008834000364004,
+          "decodeP95Ms": 5.115158400076325
+        },
+        "palette256": {
+          "bytes": 196910,
+          "encodeMs": 47.807666000153404,
+          "error": {
+            "exact": false,
+            "mae": 0.004371419486008453,
+            "maxChannel": 3,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.009993982879015416,
+            "edgeP99": 1.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 196910,
+              "sha256": "55f162ed875a09821ba87a78986b9bdbb2d712e3a5239c60756d386e3d532f6d"
+            }
+          },
+          "decodeMedianMs": 2.224709000074654,
+          "decodeP95Ms": 2.3133665994464536
+        },
+        "palette128": {
+          "bytes": 156906,
+          "encodeMs": 47.85600000013801,
+          "error": {
+            "exact": false,
+            "mae": 0.24706579382248664,
+            "maxChannel": 27,
+            "p99Pixel": 7.0,
+            "edgeMAE": 0.8589162103261886,
+            "edgeP99": 27.0,
+            "pixelsOver8Percent": 0.8348168679766841
+          },
+          "files": {
+            "image.png": {
+              "bytes": 156906,
+              "sha256": "8d66318534a5e70a27f7a2ef591a3b308733405dc77672c78cb12b258a8b460d"
+            }
+          },
+          "decodeMedianMs": 2.0341669996923883,
+          "decodeP95Ms": 2.1726997996665887
+        },
+        "palette64": {
+          "bytes": 113698,
+          "encodeMs": 48.28437500054861,
+          "error": {
+            "exact": false,
+            "mae": 0.5524078956593154,
+            "maxChannel": 64,
+            "p99Pixel": 13.0,
+            "edgeMAE": 1.6631651067659745,
+            "edgeP99": 41.0,
+            "pixelsOver8Percent": 1.3116136349978968
+          },
+          "files": {
+            "image.png": {
+              "bytes": 113698,
+              "sha256": "6d88223fb05176a6385dc2f6e014d0c0a70ff1f189743d899661be9f9dc97502"
+            }
+          },
+          "decodeMedianMs": 1.7333749992758385,
+          "decodeP95Ms": 1.8127833998732967
+        },
+        "webp90": {
+          "bytes": 74898,
+          "encodeMs": 42.163291000179015,
+          "error": {
+            "exact": false,
+            "mae": 1.0560841821404963,
+            "maxChannel": 46,
+            "p99Pixel": 12.0,
+            "edgeMAE": 3.2889153507374767,
+            "edgeP99": 22.0,
+            "pixelsOver8Percent": 2.587077849888829
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 74898,
+              "sha256": "6cfe2b30e78e44d2b3d8e1c357679175c858ab22bdaa4583e1f1b1f81df67970"
+            }
+          },
+          "decodeMedianMs": 5.3525829998761765,
+          "decodeP95Ms": 5.639682999935758
+        },
+        "split": {
+          "bytes": 701574,
+          "encodeMs": 855.2455420003753,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 58973,
+              "sha256": "de94675dd2caf3a60bac34fa0de386d42af3df9cc237e1c27fa5bee57b29253b"
+            },
+            "residual.zlib": {
+              "bytes": 642511,
+              "sha256": "1b263dbb620db5e29d79f69e2ced4d09bec2eb6408cab251d76f7bfbdae22556"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.608499999856576,
+          "decodeP95Ms": 6.720558399683796
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.16425272058791,
+          "maxLongitude": -4.06494140625,
+          "minLatitude": 53.15986797683978,
+          "minLongitude": -4.072265625
+        },
+        "byteCount": 337691,
+        "file": "cartography-c024-r010.png",
+        "height": 1032,
+        "sha256": "bd17dbedcb105230bf8acbf412864e4b117da55ab6121a51eceba13530fb2574",
+        "width": 1032
+      },
+      "edgePixels": 142106,
+      "variants": {
+        "original": {
+          "bytes": 337691,
+          "encodeMs": 0.001207999957841821,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 337691,
+              "sha256": "bd17dbedcb105230bf8acbf412864e4b117da55ab6121a51eceba13530fb2574"
+            }
+          },
+          "decodeMedianMs": 6.376041999828885,
+          "decodeP95Ms": 6.574316399928648
+        },
+        "png9": {
+          "bytes": 314909,
+          "encodeMs": 350.5914159995882,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 314909,
+              "sha256": "6695b88dfe6d7a180505ea38313638e407864613b444fddfee73c5861f72c75a"
+            }
+          },
+          "decodeMedianMs": 6.006999999954132,
+          "decodeP95Ms": 6.113757999992231
+        },
+        "webp-lossless": {
+          "bytes": 178108,
+          "encodeMs": 144.48154199999408,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 178108,
+              "sha256": "8d329d12079a9414b2ae130fd22fc77758f87f1956ef0978ee0798c377d1d323"
+            }
+          },
+          "decodeMedianMs": 3.9619170001969906,
+          "decodeP95Ms": 4.169974799879128
+        },
+        "palette256": {
+          "bytes": 231333,
+          "encodeMs": 52.7659589997711,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 231333,
+              "sha256": "474ed70f0688d9e7ad57eb146b2f580d4933de8ca289543bb9b9216b704e03c8"
+            }
+          },
+          "decodeMedianMs": 2.3457080005755415,
+          "decodeP95Ms": 2.4405918004049454
+        },
+        "palette128": {
+          "bytes": 216545,
+          "encodeMs": 50.97483299960004,
+          "error": {
+            "exact": false,
+            "mae": 0.03392443112393086,
+            "maxChannel": 13,
+            "p99Pixel": 1.0,
+            "edgeMAE": 0.03316772925374955,
+            "edgeP99": 1.0,
+            "pixelsOver8Percent": 0.05417718286160688
+          },
+          "files": {
+            "image.png": {
+              "bytes": 216545,
+              "sha256": "0075c22ab34c03139958554093137a9db277f18f3ef3a540530a6837f2d69c6b"
+            }
+          },
+          "decodeMedianMs": 2.266000000417989,
+          "decodeP95Ms": 2.4193414004912484
+        },
+        "palette64": {
+          "bytes": 170698,
+          "encodeMs": 51.29570799999783,
+          "error": {
+            "exact": false,
+            "mae": 0.2849018738857841,
+            "maxChannel": 47,
+            "p99Pixel": 7.0,
+            "edgeMAE": 1.0866981924291257,
+            "edgeP99": 9.0,
+            "pixelsOver8Percent": 0.9358474550808245
+          },
+          "files": {
+            "image.png": {
+              "bytes": 170698,
+              "sha256": "2bc55e2e361fbe7f739cb9074608ce358f3921081d3f36711d7c375cbdc8e328"
+            }
+          },
+          "decodeMedianMs": 2.035917000284826,
+          "decodeP95Ms": 2.1591081997030415
+        },
+        "webp90": {
+          "bytes": 86896,
+          "encodeMs": 43.8487499995972,
+          "error": {
+            "exact": false,
+            "mae": 1.0147161002944534,
+            "maxChannel": 35,
+            "p99Pixel": 10.0,
+            "edgeMAE": 2.698495020149278,
+            "edgeP99": 14.0,
+            "pixelsOver8Percent": 1.745312781683793
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 86896,
+              "sha256": "fc41ea0eb183d173e7da882fa8867fc50ee89a40bb6812c599436d1f97cf0311"
+            }
+          },
+          "decodeMedianMs": 5.677084000126342,
+          "decodeP95Ms": 5.911074800314964
+        },
+        "split": {
+          "bytes": 732207,
+          "encodeMs": 1006.7695830002776,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 60628,
+              "sha256": "794fd580ff87e18c3e822eaab9f1a546e3bebf60b823989d50f35cfc2731ea03"
+            },
+            "residual.zlib": {
+              "bytes": 671489,
+              "sha256": "453eb08f850a62b8a55aebb42ffe192b2d41377d5d080df5012f30cf9f8e59a4"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 6.602875000680797,
+          "decodeP95Ms": 6.7595002001326066
+        }
+      }
+    },
+    {
+      "source": {
+        "bounds": {
+          "maxLatitude": 53.115998965703724,
+          "maxLongitude": -4.013671875,
+          "minLatitude": 53.111592648300885,
+          "minLongitude": -4.02099609375
+        },
+        "byteCount": 532283,
+        "file": "cartography-c031-r021.png",
+        "height": 1032,
+        "sha256": "84959e42929ba53627e7d7c33d80de9492402c1b68007250fb221b1c2e24b9c8",
+        "width": 1032
+      },
+      "edgePixels": 162600,
+      "variants": {
+        "original": {
+          "bytes": 532283,
+          "encodeMs": 0.0013340004443307407,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 532283,
+              "sha256": "84959e42929ba53627e7d7c33d80de9492402c1b68007250fb221b1c2e24b9c8"
+            }
+          },
+          "decodeMedianMs": 8.131167000101414,
+          "decodeP95Ms": 8.371566400455777
+        },
+        "png9": {
+          "bytes": 498235,
+          "encodeMs": 620.6937500001004,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 498235,
+              "sha256": "2244c5cc69f90971e3aabac123e99354149618f8af7c943a823a7a14370d6b2c"
+            }
+          },
+          "decodeMedianMs": 7.841292000193789,
+          "decodeP95Ms": 8.22669200006203
+        },
+        "webp-lossless": {
+          "bytes": 309518,
+          "encodeMs": 227.56441700039431,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 309518,
+              "sha256": "5b0e0cade595fed52580af1a06e9dab7bb43c02341c4cc1f00f53236434be5de"
+            }
+          },
+          "decodeMedianMs": 4.978375000064261,
+          "decodeP95Ms": 5.121175000203948
+        },
+        "palette256": {
+          "bytes": 364300,
+          "encodeMs": 65.48866699995415,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 364300,
+              "sha256": "7ea5f15126ab162edb555531260cf9a81bdf938fa1b584a49e23a2de094eddc2"
+            }
+          },
+          "decodeMedianMs": 2.952417000415153,
+          "decodeP95Ms": 3.1365582002763404
+        },
+        "palette128": {
+          "bytes": 362109,
+          "encodeMs": 65.98266700075328,
+          "error": {
+            "exact": false,
+            "mae": 0.003380831480479939,
+            "maxChannel": 2,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.002972529725297253,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "image.png": {
+              "bytes": 362109,
+              "sha256": "b95247202509233f8a1301b2781f77fc615ea5ab82f2a7dd2e3e080d791f6100"
+            }
+          },
+          "decodeMedianMs": 2.950625000266882,
+          "decodeP95Ms": 3.2054747995061916
+        },
+        "palette64": {
+          "bytes": 291902,
+          "encodeMs": 71.08962500024063,
+          "error": {
+            "exact": false,
+            "mae": 0.25332668559581756,
+            "maxChannel": 79,
+            "p99Pixel": 16.0,
+            "edgeMAE": 1.149419844198442,
+            "edgeP99": 38.0,
+            "pixelsOver8Percent": 1.5726406165494862
+          },
+          "files": {
+            "image.png": {
+              "bytes": 291902,
+              "sha256": "0ea8bf0345286b163bc3bfb8e8cc8daa3f3ee87c3ae2d8bdf19c3e9802b26785"
+            }
+          },
+          "decodeMedianMs": 2.772249999907217,
+          "decodeP95Ms": 2.821291800319159
+        },
+        "webp90": {
+          "bytes": 103268,
+          "encodeMs": 47.26279100032116,
+          "error": {
+            "exact": false,
+            "mae": 1.0777697654387757,
+            "maxChannel": 40,
+            "p99Pixel": 12.0,
+            "edgeMAE": 2.9023821238212384,
+            "edgeP99": 19.0,
+            "pixelsOver8Percent": 2.6634141578030164
+          },
+          "files": {
+            "image.webp": {
+              "bytes": 103268,
+              "sha256": "3cda9e1e295c0bc2ae5831e97f8abee977abd167fc8f02e11d218e39f3c87b2a"
+            }
+          },
+          "decodeMedianMs": 6.515125000078115,
+          "decodeP95Ms": 6.799691800188157
+        },
+        "split": {
+          "bytes": 903110,
+          "encodeMs": 1778.7317499996789,
+          "error": {
+            "exact": true,
+            "mae": 0.0,
+            "maxChannel": 0,
+            "p99Pixel": 0.0,
+            "edgeMAE": 0.0,
+            "edgeP99": 0.0,
+            "pixelsOver8Percent": 0.0
+          },
+          "files": {
+            "base.png": {
+              "bytes": 76855,
+              "sha256": "a95a0fe747894f3c641615b43bd33f61924d30c3d55392c13d2acc477b5902c7"
+            },
+            "residual.zlib": {
+              "bytes": 826165,
+              "sha256": "f5b53c0a023e87cc7ee563d3e26ebbf09af8428092c914909b7ceadd02bf0b4a"
+            },
+            "format.json": {
+              "bytes": 90,
+              "sha256": "3e7d4241aa90e02d5cebadf31e29385a4f3e254b44db7ed86e583e52fa91db1a"
+            }
+          },
+          "decodeMedianMs": 7.156833000408369,
+          "decodeP95Ms": 7.37496639994788
+        }
+      }
+    }
+  ]
+}

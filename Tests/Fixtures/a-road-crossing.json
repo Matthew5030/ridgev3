@@ -1,0 +1,636 @@
+{
+  "source": "world-z10-x500-y333-c16-r00",
+  "sourceGraphSHA256": "6e7231f98c45a05c07e07b263f06f435c5d23086a9c9133765d8feb6ce332fc7",
+  "start": {
+    "latitude": 53.092746,
+    "longitude": -4.059345
+  },
+  "finish": {
+    "latitude": 53.0923516,
+    "longitude": -4.0581019
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": 2418652678528253,
+        "coordinate": {
+          "latitude": 53.0922203,
+          "longitude": -4.058167
+        },
+        "elevation": 168.6
+      },
+      {
+        "id": 4413928372992211,
+        "coordinate": {
+          "latitude": 53.0923516,
+          "longitude": -4.0581019
+        },
+        "elevation": 171.4
+      },
+      {
+        "id": 1029454124330273,
+        "coordinate": {
+          "latitude": 53.0930499,
+          "longitude": -4.0610295
+        },
+        "elevation": 156.2
+      },
+      {
+        "id": 2130393898709849,
+        "coordinate": {
+          "latitude": 53.0928107,
+          "longitude": -4.060466
+        },
+        "elevation": 158.9
+      },
+      {
+        "id": 631477050139816,
+        "coordinate": {
+          "latitude": 53.0927313,
+          "longitude": -4.0601884
+        },
+        "elevation": 159.8
+      },
+      {
+        "id": 4211073183394060,
+        "coordinate": {
+          "latitude": 53.0926931,
+          "longitude": -4.0600108
+        },
+        "elevation": 161.5
+      },
+      {
+        "id": 540454405849184,
+        "coordinate": {
+          "latitude": 53.0926668,
+          "longitude": -4.0598091
+        },
+        "elevation": 162.6
+      },
+      {
+        "id": 1805557956505225,
+        "coordinate": {
+          "latitude": 53.0926463,
+          "longitude": -4.0594289
+        },
+        "elevation": 164.6
+      },
+      {
+        "id": 3036264815606406,
+        "coordinate": {
+          "latitude": 53.0926345,
+          "longitude": -4.0589116
+        },
+        "elevation": 166.3
+      },
+      {
+        "id": 416713796699139,
+        "coordinate": {
+          "latitude": 53.0926098,
+          "longitude": -4.0587113
+        },
+        "elevation": 168.3
+      },
+      {
+        "id": 2979617218638239,
+        "coordinate": {
+          "latitude": 53.0925881,
+          "longitude": -4.0586055
+        },
+        "elevation": 169.3
+      },
+      {
+        "id": 254150166425584,
+        "coordinate": {
+          "latitude": 53.0925465,
+          "longitude": -4.0584772
+        },
+        "elevation": 170.1
+      },
+      {
+        "id": 1212287003724597,
+        "coordinate": {
+          "latitude": 53.0925019,
+          "longitude": -4.0583738
+        },
+        "elevation": 170.5
+      },
+      {
+        "id": 3668149166721389,
+        "coordinate": {
+          "latitude": 53.092746,
+          "longitude": -4.0592793
+        },
+        "elevation": 165.9
+      },
+      {
+        "id": 809525819572,
+        "coordinate": {
+          "latitude": 53.092746,
+          "longitude": -4.059345
+        },
+        "elevation": 165.5
+      },
+      {
+        "id": 2882250238022606,
+        "coordinate": {
+          "latitude": 53.0927411,
+          "longitude": -4.0593731
+        },
+        "elevation": 165.3
+      },
+      {
+        "id": 251795801051590,
+        "coordinate": {
+          "latitude": 53.0927355,
+          "longitude": -4.0594254
+        },
+        "elevation": 165.0
+      },
+      {
+        "id": 1191096158572346,
+        "coordinate": {
+          "latitude": 53.0927371,
+          "longitude": -4.0595783
+        },
+        "elevation": 164.0
+      },
+      {
+        "id": 808718005042597,
+        "coordinate": {
+          "latitude": 53.0927476,
+          "longitude": -4.0596601
+        },
+        "elevation": 163.4
+      },
+      {
+        "id": 4105379728974971,
+        "coordinate": {
+          "latitude": 53.0927484,
+          "longitude": -4.0597084
+        },
+        "elevation": 163.1
+      },
+      {
+        "id": 1613948835400311,
+        "coordinate": {
+          "latitude": 53.0927589,
+          "longitude": -4.059754
+        },
+        "elevation": 162.8
+      },
+      {
+        "id": 2455033220820178,
+        "coordinate": {
+          "latitude": 53.0927802,
+          "longitude": -4.0599097
+        },
+        "elevation": 161.7
+      },
+      {
+        "id": 4485162942445636,
+        "coordinate": {
+          "latitude": 53.0927806,
+          "longitude": -4.0599421
+        },
+        "elevation": 161.5
+      },
+      {
+        "id": 3289528871997559,
+        "coordinate": {
+          "latitude": 53.0927875,
+          "longitude": -4.059999
+        },
+        "elevation": 161.1
+      },
+      {
+        "id": 99362130788648,
+        "coordinate": {
+          "latitude": 53.092833,
+          "longitude": -4.0601735
+        },
+        "elevation": 160.7
+      },
+      {
+        "id": 3699906372970397,
+        "coordinate": {
+          "latitude": 53.0928399,
+          "longitude": -4.0602171
+        },
+        "elevation": 160.5
+      },
+      {
+        "id": 1776268755618347,
+        "coordinate": {
+          "latitude": 53.0928813,
+          "longitude": -4.0603535
+        },
+        "elevation": 160.6
+      },
+      {
+        "id": 1727295801737321,
+        "coordinate": {
+          "latitude": 53.0929022,
+          "longitude": -4.0604514
+        },
+        "elevation": 160.6
+      },
+      {
+        "id": 2374246361646816,
+        "coordinate": {
+          "latitude": 53.0929312,
+          "longitude": -4.0605144
+        },
+        "elevation": 160.9
+      },
+      {
+        "id": 3944098592548727,
+        "coordinate": {
+          "latitude": 53.0929489,
+          "longitude": -4.0605345
+        },
+        "elevation": 161.2
+      },
+      {
+        "id": 4125196754521525,
+        "coordinate": {
+          "latitude": 53.0929658,
+          "longitude": -4.0605426
+        },
+        "elevation": 161.4
+      },
+      {
+        "id": 3556342117814514,
+        "coordinate": {
+          "latitude": 53.0929731,
+          "longitude": -4.0605533
+        },
+        "elevation": 161.5
+      },
+      {
+        "id": 1064911298487080,
+        "coordinate": {
+          "latitude": 53.0929795,
+          "longitude": -4.0605721
+        },
+        "elevation": 161.4
+      },
+      {
+        "id": 3233792593956268,
+        "coordinate": {
+          "latitude": 53.0929988,
+          "longitude": -4.0606566
+        },
+        "elevation": 160.7
+      },
+      {
+        "id": 940734000849906,
+        "coordinate": {
+          "latitude": 53.0930222,
+          "longitude": -4.06078
+        },
+        "elevation": 159.4
+      },
+      {
+        "id": 2443637710956094,
+        "coordinate": {
+          "latitude": 53.0930367,
+          "longitude": -4.0608054
+        },
+        "elevation": 159.2
+      },
+      {
+        "id": 2191496807245607,
+        "coordinate": {
+          "latitude": 53.0930617,
+          "longitude": -4.0608577
+        },
+        "elevation": 158.8
+      },
+      {
+        "id": 1626353053734446,
+        "coordinate": {
+          "latitude": 53.0930665,
+          "longitude": -4.0608872
+        },
+        "elevation": 158.4
+      },
+      {
+        "id": 1333836497989571,
+        "coordinate": {
+          "latitude": 53.0930673,
+          "longitude": -4.0609181
+        },
+        "elevation": 158.0
+      }
+    ],
+    "edges": [
+      {
+        "to": 2882250238022606,
+        "distance": 1.95,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 809525819572
+      },
+      {
+        "to": 251795801051590,
+        "distance": 3.55,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 2882250238022606
+      },
+      {
+        "to": 1191096158572346,
+        "distance": 10.21,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 251795801051590
+      },
+      {
+        "to": 808718005042597,
+        "distance": 5.59,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1191096158572346
+      },
+      {
+        "to": 4105379728974971,
+        "distance": 3.23,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 808718005042597
+      },
+      {
+        "to": 1613948835400311,
+        "distance": 3.26,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 4105379728974971
+      },
+      {
+        "to": 2455033220820178,
+        "distance": 10.66,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1613948835400311
+      },
+      {
+        "to": 4485162942445636,
+        "distance": 2.16,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 2455033220820178
+      },
+      {
+        "to": 3289528871997559,
+        "distance": 3.88,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 4485162942445636
+      },
+      {
+        "to": 99362130788648,
+        "distance": 12.7,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 3289528871997559
+      },
+      {
+        "to": 3699906372970397,
+        "distance": 3.01,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 99362130788648
+      },
+      {
+        "to": 1776268755618347,
+        "distance": 10.21,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 3699906372970397
+      },
+      {
+        "to": 1727295801737321,
+        "distance": 6.94,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1776268755618347
+      },
+      {
+        "to": 2374246361646816,
+        "distance": 5.3,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1727295801737321
+      },
+      {
+        "to": 3944098592548727,
+        "distance": 2.38,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 2374246361646816
+      },
+      {
+        "to": 4125196754521525,
+        "distance": 1.96,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 3944098592548727
+      },
+      {
+        "to": 3556342117814514,
+        "distance": 1.08,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 4125196754521525
+      },
+      {
+        "to": 1064911298487080,
+        "distance": 1.44,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 3556342117814514
+      },
+      {
+        "to": 3233792593956268,
+        "distance": 6.04,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1064911298487080
+      },
+      {
+        "to": 940734000849906,
+        "distance": 8.64,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 3233792593956268
+      },
+      {
+        "to": 2443637710956094,
+        "distance": 2.34,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 940734000849906
+      },
+      {
+        "to": 2191496807245607,
+        "distance": 4.46,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 2443637710956094
+      },
+      {
+        "to": 1626353053734446,
+        "distance": 2.04,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 2191496807245607
+      },
+      {
+        "to": 1333836497989571,
+        "distance": 2.07,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1626353053734446
+      },
+      {
+        "to": 1029454124330273,
+        "distance": 7.69,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 1333836497989571
+      },
+      {
+        "to": 2130393898709849,
+        "distance": 46.08,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 1029454124330273
+      },
+      {
+        "to": 631477050139816,
+        "distance": 20.53,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 2130393898709849
+      },
+      {
+        "to": 4211073183394060,
+        "distance": 12.6,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 631477050139816
+      },
+      {
+        "to": 540454405849184,
+        "distance": 13.78,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 4211073183394060
+      },
+      {
+        "to": 1805557956505225,
+        "distance": 25.49,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 540454405849184
+      },
+      {
+        "to": 3036264815606406,
+        "distance": 34.57,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 1805557956505225
+      },
+      {
+        "to": 416713796699139,
+        "distance": 13.65,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 3036264815606406
+      },
+      {
+        "to": 2979617218638239,
+        "distance": 7.47,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 416713796699139
+      },
+      {
+        "to": 254150166425584,
+        "distance": 9.74,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 2979617218638239
+      },
+      {
+        "to": 1212287003724597,
+        "distance": 8.5,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 254150166425584
+      },
+      {
+        "to": 4413928372992211,
+        "distance": 24.68,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "primary",
+        "from": 1212287003724597
+      },
+      {
+        "to": 4413928372992211,
+        "distance": 15.23,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "track",
+        "from": 2418652678528253
+      },
+      {
+        "to": 809525819572,
+        "distance": 4.39,
+        "bidirectional": true,
+        "access": "unknown",
+        "kind": "path",
+        "from": 3668149166721389
+      }
+    ]
+  },
+  "attribution": "\u00a9 OpenStreetMap contributors, ODbL 1.0",
+  "attributionURL": "https://www.openstreetmap.org/copyright"
+}

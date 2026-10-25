@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RouteLibraryView: View {
     @Bindable var store: AppStore
+    @Bindable var world: WorldModel
     @State private var query = ""
     @State private var favouritesOnly = false
     @AppStorage("ridge.favouriteRoutes") private var favouriteData = Data()
@@ -51,13 +52,15 @@ struct RouteLibraryView: View {
                 else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400), spacing: 20, alignment: .top)], alignment: .leading, spacing: 20) {
                         ForEach(visibleRoutes) { route in
-                            let entry = store.entries.first { $0.id == route.regionID }
-                            Button { store.openRoute(route) } label: {
+                            let entry = store.containingEntry(for:route)
+                            Button { store.openRoute(route,savedWorldBounds:world.offlineBounds) } label: {
                                 LibraryRouteCard(route: route, entry: entry, packs: store.packs,
-                                                 favourite: favouriteIDs.contains(route.id))
+                                                 favourite: favouriteIDs.contains(route.id), savedWorldBounds:world.offlineBounds,
+                                                 coverageRevision:world.offlineCoverageRevision,
+                                                 worldMap:WorldRouteMapContext(catalog:world.catalog,root:world.libraryRoot,savedBounds:world.offlineBounds,coverageRevision:world.offlineCoverageRevision))
                             }.buttonStyle(.plain)
                                 .contextMenu {
-                                    Button("Open in 3D", systemImage: "mountain.2") { store.openRoute(route) }.disabled(store.isRouting)
+                                    Button("Open in 3D", systemImage: "mountain.2") { store.openRoute(route,savedWorldBounds:world.offlineBounds) }.disabled(store.isRouting)
                                     Button(favouriteIDs.contains(route.id) ? "Remove favourite" : "Add to favourites", systemImage: favouriteIDs.contains(route.id) ? "star.fill" : "star") { toggleFavourite(route.id) }
                                     Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
                                     Button("Rename", systemImage: "pencil") { renameTarget = route; renameText = route.name }.disabled(store.isRouting)
@@ -153,12 +156,21 @@ private struct LibraryRouteCard: View {
     let entry: PackEntry?
     let packs: PackStore
     let favourite: Bool
-    private var terrainReady: Bool { entry?.installed == true }
+    var savedWorldBounds:[GeoBounds]
+    var coverageRevision:Int
+    var worldMap:WorldRouteMapContext
+    @State private var worldCoverage:RouteOfflineCoverage?
+    private var terrainReady:Bool { entry?.installed == true || worldCoverage?.isComplete == true }
+    private var availabilityText:String {
+        if terrainReady { return "Available offline" }
+        if worldCoverage?.openingPoint != nil { return "Part of route available offline" }
+        return worldCoverage == nil ? "Checking saved maps…" : "Map needed for 3D"
+    }
     @State private var summary: RouteStatistics?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LibraryMapPreview(entry: entry, route: route, packs: packs)
+            LibraryMapPreview(entry: entry, route: route, packs: packs,worldMap:worldMap)
             VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
@@ -184,17 +196,19 @@ private struct LibraryRouteCard: View {
             Rectangle().fill(RidgeTheme.line.opacity(0.7)).frame(height: 1)
             HStack(spacing: 8) {
                 Image(systemName: terrainReady ? "checkmark.circle.fill" : "square.dashed")
-                Text(terrainReady ? "Available offline" : "Map needed for 3D")
+                Text(availabilityText)
                 Spacer(minLength: 3)
             }.padding(.trailing, 38).font(.system(size: 11, weight: .medium)).foregroundStyle(terrainReady ? RidgeTheme.forest : RidgeTheme.muted)
             }.padding(20)
         }.background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
             .clipShape(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
             .overlay(RoundedRectangle(cornerRadius: RidgeTheme.cardRadius).strokeBorder(RidgeTheme.forest.opacity(0.06)))
-            .task(id: route.modifiedAt) {
-                let snapshot = route
-                let result = await Task.detached(priority: .utility) { RouteEngine.statistics(for: snapshot) }.value
-                if !Task.isCancelled { summary = result }
+            .task(id:"\(route.id)|\(route.modifiedAt)|\(coverageRevision)") {
+                let snapshot=route,bounds=savedWorldBounds
+                let result=await Task.detached(priority:.utility) {
+                    (RouteEngine.statistics(for:snapshot),RouteEngine.offlineCoverage(for:snapshot,in:bounds))
+                }.value
+                if !Task.isCancelled { summary=result.0;worldCoverage=result.1 }
             }
     }
 

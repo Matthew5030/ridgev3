@@ -1,0 +1,26 @@
+{
+  "pixels": {
+    "maxChannelError": 0,
+    "width": 1024,
+    "height": 2051
+  },
+  "automaticResolution": {
+    "distant": 768,
+    "close": 2048
+  },
+  "errors": [],
+  "state": {
+    "ready": true,
+    "profiles": [
+      "matched",
+      "vector"
+    ],
+    "textureBytes": [
+      109678,
+      39920
+    ],
+    "glError": 0,
+    "vectorResolution": 2048,
+    "liveVectorTextures": 1
+  }
+}

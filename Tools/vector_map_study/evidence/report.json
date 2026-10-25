@@ -1,0 +1,58 @@
+{
+  "bounds": {
+    "maxLatitude": 53.08074842648101,
+    "maxLongitude": -4.05029296875,
+    "minLatitude": 53.07193579167533,
+    "minLongitude": -4.0576171875
+  },
+  "widthMetres": 489.2613694098251,
+  "heightMetres": 979.921634286296,
+  "sourceSHA256": "c3d55a8aaf8b8081081e7a31a047f06a866302b8812e7d4d05f243ededd6a960",
+  "sourceRevision": "2026-08-23T20:21:36Z/d6f43249a332623a",
+  "vectorBytes": 39920,
+  "uncompressedVectorBytes": 111276,
+  "vectorSHA256": "e1dab5711830780535f9ec143d7f75b7955600c20bbba8b26162cbd93aaccae6",
+  "legacyPNGBytes": 798454,
+  "legacyLosslessWebPBytes": 450202,
+  "features": {
+    "footpath": 9,
+    "water": 7,
+    "openLand": 25,
+    "boundary": 2
+  },
+  "labels": [
+    {
+      "name": "Crib Goch",
+      "kind": "peak",
+      "x": 202.29107564773287,
+      "y": 492.7639426125594
+    }
+  ],
+  "contourCount": 84,
+  "contourPointsBefore": 12658,
+  "contourPointsAfter": 6304,
+  "contourSimplificationMetres": 0.25,
+  "contourMeasuredHausdorffMetres": 0.24990819057330038,
+  "coordinateRoundingMetres": 0.01,
+  "geometrySpacingMetres": 4,
+  "verticesSHA256": "485646636c27a5682660a21e96d989c0f0de5901b2fe655c2ce57209d1376f80",
+  "indicesSHA256": "22c94b3e3a6da6098f2cafd066ff56057d6fff1a6cad037d1453d1f4ef40b25b",
+  "peak": [
+    -42.33960905717967,
+    223.30000000000007,
+    2.803125469411384
+  ],
+  "limits": [
+    "Two adjacent Crib Goch cells only; not representative of the UK.",
+    "Legacy source/style; not the latest illustrated map style.",
+    "10 m contours derived from retained 4 m terrain; no new 1 m processing.",
+    "SVG is an experiment transport, not a proposed production format.",
+    "Labels retained as metadata, not part of texture rendering.",
+    "Matched control has identical features/style; legacy imagery also has baked relief.",
+    "Runtime texture memory remains; this does not make a bigger texture free."
+  ],
+  "matchedPNGBytes": 465381,
+  "matchedWebPBytes": 109678,
+  "matchedWidth": 1024,
+  "matchedHeight": 2051
+}

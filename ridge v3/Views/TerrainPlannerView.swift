@@ -13,7 +13,7 @@ struct TerrainPlannerView: View {
     @State private var showHelp = false
     @State private var showSettings = false
     @State private var showAreaSelection = false
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
+    private let gestureStyle = TerrainGestureStyle.moveWithOneFinger
     @State private var importGPX = false
     @State private var rename = false
     @State private var routeName = ""
@@ -311,9 +311,7 @@ struct TerrainPlannerView: View {
     private func editingControls(_ route: RidgeRoute) -> some View {
         VStack(spacing: 12) {
             HStack {
-                Menu {
-                    ForEach(RoutePlanningMode.allCases) { mode in Button { store.planningMode = mode } label: { Label(mode.title, systemImage: mode == .paths ? "point.topleft.down.to.point.bottomright.curvepath" : "line.diagonal") } }
-                } label: { HStack(spacing: 6) { Circle().fill(store.planningMode == .paths ? RidgeTheme.forest : RidgeTheme.orange).frame(width: 6, height: 6); Text(store.planningMode.title); Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)) }.font(.system(size: 12, weight: .semibold)).padding(.vertical, 9).padding(.horizontal, 12).background(RidgeTheme.ink.opacity(0.04), in: Capsule()) }
+                Label("Follow paths", systemImage:"point.topleft.down.to.point.bottomright.curvepath").font(.subheadline)
                 Spacer()
                 Button { showDetails = true } label: { Text("\(route.waypoints.count) \(route.waypoints.count == 1 ? "point" : "points")").font(.system(size: 12, weight: .medium)); Image(systemName: "list.bullet").font(.system(size: 12)) }
             }
@@ -324,7 +322,7 @@ struct TerrainPlannerView: View {
             } else if store.planningMode == .paths && store.viewingSurroundings {
                 Text("Expand this area to follow mapped paths here.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
             } else if store.planningMode == .paths && terrain.graph?.edges.isEmpty != false {
-                Text("No walking paths in this selection. Expand the area or choose Direct line.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
+                Text("No walking paths in this selection. Expand the area to find walking paths.").font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
             } else if route.waypoints.count < 2 {
                 Text(store.viewingSurroundings ? (route.waypoints.isEmpty ? "Tap the terrain to start a route sketch." : "Tap your next point to extend the sketch.") : (route.waypoints.isEmpty ? "Tap the terrain to place your start." : "Start placed. Tap your next point to trace the route.")).font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).frame(maxWidth: .infinity, alignment: .leading)
             } else if store.planningMode == .direct || route.segments.contains(where: { $0.mode == RoutePlanningMode.direct.rawValue }) {
@@ -507,14 +505,14 @@ struct RouteNotesView: View {
 }
 
 struct TerrainHelpView: View {
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
+    private let gestureStyle = TerrainGestureStyle.moveWithOneFinger
     let terrain: LoadedTerrain
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Map help").font(RidgeTheme.pageTitle)
                 helpRow("hand.draw", "Map controls", gestureStyle.guide)
-                helpRow("point.topleft.down.to.point.bottomright.curvepath", "Planning a route", "Tap Plan a route, then place points on mapped paths. Follow paths uses the downloaded walking network. Direct line draws a manual connection.")
+                helpRow("point.topleft.down.to.point.bottomright.curvepath", "Planning a route", "Tap Plan a route, then place points on the map. In Follow paths, points snap to the nearest eligible path or road in the downloaded walking network.")
                 helpRow("square.dashed", "Detailed and overview terrain", "Expand area is always available on the 3D map. Tap distant terrain or move beyond your detailed area to see the coverage explanation, then expand around that location. Availability and size are checked before saving. You can keep sketching beyond detailed coverage; overview lines are manual connections, not followed paths.")
                 Divider()
                 Text("Map legend").font(.headline)

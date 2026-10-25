@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "accountId": "055908295cfc15192a94c0d2df71a408",
+  "bucket": "ridge-maps-private",
+  "zoneId": "d620a744185d5fd94432e0599a268ad2",
+  "zoneName": "bilellaworks.com",
+  "customDomain": {
+    "domain": "maps.bilellaworks.com",
+    "enabled": false,
+    "minTLS": "1.2"
+  },
+  "releasePrefix": "releases/",
+  "existingPilotPrefix": "pilot-2026-10-07/",
+  "uploadsAuthorized": false,
+  "cacheRuleFile": "cache-rule.json"
+}

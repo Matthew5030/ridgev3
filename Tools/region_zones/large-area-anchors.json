@@ -1,0 +1,589 @@
+{
+  "groups": {
+    "northern-isles": [
+      {
+        "name": "Orkney",
+        "anchors": [
+          "sheet-explorer-463"
+        ]
+      },
+      {
+        "name": "Shetland",
+        "anchors": [
+          "sheet-explorer-467"
+        ]
+      }
+    ],
+    "north-west-scotland": [
+      {
+        "name": "Torridon & Wester Ross",
+        "anchors": [
+          "sheet-explorer-433",
+          "sheet-explorer-434"
+        ]
+      },
+      {
+        "name": "Assynt & Sutherland",
+        "anchors": [
+          "sheet-explorer-442",
+          "sheet-explorer-443"
+        ]
+      },
+      {
+        "name": "Cape Wrath & the North Coast",
+        "anchors": [
+          "sheet-explorer-446",
+          "sheet-explorer-447"
+        ]
+      }
+    ],
+    "north-east-scotland": [
+      {
+        "name": "Caithness",
+        "anchors": [
+          "sheet-explorer-450",
+          "sheet-explorer-451"
+        ]
+      },
+      {
+        "name": "Moray & Easter Ross",
+        "anchors": [
+          "sheet-explorer-423",
+          "sheet-explorer-438 -dornoch & tain"
+        ]
+      },
+      {
+        "name": "Aberdeenshire",
+        "anchors": [
+          "sheet-explorer-421",
+          "sheet-explorer-ol59"
+        ]
+      }
+    ],
+    "central-highlands": [
+      {
+        "name": "Lochaber",
+        "anchors": [
+          "sheet-explorer-392",
+          "sheet-explorer-384"
+        ]
+      },
+      {
+        "name": "Kintail & Glen Affric",
+        "anchors": [
+          "sheet-explorer-414",
+          "sheet-explorer-415"
+        ]
+      },
+      {
+        "name": "Loch Ness & Inverness",
+        "anchors": [
+          "sheet-explorer-416",
+          "sheet-explorer-431"
+        ]
+      },
+      {
+        "name": "Perthshire",
+        "anchors": [
+          "sheet-explorer-ol48",
+          "sheet-explorer-ol49"
+        ]
+      },
+      {
+        "name": "Angus & Dundee",
+        "anchors": [
+          "sheet-explorer-380",
+          "sheet-explorer-381"
+        ]
+      }
+    ],
+    "argyll-western-isles": [
+      {
+        "name": "Argyll & Kintyre",
+        "anchors": [
+          "sheet-explorer-358",
+          "sheet-explorer-357"
+        ]
+      },
+      {
+        "name": "Oban & Loch Awe",
+        "anchors": [
+          "sheet-explorer-376",
+          "sheet-explorer-360"
+        ]
+      },
+      {
+        "name": "Ardnamurchan & Morvern",
+        "anchors": [
+          "sheet-explorer-390",
+          "sheet-explorer-383"
+        ]
+      }
+    ],
+    "central-scotland": [
+      {
+        "name": "Ayrshire",
+        "anchors": [
+          "sheet-explorer-326",
+          "sheet-explorer-327"
+        ]
+      },
+      {
+        "name": "Glasgow & Clyde Valley",
+        "anchors": [
+          "sheet-explorer-342",
+          "sheet-explorer-335"
+        ]
+      },
+      {
+        "name": "Stirling & Fife",
+        "anchors": [
+          "sheet-explorer-366",
+          "sheet-explorer-371"
+        ]
+      },
+      {
+        "name": "Edinburgh & the Lothians",
+        "anchors": [
+          "sheet-explorer-350",
+          "sheet-explorer-344"
+        ]
+      }
+    ],
+    "southern-scotland": [
+      {
+        "name": "Galloway",
+        "anchors": [
+          "sheet-explorer-318",
+          "sheet-explorer-309"
+        ]
+      },
+      {
+        "name": "Dumfries & Moffat",
+        "anchors": [
+          "sheet-explorer-313",
+          "sheet-explorer-330"
+        ]
+      },
+      {
+        "name": "Scottish Borders",
+        "anchors": [
+          "sheet-explorer-338",
+          "sheet-explorer-331"
+        ]
+      }
+    ],
+    "northern-ireland": [
+      {
+        "name": "Fermanagh & Sperrins",
+        "anchors": [
+          "sheet-discoverer-18",
+          "sheet-discoverer-13"
+        ]
+      },
+      {
+        "name": "Antrim & Derry",
+        "anchors": [
+          "sheet-discoverer-5",
+          "sheet-discoverer-7"
+        ]
+      },
+      {
+        "name": "Mournes & Down",
+        "anchors": [
+          "sheet-discoverer-29",
+          "sheet-discoverer-21"
+        ]
+      }
+    ],
+    "north-east-england": [
+      {
+        "name": "Northumberland Coast",
+        "anchors": [
+          "sheet-explorer-332",
+          "sheet-explorer-340"
+        ]
+      },
+      {
+        "name": "Tyne & Wear",
+        "anchors": [
+          "sheet-explorer-316",
+          "sheet-explorer-308"
+        ]
+      },
+      {
+        "name": "North Pennines",
+        "anchors": [
+          "sheet-explorer-ol31",
+          "sheet-explorer-305"
+        ]
+      }
+    ],
+    "cumbria": [
+      {
+        "name": "Solway & Carlisle",
+        "anchors": [
+          "sheet-explorer-315"
+        ]
+      },
+      {
+        "name": "Cumbrian Coast",
+        "anchors": [
+          "sheet-explorer-303"
+        ]
+      },
+      {
+        "name": "Morecambe Bay",
+        "anchors": [
+          "sheet-explorer-296"
+        ]
+      }
+    ],
+    "dales-north-pennines": [
+      {
+        "name": "Lancashire & Bowland",
+        "anchors": [
+          "sheet-explorer-ol41",
+          "sheet-explorer-286"
+        ]
+      },
+      {
+        "name": "South Pennines",
+        "anchors": [
+          "sheet-explorer-ol21",
+          "sheet-explorer-277"
+        ]
+      },
+      {
+        "name": "Nidderdale & Vale of York",
+        "anchors": [
+          "sheet-explorer-298",
+          "sheet-explorer-289"
+        ]
+      }
+    ],
+    "north-east-yorkshire": [
+      {
+        "name": "York & the Wolds",
+        "anchors": [
+          "sheet-explorer-290",
+          "sheet-explorer-294"
+        ]
+      },
+      {
+        "name": "Humber & Lincolnshire Wolds",
+        "anchors": [
+          "sheet-explorer-282",
+          "sheet-explorer-279"
+        ]
+      }
+    ],
+    "peak-district-midlands": [
+      {
+        "name": "Cheshire & Staffordshire",
+        "anchors": [
+          "sheet-explorer-257",
+          "sheet-explorer-244"
+        ]
+      },
+      {
+        "name": "Nottinghamshire & Lincoln",
+        "anchors": [
+          "sheet-explorer-260",
+          "sheet-explorer-272"
+        ]
+      },
+      {
+        "name": "Central Midlands",
+        "anchors": [
+          "sheet-explorer-221",
+          "sheet-explorer-233"
+        ]
+      },
+      {
+        "name": "Northamptonshire & Rutland",
+        "anchors": [
+          "sheet-explorer-223",
+          "sheet-explorer-234"
+        ]
+      }
+    ],
+    "north-wales": [
+      {
+        "name": "Llŷn Peninsula",
+        "anchors": [
+          "sheet-explorer-254"
+        ]
+      },
+      {
+        "name": "Clwyd & Berwyn",
+        "anchors": [
+          "sheet-explorer-255",
+          "sheet-explorer-265"
+        ]
+      },
+      {
+        "name": "Chester & Merseyside",
+        "anchors": [
+          "sheet-explorer-266",
+          "sheet-explorer-275"
+        ]
+      }
+    ],
+    "mid-south-wales": [
+      {
+        "name": "Ceredigion & Cambrian Mountains",
+        "anchors": [
+          "sheet-explorer-213",
+          "sheet-explorer-200"
+        ]
+      },
+      {
+        "name": "Carmarthenshire",
+        "anchors": [
+          "sheet-explorer-177",
+          "sheet-explorer-186"
+        ]
+      },
+      {
+        "name": "Gower & South Wales",
+        "anchors": [
+          "sheet-explorer-164",
+          "sheet-explorer-151"
+        ]
+      }
+    ],
+    "east-anglia": [
+      {
+        "name": "Norfolk",
+        "anchors": [
+          "sheet-explorer-251",
+          "sheet-explorer-237"
+        ]
+      },
+      {
+        "name": "Suffolk & North Essex",
+        "anchors": [
+          "sheet-explorer-211",
+          "sheet-explorer-184"
+        ]
+      },
+      {
+        "name": "Fens & Cambridgeshire",
+        "anchors": [
+          "sheet-explorer-209",
+          "sheet-explorer-228"
+        ]
+      }
+    ],
+    "marches-cotswolds": [
+      {
+        "name": "Shropshire & the Marches",
+        "anchors": [
+          "sheet-explorer-217",
+          "sheet-explorer-202"
+        ]
+      },
+      {
+        "name": "Wye Valley & Herefordshire",
+        "anchors": [
+          "sheet-explorer-ol14",
+          "sheet-explorer-189"
+        ]
+      },
+      {
+        "name": "Cotswolds",
+        "anchors": [
+          "sheet-explorer-ol45",
+          "sheet-explorer-168"
+        ]
+      },
+      {
+        "name": "Oxford & North Cotswolds",
+        "anchors": [
+          "sheet-explorer-180",
+          "sheet-explorer-191"
+        ]
+      }
+    ],
+    "south-east": [
+      {
+        "name": "Chilterns & Thames Valley",
+        "anchors": [
+          "sheet-explorer-172",
+          "sheet-explorer-159"
+        ]
+      },
+      {
+        "name": "London & South Essex",
+        "anchors": [
+          "sheet-explorer-173",
+          "sheet-explorer-175"
+        ]
+      },
+      {
+        "name": "Surrey & the Weald",
+        "anchors": [
+          "sheet-explorer-146",
+          "sheet-explorer-135"
+        ]
+      },
+      {
+        "name": "Kent",
+        "anchors": [
+          "sheet-explorer-150",
+          "sheet-explorer-137"
+        ]
+      }
+    ],
+    "central-south": [
+      {
+        "name": "Somerset & Mendips",
+        "anchors": [
+          "sheet-explorer-141",
+          "sheet-explorer-128"
+        ]
+      },
+      {
+        "name": "Dorset & Jurassic Coast",
+        "anchors": [
+          "sheet-explorer-ol15",
+          "sheet-explorer-116"
+        ]
+      },
+      {
+        "name": "Wiltshire & Hampshire",
+        "anchors": [
+          "sheet-explorer-130",
+          "sheet-explorer-ol32"
+        ]
+      }
+    ],
+    "devon-cornwall": [
+      {
+        "name": "West Cornwall",
+        "anchors": [
+          "sheet-explorer-102",
+          "sheet-explorer-104"
+        ]
+      },
+      {
+        "name": "North Cornwall & Bodmin",
+        "anchors": [
+          "sheet-explorer-109",
+          "sheet-explorer-111"
+        ]
+      },
+      {
+        "name": "North Devon",
+        "anchors": [
+          "sheet-explorer-139",
+          "sheet-explorer-127"
+        ]
+      },
+      {
+        "name": "South Devon",
+        "anchors": [
+          "sheet-explorer-ol20",
+          "sheet-explorer-114"
+        ]
+      }
+    ]
+  },
+  "islands": [
+    {
+      "name": "Anglesey",
+      "areas": [
+        "sheet-explorer-262",
+        "sheet-explorer-263"
+      ]
+    },
+    {
+      "name": "Skye & Raasay",
+      "areas": [
+        "sheet-explorer-407",
+        "sheet-explorer-408",
+        "sheet-explorer-409",
+        "sheet-explorer-410",
+        "sheet-explorer-411",
+        "sheet-explorer-412"
+      ]
+    },
+    {
+      "name": "Outer Hebrides",
+      "areas": [
+        "sheet-explorer-452",
+        "sheet-explorer-453",
+        "sheet-explorer-454",
+        "sheet-explorer-455",
+        "sheet-explorer-456",
+        "sheet-explorer-457",
+        "sheet-explorer-458",
+        "sheet-explorer-459",
+        "sheet-explorer-460"
+      ]
+    },
+    {
+      "name": "Orkney",
+      "areas": [
+        "sheet-explorer-461",
+        "sheet-explorer-462",
+        "sheet-explorer-463",
+        "sheet-explorer-464",
+        "sheet-explorer-465"
+      ]
+    },
+    {
+      "name": "Shetland",
+      "areas": [
+        "sheet-explorer-466",
+        "sheet-explorer-467",
+        "sheet-explorer-468",
+        "sheet-explorer-469",
+        "sheet-explorer-470"
+      ]
+    },
+    {
+      "name": "Mull, Coll & Tiree",
+      "areas": [
+        "sheet-explorer-372",
+        "sheet-explorer-373",
+        "sheet-explorer-374",
+        "sheet-explorer-375"
+      ]
+    },
+    {
+      "name": "Islay & Jura",
+      "areas": [
+        "sheet-explorer-352",
+        "sheet-explorer-353",
+        "sheet-explorer-354",
+        "sheet-explorer-355"
+      ]
+    },
+    {
+      "name": "Arran",
+      "areas": [
+        "sheet-explorer-361"
+      ]
+    },
+    {
+      "name": "Isle of Wight",
+      "areas": [
+        "sheet-explorer-ol29"
+      ]
+    },
+    {
+      "name": "Isles of Scilly",
+      "areas": [
+        "sheet-explorer-101"
+      ]
+    },
+    {
+      "name": "Small Isles",
+      "areas": [
+        "sheet-explorer-397"
+      ]
+    }
+  ]
+}

@@ -183,6 +183,14 @@ struct AtlasData: Codable, Sendable {
     var land: [[[Double]]]
     var places: [MapPlace]
     var coverage: [AtlasCoverage]
+    var physicalFeatures: [AtlasPhysicalFeature]? = nil
+}
+
+struct AtlasPhysicalFeature: Codable, Sendable {
+    var kind: String
+    var name: String
+    var rings: [[[Double]]]
+    var bounds: GeoBounds
 }
 
 struct AtlasCoverage: Codable, Identifiable, Sendable {

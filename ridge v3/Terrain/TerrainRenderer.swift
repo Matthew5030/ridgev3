@@ -209,7 +209,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         primaryFloor = (minimum - sceneMinimum) / max(w, d)
         top = (maximum - sceneMinimum) / max(w, d)
         sceneTop = (sceneMaximum - sceneMinimum) / max(w, d)
-        camera = RidgeCamera(target: SIMD3(0, (minimum - sceneMinimum + (maximum - minimum) * 0.35) / max(w, d), 0), yaw: -0.38, pitch: surroundings.isEmpty ? 0.94 : 20 * .pi / 180, distance: 2)
+        camera = RidgeCamera(target: SIMD3(0, (minimum - sceneMinimum + (maximum - minimum) * 0.35) / max(w, d), 0), yaw: 0, pitch: surroundings.isEmpty ? 0.94 : 20 * .pi / 180, distance: 2)
 
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.label = "Ridge relief, cartography and route"
@@ -1230,7 +1230,7 @@ final class TerrainRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private func homeCamera() -> RidgeCamera {
         let size = viewportSize
         let aspect = Float(size.width > 1 ? size.width : 390) / Float(size.height > 1 ? size.height : 844)
-        let yaw: Float = -0.38, pitch: Float = backdrops.isEmpty ? 0.94 : 20 * .pi / 180
+        let yaw: Float = 0, pitch: Float = backdrops.isEmpty ? 0.94 : 20 * .pi / 180
         let target = SIMD3<Float>(0, primaryFloor + (top - primaryFloor) * 0.35, 0)
         let backward = SIMD3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
         let cameraRight = simd_normalize(simd_cross(SIMD3<Float>(0, 1, 0), backward))

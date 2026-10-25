@@ -16,4 +16,4 @@ xcrun swiftc -swift-version 5 -parse-as-library \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteStore.swift" \
   "$RIDGE_PROJECT_ROOT/Tests/RouteCoreTests.swift" \
   -o "$RIDGE_TEST_DIR/RouteCoreTests"
-"$RIDGE_TEST_DIR/RouteCoreTests" "$RIDGE_PROJECT_ROOT/ridge v3/Resources/RidgeData.bundle/regions/snowdon-horseshoe"
+"$RIDGE_TEST_DIR/RouteCoreTests" "${1:-}" "$RIDGE_PROJECT_ROOT/Tests/Fixtures/a-road-crossing.json"

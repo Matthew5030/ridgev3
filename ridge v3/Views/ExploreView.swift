@@ -6,6 +6,8 @@ struct AtlasFocus: Equatable {
     var scale: CGFloat
     var bounds: GeoBounds? = nil
     var id = UUID()
+    var animated = false
+    var exactViewport = false
 }
 
 struct ExploreView: View {
@@ -433,7 +435,35 @@ struct OfflineAtlasView: View {
     var route: [GeoPoint]
     var routeSegments: [[GeoPoint]]
     var onViewport: (GeoBounds) -> Void
+    var onUserViewport: ((GeoBounds, Bool) -> Void)? = nil
+    @State private var lastUserViewportTime = 0.0
     var snapToTiles = false
+    var worldCoverage: GeoBounds? = nil
+    var minimumViewportSpan: Double? = nil
+    var terrainIsVisible=false
+    private var nativeMapSurface:Bool { usesWorldStyle || terrainIsVisible }
+    private func maximumScale(size:CGSize,latitude:Double? = nil)->Double {
+        guard let minimumViewportSpan else { return usesWorldStyle ? 16_000_000 : 4_000_000 }
+        let latitude=latitude ?? atan(sinh(.pi*(1-2*Double(center.y))))*180 / .pi
+        return WorldCameraTransition.maximumAtlasScale(latitude:latitude,viewportHeight:Double(size.height),minimumSpan:minimumViewportSpan)
+    }
+    var worldPreview: CGImage? = nil
+    var onWorldTap: ((GeoPoint) -> Void)? = nil
+    var worldOfflineBounds: [GeoBounds] = []
+    var worldOfflineEdges: [WorldOfflineCoverage.Edge] = []
+    var worldDownloadEdges: [WorldOfflineCoverage.Edge] = []
+    var worldDownloadTiles: [GeoBounds] = []
+    var worldCompletedTiles: Set<GeoBounds> = []
+    var worldActiveTiles: Set<GeoBounds> = []
+    var worldDownloading = false
+    var worldSavedDownloadFills: [GeoBounds] = []
+    var onSelectionFinished: ((GeoBounds) -> Void)? = nil
+    var worldRegions:[WorldRegionMapOverlay] = []
+    var selectedWorldRegion:String? = nil
+    var onRegionTap:((WorldRegionPack)->Void)? = nil
+    @State private var tileCompletionTimes: [GeoBounds:Date] = [:]
+    // The callback identifies the world flow even before its terrain source opens.
+    private var usesWorldStyle: Bool { onWorldTap != nil || worldCoverage != nil }
     private let verticalOffset: CGFloat = 0
     private let selectionInsets = EdgeInsets(top: 55, leading: 25, bottom: 60, trailing: 60)
     @State private var images: [String: UIImage] = [:]
@@ -442,9 +472,9 @@ struct OfflineAtlasView: View {
     @State private var tapAnchor: GeoPoint?
     @State private var center = CGPoint(x: 0.49056, y: 0.3185)
     @State private var scale: CGFloat = 7400
-    @State private var gestureCenter: CGPoint?
-    @State private var gestureScale: CGFloat?
     @State private var movingMap = false
+    @State private var focusFlight: Task<Void,Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private func world(_ point: GeoPoint) -> CGPoint {
         let lat = min(85, max(-85, point.latitude)) * .pi / 180
         return CGPoint(x: (point.longitude + 180) / 360, y: (1 - log(tan(lat) + 1 / cos(lat)) / .pi) / 2)
@@ -460,33 +490,134 @@ struct OfflineAtlasView: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            Canvas { context, size in
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(RidgeTheme.ocean))
-                if let atlas { drawLand(atlas, context: &context, size: size) }
+            ZStack {
+                if !terrainIsVisible {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(usesWorldStyle ? WorldAtlasPalette.sea : Color(red:0.68,green:0.81,blue:0.86)))
+                    if let atlas { drawLand(atlas, context: &context, size: size); drawPhysical(atlas, context: &context, size: size) }
+                }
+                WorldAtlasLayer(center: center, scale: scale, size: geometry.size)
+                }
+                Canvas { context, size in
                 for entry in entries where showsBounds(entry, size: size) {
                     if let image = images[entry.id] { context.draw(Image(uiImage: image), in: rectangle(entry.manifest.bounds, size: size)) }
                 }
+                if let worldCoverage {
+                    let rect = rectangle(worldCoverage,size:size)
+                    if let worldPreview, rect.width > 35 {
+                        context.draw(Image(decorative:worldPreview,scale:1),in:rect)
+                    } else {
+                        context.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.12)))
+                    }
+
+                }
                 drawAreas(context: &context, size: size)
-                if let atlas { drawPlaces(atlas, context: &context, size: size) }
+                if worldRegions.isEmpty { drawWorldOfflineCoverage(context: &context, size: size) }
+                var downloadOutline=Path()
+                for edge in worldDownloadEdges {
+                    downloadOutline.move(to:screen(edge.start,size:size));downloadOutline.addLine(to:screen(edge.end,size:size))
+                }
+                context.stroke(downloadOutline,with:.color(RidgeTheme.paper),lineWidth:5)
+                context.stroke(downloadOutline,with:.color(RidgeTheme.forest),style:StrokeStyle(lineWidth:2.5,dash:[8,5]))
+                drawWorldRegions(context:&context,size:size)
                 drawSelection(context: &context, size: size)
+                var savedContext=context
+                if let footprint=downloadFootprint(size:size) { savedContext.clip(to:footprint,style:FillStyle(eoFill:true)) }
+                for bounds in worldSavedDownloadFills where !nativeMapSurface {
+                    let rect=rectangle(bounds,size:size)
+                    if CGRect(origin:.zero,size:size).intersects(rect) {
+                        savedContext.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.30)))
+                    }
+                }
+                }
+                TimelineView(.animation(minimumInterval:1.0/15,paused:!worldDownloading || reduceMotion)) { timeline in
+                    Canvas { context,size in
+                        var context=context
+                        if let footprint=downloadFootprint(size:size) { context.clip(to:footprint,style:FillStyle(eoFill:true)) }
+                        let viewport=CGRect(origin:.zero,size:size)
+                        let pulse=reduceMotion ? 0.0 : (sin(timeline.date.timeIntervalSinceReferenceDate*4)+1)*0.08
+                        for bounds in worldDownloadTiles where worldDownloading || !nativeMapSurface {
+                            let rect=rectangle(bounds,size:size)
+                            guard viewport.intersects(rect) else { continue }
+                            let done=worldCompletedTiles.contains(bounds), active=worldActiveTiles.contains(bounds)
+                            let age=tileCompletionTimes[bounds].map { timeline.date.timeIntervalSince($0) } ?? 1
+                            let fade=reduceMotion || !worldDownloading ? 1 : max(0,min(1,age/0.4))
+                            let color=done ? RidgeTheme.forest : active ? RidgeTheme.orange : RidgeTheme.forest
+                            context.fill(Path(rect),with:.color(color.opacity(done ? 0.30*fade : active ? 0.18+pulse : 0.04)))
+                            context.stroke(Path(rect),with:.color(color.opacity(done || active ? 0.65 : 0.18)),lineWidth:1)
+                            if done && rect.width>18 && rect.height>18 {
+                                var tick=Path(); tick.move(to:CGPoint(x:rect.midX-4,y:rect.midY))
+                                tick.addLine(to:CGPoint(x:rect.midX-1,y:rect.midY+3));tick.addLine(to:CGPoint(x:rect.midX+5,y:rect.midY-4))
+                                context.stroke(tick,with:.color(RidgeTheme.forest.opacity(fade)),style:StrokeStyle(lineWidth:2,lineCap:.round,lineJoin:.round))
+                            }
+                        }
+                        // The moving section outline remains visible when
+                        // individual terrain tiles are tiny at region zoom.
+                        if worldDownloading,let first=worldDownloadTiles.first,
+                           worldCompletedTiles.count<worldDownloadTiles.count {
+                            let bounds=worldDownloadTiles.dropFirst().reduce(first) { a,b in
+                                GeoBounds(minLatitude:min(a.minLatitude,b.minLatitude),minLongitude:min(a.minLongitude,b.minLongitude),
+                                          maxLatitude:max(a.maxLatitude,b.maxLatitude),maxLongitude:max(a.maxLongitude,b.maxLongitude))
+                            }
+                            let rect=rectangle(bounds,size:size)
+                            if viewport.intersects(rect) {
+                                let outline=Path(rect)
+                                context.stroke(outline,with:.color(RidgeTheme.paper.opacity(0.9)),lineWidth:5)
+                                let phase=reduceMotion ? 0 : CGFloat(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:1)*12)
+                                context.stroke(outline,with:.color(RidgeTheme.orange),style:StrokeStyle(lineWidth:2.5,dash:[7,5],dashPhase:phase))
+                            }
+                        }
+                    }
+                }.allowsHitTesting(false)
+                Canvas { context,size in
+                    if !terrainIsVisible,let atlas { drawPlaces(atlas,context:&context,size:size) }
+                }.allowsHitTesting(false)
             }.contentShape(Rectangle())
+                .accessibilityChildren {
+                    ForEach(worldRegions) { region in
+                        Button("\(region.pack.name), \(region.statusText)") { onRegionTap?(region.pack) }
+                    }
+                }
                 .overlay {
                     AtlasTouchSurface(selecting: selecting, onDrag: { start, point, translation, twoFingers, ended in
+                        focusFlight?.cancel(); focusFlight=nil
                         if selecting && !movingMap && !twoFingers {
                             draggingSelection = !ended
                             dragSelection(start: start, location: point, size: geometry.size)
                         } else {
-                            if gestureCenter == nil { gestureCenter = center }
-                            if let origin = gestureCenter { center = CGPoint(x: min(1, max(0, origin.x - translation.width / scale)), y: min(0.94, max(0.06, origin.y - translation.height / scale))) }
+                            center = CGPoint(x:min(1,max(0,center.x-translation.width/scale)),y:min(0.94,max(0.06,center.y-translation.height/scale)))
+                            scale=min(scale,maximumScale(size:geometry.size))
+                            if !ended { reportViewport(geometry.size, userInitiated: true, gestureEnded: false) }
                         }
-                        if ended { gestureCenter = nil; dragAnchor = nil; movingBounds = nil; draggingSelection = false }
-                        reportViewport(geometry.size)
-                    }, onZoom: { factor, ended in
-                        if gestureScale == nil { gestureScale = scale }
-                        scale = min(4_000_000, max(350, (gestureScale ?? scale) * factor))
-                        if ended { gestureScale = nil }
-                        reportViewport(geometry.size)
+                        if ended {
+                            if selecting && !movingMap && !twoFingers,let selectedBounds { onSelectionFinished?(selectedBounds) }
+                            dragAnchor = nil; movingBounds = nil; draggingSelection = false; reportViewport(geometry.size, userInitiated: true)
+                        }
+                    }, onZoom: { factor, anchor, ended in
+                        focusFlight?.cancel(); focusFlight=nil
+                        let offset=CGPoint(x:anchor.x-geometry.size.width/2,y:anchor.y-geometry.size.height/2)
+                        let before=CGPoint(x:center.x+offset.x/scale,y:center.y+offset.y/scale)
+                        scale = min(maximumScale(size:geometry.size), max(350, scale * factor))
+                        center=CGPoint(x:min(1,max(0,before.x-offset.x/scale)),y:min(0.94,max(0.06,before.y-offset.y/scale)))
+                        scale=min(scale,maximumScale(size:geometry.size))
+                        reportViewport(geometry.size, userInitiated: true, gestureEnded: ended)
                     }, onTap: { location in
+                        if let onRegionTap {
+                            let labels=regionLabels(size:geometry.size)
+                            if let hit=labels.reversed().first(where: { $0.opacity>=0.5 && $0.rect.contains(location) }) { onRegionTap(hit.region.pack) }
+                            else if let hit=WorldRegionMapOverlay.at(coordinate(at:location,size:geometry.size),in:worldRegions) { onRegionTap(hit.pack) }
+                            return
+                        }
+                        if selecting && !movingMap, let onSelectionFinished {
+                            let point=coordinate(at:location,size:geometry.size)
+                            if let anchor=tapAnchor,let bounds=area(from:anchor,to:point) {
+                                selectedBounds=bounds;tapAnchor=nil;draggingSelection=false;onSelectionFinished(bounds)
+                            } else { tapAnchor=point;draggingSelection=true }
+                            return
+                        }
+                        if let onWorldTap {
+                            onWorldTap(coordinate(at: location, size: geometry.size)); return
+                        }
                         if selecting && !movingMap {
                             let point = coordinate(at: location, size: geometry.size)
                             if snapToTiles {
@@ -509,15 +640,36 @@ struct OfflineAtlasView: View {
                     })
                 }
                 .onChange(of: focus) { _, value in
-                    if let bounds = value.bounds { zoom(to: bounds, size: geometry.size) }
-                    else { center = world(value.point); scale = value.scale }
-                    reportViewport(geometry.size)
+                    focusFlight?.cancel()
+                    let oldCenter=center,oldScale=scale
+                    if let bounds = value.bounds { zoom(to: bounds, size: geometry.size, exact:value.exactViewport) }
+                    else { center = world(value.point); scale = min(value.scale,maximumScale(size:geometry.size)) }
+                    let destination=center,destinationScale=scale
+                    if value.animated && !reduceMotion {
+                        center=oldCenter;scale=oldScale
+                        focusFlight=Task { @MainActor in
+                            let start=ProcessInfo.processInfo.systemUptime
+                            while !Task.isCancelled {
+                                let t=min(1,(ProcessInfo.processInfo.systemUptime-start)/0.85),ease=t*t*(3-2*t)
+                                center=CGPoint(x:oldCenter.x+(destination.x-oldCenter.x)*ease,y:oldCenter.y+(destination.y-oldCenter.y)*ease)
+                                scale=oldScale*pow(destinationScale/oldScale,ease)
+                                if t>=1 { reportViewport(geometry.size);break }
+                                try? await Task.sleep(for:.milliseconds(16))
+                            }
+                        }
+                    } else { reportViewport(geometry.size) }
                 }
-                .onChange(of: geometry.size) { _, size in reportViewport(size) }
-                .onChange(of: selecting) { _, _ in tapAnchor = nil; dragAnchor = nil; movingBounds = nil; movingMap = false }
-                .onAppear {
-                    if let bounds = focus.bounds { zoom(to: bounds, size: geometry.size) }
-                    else { center = world(focus.point); scale = focus.scale }
+                .onChange(of:worldCompletedTiles) { _, tiles in
+                    tileCompletionTimes=tileCompletionTimes.filter { tiles.contains($0.key) }
+                    let now=Date()
+                    for tile in tiles where tileCompletionTimes[tile] == nil { tileCompletionTimes[tile]=now }
+                }
+                .onDisappear { focusFlight?.cancel() }
+                .onChange(of: geometry.size) { _, size in scale=min(scale,maximumScale(size:size));reportViewport(size) }
+                .onChange(of: selecting) { _, _ in tapAnchor = nil; dragAnchor = nil; movingBounds = nil; movingMap = false; draggingSelection = false }
+                .task {
+                    if let bounds = focus.bounds { zoom(to: bounds, size: geometry.size, exact:focus.exactViewport) }
+                    else { center = world(focus.point); scale = min(focus.scale,maximumScale(size:geometry.size)) }
                     reportViewport(geometry.size)
                 }
                 .task(id: entries.map(\.id).joined(separator: ",")) {
@@ -534,7 +686,7 @@ struct OfflineAtlasView: View {
                     if !Task.isCancelled { images = rendered }
                 }
                 .accessibilityLabel(selecting ? "Area selection map" : "Offline atlas")
-                .accessibilityHint(selecting ? "Tap a tile or drag to select whole tiles. Two fingers pan the map and pinch zooms. Move map lets one finger pan without changing the selection." : "Drag to browse, pinch to zoom, or choose a place using search.")
+                .accessibilityHint(selecting ? "Drag a rectangle or tap two opposite corners. Drag handles to resize. Two fingers pan and pinch zooms." : "Drag to browse, pinch to zoom, or choose a place using search.")
                 .overlay(alignment: .bottomTrailing) {
                     VStack(spacing: 8) {
                         if selecting {
@@ -544,16 +696,26 @@ struct OfflineAtlasView: View {
                                     .background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                             }.buttonStyle(.plain)
                         }
-                        RoundControl(symbol: "plus", label: "Zoom atlas in") { scale = min(4_000_000, scale * 1.8); reportViewport(geometry.size) }
-                        RoundControl(symbol: "minus", label: "Zoom atlas out") { scale = max(350, scale / 1.8); reportViewport(geometry.size) }
-                        RoundControl(symbol: "globe.europe.africa", label: "Show United Kingdom") { center = world(GeoPoint(latitude: 54.2, longitude: -3.4)); scale = min(7400, geometry.size.height * 20); reportViewport(geometry.size) }
+                        RoundControl(symbol: "plus", label: "Zoom atlas in") { focusFlight?.cancel(); focusFlight=nil; scale = min(maximumScale(size:geometry.size), scale * 1.8); reportViewport(geometry.size, userInitiated: true) }
+                        RoundControl(symbol: "minus", label: "Zoom atlas out") { focusFlight?.cancel(); focusFlight=nil; scale = max(350, scale / 1.8); reportViewport(geometry.size, userInitiated: true) }
+                        RoundControl(symbol: "globe.europe.africa", label: "Show United Kingdom") { focusFlight?.cancel(); focusFlight=nil; zoom(to: GeoBounds(minLatitude:49.8,minLongitude:-8.3,maxLatitude:59.4,maxLongitude:2.0),size:geometry.size); reportViewport(geometry.size) }
                     }.padding(12)
                 }
         }.clipped()
     }
 
-    private func reportViewport(_ size: CGSize) {
-        if let bounds = area(from: coordinate(at: .zero, size: size), to: coordinate(at: CGPoint(x: size.width, y: size.height), size: size)) { onViewport(bounds) }
+    private func reportViewport(_ size: CGSize, userInitiated: Bool = false, gestureEnded: Bool = true) {
+        if userInitiated, !gestureEnded {
+            guard onUserViewport != nil else { return }
+            let now=ProcessInfo.processInfo.systemUptime
+            guard now-lastUserViewportTime>=0.12 else { return }
+            lastUserViewportTime=now
+        }
+        guard let bounds = area(from: coordinate(at: .zero, size: size), to: coordinate(at: CGPoint(x: size.width, y: size.height), size: size)) else { return }
+        // Layout, region focus and returning from 3D also report a viewport.
+        // Only deliberate navigation should restart automatic terrain entry.
+        if userInitiated, let onUserViewport { onUserViewport(bounds, gestureEnded) }
+        else { onViewport(bounds) }
     }
     private func area(from a: GeoPoint, to b: GeoPoint) -> GeoBounds? {
         let bounds = GeoBounds(minLatitude: max(-85, min(a.latitude, b.latitude)), minLongitude: max(-180, min(a.longitude, b.longitude)), maxLatitude: min(85, max(a.latitude, b.latitude)), maxLongitude: min(180, max(a.longitude, b.longitude)))
@@ -631,14 +793,14 @@ struct OfflineAtlasView: View {
         return GeoPoint(latitude: atan(sinh(.pi * (1 - 2 * Double(y)))) * 180 / .pi, longitude: Double(x) * 360 - 180)
     }
 
-    private func zoom(to bounds: GeoBounds, size: CGSize) {
+    private func zoom(to bounds: GeoBounds, size: CGSize, exact: Bool = false) {
         guard bounds.isValid else { return }
         let a = world(GeoPoint(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
         let b = world(GeoPoint(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
-        let usable = CGRect(x: selectionInsets.leading, y: selectionInsets.top,
+        let usable = exact ? CGRect(origin:.zero,size:size) : CGRect(x: selectionInsets.leading, y: selectionInsets.top,
                             width: max(80, size.width - selectionInsets.leading - selectionInsets.trailing),
                             height: max(100, size.height - selectionInsets.top - selectionInsets.bottom))
-        scale = min(4_000_000, max(350, min(usable.width / max(0.0000001, b.x - a.x), usable.height / max(0.0000001, b.y - a.y)) * 0.9))
+        scale = min(maximumScale(size:size,latitude:bounds.center.latitude), max(350, min(usable.width / max(0.0000001, b.x - a.x), usable.height / max(0.0000001, b.y - a.y)) * (exact ? 1 : 0.9)))
         center = CGPoint(x: (a.x + b.x) / 2 - (usable.midX - size.width / 2) / scale,
                          y: (a.y + b.y) / 2 - (usable.midY - size.height / 2 - verticalOffset) / scale)
     }
@@ -663,7 +825,44 @@ struct OfflineAtlasView: View {
             }
             path.closeSubpath()
             guard path.boundingRect.intersects(visible) else { continue }
-            context.fill(path, with: .color(RidgeTheme.paper)); context.stroke(path, with: .color(RidgeTheme.forest.opacity(0.25)), lineWidth: 0.75)
+            if usesWorldStyle {
+                context.fill(path, with: .color(WorldAtlasPalette.land))
+            } else {
+                context.stroke(path, with: .color(Color(red:0.57,green:0.73,blue:0.78).opacity(0.5)), lineWidth: 4)
+                context.fill(path, with: .color(Color(red:0.83,green:0.87,blue:0.73)))
+                context.stroke(path, with: .color(RidgeTheme.forest.opacity(0.3)), lineWidth: 0.7)
+            }
+        }
+    }
+    private func drawPhysical(_ atlas: AtlasData, context: inout GraphicsContext, size: CGSize) {
+        let viewport=CGRect(origin:.zero,size:size)
+        for feature in atlas.physicalFeatures ?? [] {
+            if usesWorldStyle && feature.kind.hasPrefix("elevation") { continue }
+            let rect=rectangle(feature.bounds,size:size)
+            guard rect.intersects(viewport),max(rect.width,rect.height)>2 else { continue }
+            if feature.kind == "river" && scale < 14000 { continue }
+            var path=Path()
+            for ring in feature.rings {
+                for (index,pair) in ring.enumerated() where pair.count==2 {
+                    let p=screen(GeoPoint(latitude:pair[1],longitude:pair[0]),size:size)
+                    if index==0 { path.move(to:p) } else { path.addLine(to:p) }
+                }
+                if feature.kind != "river" { path.closeSubpath() }
+            }
+            switch feature.kind {
+            case "upland": break // Geographic range outlines are labels, not elevation.
+            case "elevation150": context.fill(path,with:.color(Color(red:0.76,green:0.82,blue:0.66)),style:FillStyle(eoFill:true))
+            case "elevation300": context.fill(path,with:.color(Color(red:0.68,green:0.76,blue:0.58)),style:FillStyle(eoFill:true))
+            case "elevation500": context.fill(path,with:.color(Color(red:0.61,green:0.69,blue:0.51)),style:FillStyle(eoFill:true))
+            case "elevation750": context.fill(path,with:.color(Color(red:0.65,green:0.66,blue:0.51)),style:FillStyle(eoFill:true))
+            case "elevation1000", "elevation1500", "elevation2500": context.fill(path,with:.color(Color(red:0.72,green:0.69,blue:0.57)),style:FillStyle(eoFill:true))
+            case "lake": context.fill(path,with:.color(usesWorldStyle ? WorldAtlasPalette.sea : Color(red:0.59,green:0.76,blue:0.83)),style:FillStyle(eoFill:true))
+            default: context.stroke(path,with:.color(Color(red:0.41,green:0.64,blue:0.74).opacity(0.8)),lineWidth:scale>80000 ? 1.1 : 0.65)
+            }
+            if feature.kind == "upland",rect.width>110,rect.height>45,!feature.name.isEmpty {
+                let label=context.resolve(Text(feature.name.uppercased()).font(.system(size:10,weight:.medium)).tracking(1.1).foregroundStyle(RidgeTheme.forest.opacity(0.65)))
+                context.draw(label,at:CGPoint(x:rect.midX,y:rect.midY))
+            }
         }
     }
     private func drawCoverage(_ atlas: AtlasData, context: inout GraphicsContext, size: CGSize) {
@@ -675,22 +874,194 @@ struct OfflineAtlasView: View {
             context.stroke(Path(rect), with: .color(RidgeTheme.muted.opacity(0.3)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
         }
     }
+    private func regionLabels(size:CGSize)->[(region:WorldRegionMapOverlay,rect:CGRect,fontSize:CGFloat,opacity:Double)] {
+        let viewport=CGRect(origin:.zero,size:size)
+        return worldRegions.compactMap { region in
+            // A selected whole park is an overlay, not another area label
+            // competing with the names on the map beneath it.
+            guard region.id != region.pack.parkID else { return nil }
+            var appearance=region.labelAppearance(at:Double(scale))
+            if region.id==selectedWorldRegion { appearance=(max(18,appearance.size),1) }
+            guard appearance.opacity>0 else { return nil }
+            let anchor=screen(region.labelPoint,size:size)
+            let lines=region.label.split(separator:"\n")
+            let textWidth=CGFloat(lines.map(\.count).max() ?? 1)*0.72+0.5
+            let textHeight=CGFloat(lines.count)*1.2+0.4
+            let footprint=rectangle(region.pack.labelBounds ?? region.pack.bounds,size:size)
+            let fitted=min(footprint.width/textWidth,footprint.height/textHeight)*0.9
+            let fontSize=min(CGFloat(appearance.size),max(12,fitted))
+            if region.id != selectedWorldRegion {
+                let t=min(1,max(0,(fitted-7)/6))
+                appearance.opacity *= Double(t*t*(3-2*t))
+                guard appearance.opacity>0.01 else { return nil }
+            }
+            let width=textWidth*fontSize
+            let height=textHeight*fontSize
+            let rect=CGRect(x:anchor.x-width/2,y:anchor.y-height/2,width:width,height:height)
+            // Clip naturally at screen edges rather than hiding the whole name.
+            guard viewport.intersects(rect) else { return nil }
+            return (region,rect,fontSize,appearance.opacity)
+        }
+    }
+    private func regionPath(_ region:WorldRegionMapOverlay,size:CGSize)->Path {
+        var path=Path()
+        if let shapes=region.pack.mapShapes {
+            for shape in shapes where rectangle(shape.bounds,size:size).intersects(CGRect(origin:.zero,size:size)) {
+                for ring in shape.rings {
+                    for (index,pair) in ring.enumerated() {
+                        let point=screen(GeoPoint(latitude:pair[1],longitude:pair[0]),size:size)
+                        if index==0 { path.move(to:point) } else { path.addLine(to:point) }
+                    }
+                    path.closeSubpath()
+                }
+            }
+        } else {
+            for bounds in region.fills { path.addRect(rectangle(bounds,size:size)) }
+        }
+        return path
+    }
+    private func downloadFootprint(size:CGSize)->Path? {
+        guard let selectedWorldRegion else { return nil }
+        let regions=worldRegions.filter { $0.id==selectedWorldRegion }
+        guard !regions.isEmpty,regions.allSatisfy({ $0.pack.mapShapes != nil }) else { return nil }
+        var path=Path()
+        for region in regions { path.addPath(regionPath(region,size:size)) }
+        return path
+    }
+    private func drawWorldRegions(context:inout GraphicsContext,size:CGSize) {
+        guard !worldRegions.isEmpty else { return }
+        let viewport=CGRect(origin:.zero,size:size)
+        for region in worldRegions {
+            let selected=region.id==selectedWorldRegion,available = !region.available.isEmpty
+            let color:Color=region.isBlocked ? Color(red:0.70,green:0.19,blue:0.16) : region.downloadState == .saved ? RidgeTheme.forest
+                : region.downloadState == .partial ? RidgeTheme.offlineBoundary : RidgeTheme.muted
+            guard rectangle(region.pack.bounds,size:size).intersects(viewport) else { continue }
+            let fill=regionPath(region,size:size)
+            var gaps=Path()
+            for bounds in region.missingTerrain {
+                let rect=rectangle(bounds,size:size)
+                if rect.intersects(viewport) { gaps.addRect(rect) }
+            }
+            // Download shading never covers holes, even when every available
+            // file is saved. Red follows only the real gaps, clipped to land.
+            var savedContext=context
+            savedContext.clip(to:gaps,options:.inverse)
+            if !nativeMapSurface { savedContext.fill(fill,with:.color(color.opacity(region.downloadState == .saved ? 0.24 : region.downloadState == .partial ? 0.16 : selected ? 0.12 : 0.025)),style:FillStyle(eoFill:true)) }
+            var standardContext=context
+            standardContext.clip(to:fill,style:FillStyle(eoFill:true))
+            var standard=Path()
+            for bounds in region.standardTerrain {
+                let rect=rectangle(bounds,size:size)
+                if rect.intersects(viewport) { standard.addRect(rect) }
+            }
+            if !nativeMapSurface { standardContext.fill(standard,with:.color(Color(red:0.28,green:0.48,blue:0.65).opacity(selected ? 0.20 : 0.11))) }
+            var missingContext=context
+            missingContext.clip(to:fill,style:FillStyle(eoFill:true))
+            missingContext.fill(gaps,with:.color(Color(red:0.70,green:0.19,blue:0.16).opacity(selected ? 0.30 : 0.22)))
+            var outline=fill
+            if region.pack.mapShapes == nil {
+                outline=Path()
+                for edge in region.edges { outline.move(to:screen(edge.start,size:size));outline.addLine(to:screen(edge.end,size:size)) }
+            }
+            context.stroke(outline,with:.color(color.opacity(selected ? 0.9 : 0.42)),style:StrokeStyle(lineWidth:selected ? 1.5 : 0.6,lineJoin:.round,dash:available && !region.isBlocked ? [] : [3,4]))
+        }
+        for item in regionLabels(size:size) {
+            var lettering=context
+            lettering.opacity*=item.opacity
+            lettering.translateBy(x:item.rect.midX,y:item.rect.midY)
+            lettering.scaleBy(x:item.fontSize/40,y:item.fontSize/40)
+            let lines=item.region.label.split(separator:"\n")
+            for (index,line) in lines.enumerated() {
+                let point=CGPoint(x:0,y:(CGFloat(index)-CGFloat(lines.count-1)/2)*48)
+                // Keep glyph layout constant and scale the drawing transform;
+                // fractional font relayout used to shimmer during pinching.
+                let text=Text(String(line)).font(.system(size:40,weight:.regular,design:.serif)).tracking(0.8)
+                for offset in [CGPoint(x:-1,y:0),CGPoint(x:1,y:0),CGPoint(x:0,y:-1),CGPoint(x:0,y:1)] {
+                    lettering.draw(text.foregroundStyle(RidgeTheme.paper.opacity(0.95)),at:CGPoint(x:point.x+offset.x,y:point.y+offset.y))
+                }
+                lettering.draw(text.foregroundStyle(item.region.isBlocked ? Color(red:0.62,green:0.16,blue:0.14) : RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
+            }
+        }
+    }
+    private func drawWorldOfflineCoverage(context: inout GraphicsContext, size: CGSize) {
+        guard !worldOfflineBounds.isEmpty else { return }
+        let viewport=CGRect(origin:.zero,size:size)
+        // Fill the union once. Shared saved tiles must never become a grid or
+        // darken where downloads overlap. The outline is the same as in 3D.
+        var fill=Path(), outline=Path()
+        for bounds in worldOfflineBounds {
+            let rect=rectangle(bounds,size:size)
+            if rect.intersects(viewport) { fill.addRect(rect) }
+        }
+        if !nativeMapSurface { context.fill(fill,with:.color(RidgeTheme.offlineBoundary.opacity(0.10)),style:FillStyle(eoFill:false)) }
+        for edge in worldOfflineEdges {
+            let a=screen(edge.start,size:size),b=screen(edge.end,size:size)
+            let extent=CGRect(x:min(a.x,b.x),y:min(a.y,b.y),width:max(1,abs(a.x-b.x)),height:max(1,abs(a.y-b.y)))
+            guard extent.insetBy(dx:-4,dy:-4).intersects(viewport) else { continue }
+            outline.move(to:a);outline.addLine(to:b)
+        }
+        // Screen-space widths stay legible at UK scale and when zoomed in.
+        context.stroke(outline,with:.color(RidgeTheme.paper.opacity(0.95)),style:StrokeStyle(lineWidth:5,lineCap:.round,lineJoin:.round))
+        context.stroke(outline,with:.color(RidgeTheme.offlineBoundary),style:StrokeStyle(lineWidth:2.5,lineCap:.round,lineJoin:.round))
+    }
     private func drawPlaces(_ atlas: AtlasData, context: inout GraphicsContext, size: CGSize) {
-        guard scale > 1200 else { return }
-        var occupied = clusters(size: size).map { clusterLabelRect($0, size: size).insetBy(dx: -5, dy: -5) }
-        let detailPlaces = entries.filter { cellsAreVisible($0, size: size) }.flatMap { $0.manifest.places }.sorted { ($0.elevation ?? 0) > ($1.elevation ?? 0) }
-        var seen: Set<String> = []
-        for place in detailPlaces + atlas.places {
-            guard seen.insert(place.id).inserted else { continue }
-            let p = screen(place.coordinate, size: size)
-            guard CGRect(origin: .zero, size: size).contains(p) else { continue }
-            let text = context.resolve(Text(place.name).font(.system(size: scale > 80_000 ? 13 : 10, weight: .medium)).foregroundStyle(RidgeTheme.muted))
-            let measured = text.measure(in: CGSize(width: 220, height: 24))
-            let box = CGRect(x: p.x, y: p.y - 2 - measured.height / 2, width: measured.width + 10, height: measured.height).insetBy(dx: -5, dy: -4)
-            guard !occupied.contains(where: { $0.intersects(box) }) else { continue }
-            occupied.append(box)
-            context.fill(Path(ellipseIn: CGRect(x: p.x - 1.5, y: p.y - 1.5, width: 3, height: 3)), with: .color(RidgeTheme.muted))
-            context.draw(text, in: CGRect(x: p.x + 5, y: p.y - 2 - measured.height / 2, width: measured.width, height: measured.height))
+        guard scale > 4000 else { return }
+        var occupied = worldRegions.isEmpty
+            ? clusters(size:size).map { clusterLabelRect($0,size:size).insetBy(dx:-5,dy:-5) }
+            : regionLabels(size:size).filter { $0.opacity>0.1 }.map { $0.rect.insetBy(dx:-6,dy:-6) }
+        // Include neighbours just offscreen so panning past the edge does not
+        // constantly change which of two nearby names wins the space.
+        let viewport=CGRect(origin:.zero,size:size).insetBy(dx:-240,dy:-50)
+        let northWest=coordinate(at:CGPoint(x:viewport.minX,y:viewport.minY),size:size)
+        let southEast=coordinate(at:CGPoint(x:viewport.maxX,y:viewport.maxY),size:size)
+        let detailPlaces=entries.filter { cellsAreVisible($0,size:size) }.flatMap { $0.manifest.places }
+        var seen=Set<String>()
+        var placedPoints:[CGPoint]=[]
+        var visibleCount=0
+        let labelLimit=max(5,min(12,Int(size.width*size.height/65000)+2))
+        let visible=CGRect(origin:.zero,size:size)
+        // The bundled list is ordered by city/town/village, then population.
+        for place in [atlas.places,detailPlaces].joined() {
+            let start:Double,fontSize:CGFloat,weight:Font.Weight
+            switch place.kind {
+            case "city": (start,fontSize,weight)=(4000,14,.semibold)
+            case "town", "settlement": (start,fontSize,weight)=(55000,13,.medium)
+            case "village": (start,fontSize,weight)=(240000,12,.regular)
+            case "peak": (start,fontSize,weight)=(150000,12,.medium)
+            default: continue
+            }
+            let t=min(1,max(0,(Double(scale)/start-1)/0.65))
+            guard t>0,place.coordinate.latitude<=northWest.latitude,
+                  place.coordinate.latitude>=southEast.latitude,
+                  place.coordinate.longitude>=northWest.longitude,
+                  place.coordinate.longitude<=southEast.longitude else { continue }
+            let p=screen(place.coordinate,size:size)
+            guard viewport.contains(p),seen.insert(place.searchIdentity).inserted,
+                  !placedPoints.contains(where: { hypot($0.x-p.x,$0.y-p.y)<85 }),
+                  !visible.contains(p) || visibleCount<labelLimit else { continue }
+            let label=Text(place.name).font(.system(size:fontSize,weight:weight))
+            let text=context.resolve(label.foregroundStyle(RidgeTheme.ink))
+            let measured=text.measure(in:CGSize(width:240,height:24))
+            let origins=[CGPoint(x:p.x+6,y:p.y-measured.height/2),
+                         CGPoint(x:p.x-measured.width-6,y:p.y-measured.height/2),
+                         CGPoint(x:p.x-measured.width/2,y:p.y-measured.height-6),
+                         CGPoint(x:p.x-measured.width/2,y:p.y+6)]
+            guard let rect=origins.map({ CGRect(origin:$0,size:measured) }).first(where: { rect in
+                !occupied.contains { $0.intersects(rect.insetBy(dx:-5,dy:-4)) }
+            }) else { continue }
+            occupied.append(rect.insetBy(dx:-18,dy:-10))
+            placedPoints.append(p)
+            if visible.contains(p) { visibleCount+=1 }
+            var lettering=context
+            lettering.opacity *= t*t*(3-2*t)
+            // A small paper halo stays legible over relief and download fills.
+            let halo=lettering.resolve(label.foregroundStyle(RidgeTheme.paper.opacity(0.95)))
+            for offset in [CGSize(width:-1,height:0),CGSize(width:1,height:0),CGSize(width:0,height:-1),CGSize(width:0,height:1)] {
+                lettering.draw(halo,in:rect.offsetBy(dx:offset.width,dy:offset.height))
+            }
+            lettering.fill(Path(ellipseIn:CGRect(x:p.x-2,y:p.y-2,width:4,height:4)),with:.color(RidgeTheme.paper))
+            lettering.fill(Path(ellipseIn:CGRect(x:p.x-1.25,y:p.y-1.25,width:2.5,height:2.5)),with:.color(RidgeTheme.ink))
+            lettering.draw(text,in:rect)
         }
     }
     private struct AreaCluster {
@@ -788,7 +1159,7 @@ struct OfflineAtlasView: View {
 private struct AtlasTouchSurface: UIViewRepresentable {
     var selecting: Bool
     var onDrag: (CGPoint, CGPoint, CGSize, Bool, Bool) -> Void
-    var onZoom: (CGFloat, Bool) -> Void
+    var onZoom: (CGFloat, CGPoint, Bool) -> Void
     var onTap: (CGPoint) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -802,7 +1173,7 @@ private struct AtlasTouchSurface: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self; updateAccessibility(view) }
     private func updateAccessibility(_ view: UIView) {
         view.accessibilityLabel = selecting ? "Area selection map" : "Offline atlas"
-        view.accessibilityHint = selecting ? "Tap a tile. Drag a corner to resize or drag inside to move. Two fingers pan and pinch zooms. Move map enables one-finger navigation." : "Drag to pan and pinch to zoom. Zoom buttons are also available."
+        view.accessibilityHint = selecting ? "Drag to select an area. Drag a corner to resize or drag inside to move. Two fingers pan and pinch zooms." : "Drag to pan and pinch to zoom. Zoom buttons are also available."
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
@@ -830,10 +1201,12 @@ private struct AtlasTouchSurface: UIViewRepresentable {
             let start = starts[key] ?? CGPoint(x: point.x - delta.x, y: point.y - delta.y)
             starts[key] = start
             parent.onDrag(start, point, CGSize(width: delta.x, height: delta.y), gesture === twoPan, ended)
+            gesture.setTranslation(.zero,in:view)
             if ended { starts.removeValue(forKey: key) }
         }
         @objc private func zoom(_ gesture: UIPinchGestureRecognizer) {
-            parent.onZoom(gesture.scale, gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed)
+            parent.onZoom(gesture.scale, gesture.location(in:gesture.view), gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed)
+            gesture.scale=1
         }
         @objc private func tap(_ gesture: UITapGestureRecognizer) {
             if gesture.state == .ended { parent.onTap(gesture.location(in: gesture.view)) }

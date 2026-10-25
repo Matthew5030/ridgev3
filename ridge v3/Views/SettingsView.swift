@@ -2,34 +2,70 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var store: AppStore
-    @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle: TerrainGestureStyle = .moveWithOneFinger
+    @Environment(WorldModel.self) private var world
+    @State private var showDownloadedMaps = false
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
+    @State private var worldSavedAreaCount = 0
+    @State private var storageRefresh = 0
     @State private var storageError: String?
+    @State private var sourceError: String?
+    @State private var connectionCheckID: UUID?
+    @State private var connectionChecking = false
+    @State private var connectionResult: String?
+    @AppStorage("ridge.mapSourceMode") private var mapMode = WorldLibrary.defaultMode
+    @AppStorage("ridge.localMapServer") private var localMapServer = WorldLibrary.defaultLocalServer
+    @State private var selectedMapMode = WorldLibrary.defaultMode
     @AppStorage("ridge.downloadServer") private var serverAddress = ""
-    @State private var connectingServer = false
-    @State private var serverMessage: String?
-    private var savedCount: Int { store.entries.filter(\.installed).count }
+    @State private var worldAddressDraft = ""
+    private var sourceHasChanges: Bool {
+        selectedMapMode != mapMode || (selectedMapMode == "local" && worldAddressDraft.trimmingCharacters(in: .whitespacesAndNewlines) != localMapServer)
+    }
+    private var savedCount: Int { store.entries.filter(\.installed).count+worldSavedAreaCount }
     private var sources: [SourceCredit] {
-        let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas land outlines from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
-        return Array(Set(store.entries.flatMap { $0.manifest.sources } + [naturalEarth])).sorted { $0.name < $1.name }
+        let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas coastlines, lakes, rivers and geographic regions from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
+        let overview = SourceCredit(name: "Overview elevation · Mapzen Terrain Tiles", attribution: "Overview elevation bands derived from Mapzen Terrain Tiles. Europe: produced using Copernicus data and information funded by the European Union — EU-DEM layers. United Kingdom: © Environment Agency copyright and/or database right 2015. All rights reserved. Global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey. Global ETOPO1 terrain data: DOC/NOAA/NESDIS/NCEI, U.S. Department of Commerce. Smoothed and converted to elevation bands for the overview; not used for route elevations.", license: "Open source data; source-specific terms", url: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
+        let sentinel = SourceCredit(name: "Copernicus Sentinel-2", attribution: "Contains modified Copernicus Sentinel data 2025. Satellite-guided illustrative ground colours where available.", license: "Copernicus Sentinel data terms", url: "https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2")
+        return Array(Set(store.entries.flatMap { $0.manifest.sources } + [naturalEarth, overview, sentinel])).sorted { $0.name < $1.name }
     }
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0" }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Settings").font(RidgeTheme.pageTitle)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Map source").font(RidgeTheme.sectionTitle)
+                    Picker("Map source", selection: $selectedMapMode) {
+                        Text("Cloud").tag("cloud")
+                        Text("Local network").tag("local")
+                    }.pickerStyle(.segmented)
+                    if selectedMapMode == "local" {
+                        TextField("http://your-mac.local:8787", text: $worldAddressDraft)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Local map server")
+                        Text("Use the Mac serving your external drive. Keep it running and connect to the same network.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    } else {
+                        Text("Terrain loads as you explore. Cloud coverage currently includes the Snowdon pilot.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     }
-                    Spacer()
-                    Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).frame(width: 38, height: 38).background(RidgeTheme.ink.opacity(0.055), in: Circle()) }
-                        .accessibilityLabel("Close settings")
+                    Button(action: saveSourceAndDismiss) {
+                        Label("Save map source", systemImage: "checkmark")
+                            .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent).tint(RidgeTheme.forest)
+                    HStack {
+                        Button("Test connection") { connectionChecking=true;connectionResult=nil;connectionCheckID=UUID() }
+                            .disabled(connectionChecking)
+                        if connectionChecking { ProgressView() }
+                    }
+                    if let connectionResult { Text(connectionResult).font(.footnote).textSelection(.enabled) }
+                    if sourceHasChanges {
+                        Text("Tap Save to apply this source.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                    }
+                    if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
+                    Text("Download a region, then zoom into it to explore in 3D. Saved terrain works without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
-                gestureSection
+                worldGestureSection
                 offlineSection
-                downloadServerSection
                 legendSection
                 storageSection
                 estimatesSection
@@ -42,55 +78,85 @@ struct SettingsView: View {
                 }.foregroundStyle(RidgeTheme.muted).padding(.vertical, 12)
             }.padding(24).padding(.top, 12).frame(maxWidth: 700).frame(maxWidth: .infinity)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                    Spacer()
+                    Text("Settings").font(.headline)
+                    Spacer()
+                    Button(sourceHasChanges ? "Save" : "Done", action: saveSourceAndDismiss)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 24).padding(.vertical, 18)
+                .background(RidgeTheme.paper)
+                .overlay(alignment: .bottom) { Divider() }
+            }
+            .onChange(of: selectedMapMode) { _, _ in resetConnectionCheck() }
+            .sheet(isPresented:$showDownloadedMaps,onDismiss:{ storageRefresh+=1 }) { WorldDownloadedMapsView(store:store,world:world) }
+            .onChange(of: worldAddressDraft) { _, _ in resetConnectionCheck() }
+            .task(id: connectionCheckID) {
+                guard connectionCheckID != nil else { return }
+                do {
+                    let root = try WorldLibrary.root(mode:selectedMapMode,local:worldAddressDraft)
+                    let count = try await WorldLibrary.checkConnection(root:root)
+                    try Task.checkCancellation()
+                    connectionResult="Connected to \(root.host ?? "map server"). \(count.formatted()) map sections available."
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    connectionResult=error.localizedDescription
+                }
+                connectionChecking=false
+            }
             .onAppear {
+                selectedMapMode = mapMode
+                worldAddressDraft = localMapServer.isEmpty ? serverAddress : localMapServer
                 if serverAddress.isEmpty, let remote = store.entries.compactMap(\.remoteSource).first {
                     serverAddress = remote.deletingLastPathComponent().absoluteString
                 }
             }
-            .task(id: store.entries.filter(\.installed).map(\.id).joined(separator: ",")) {
+            .task(id: "\(world.offlineCoverageRevision)|\(storageRefresh)|"+store.entries.filter(\.installed).map(\.id).joined(separator: ",")) {
                 var total: Int64 = 0
                 do {
                     for entry in store.entries where entry.installed {
                         if let manifest = try await store.packs.installedManifest(id: entry.id) { total += manifest.totalBytes }
                     }
+                    let maps=try await world.downloadedMapsSummary()
+                    let sources=try await store.packs.downloadedSourceStorage()
+                    worldSavedAreaCount=maps.areas.count+sources.count;total+=maps.bytes+sources.reduce(0) { $0+$1.bytes }
                     savedAssetBytes = total
+                    storageError=nil
                 } catch { storageError = "Saved area sizes could not be read." }
             }
     }
 
-    private var gestureSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Map controls").font(RidgeTheme.sectionTitle)
-            VStack(spacing: 10) {
-                ForEach(TerrainGestureStyle.allCases) { style in
-                    Button { gestureStyle = style } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: style == .moveWithOneFinger ? "hand.draw" : "arrow.trianglehead.2.clockwise.rotate.90")
-                                .font(.system(size: 20)).frame(width: 28)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(style.title).font(.system(size: 15, weight: .semibold))
-                                Text(style.subtitle).font(.system(size: 12)).foregroundStyle(RidgeTheme.muted)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: gestureStyle == style ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 22)).foregroundStyle(gestureStyle == style ? RidgeTheme.forest : RidgeTheme.muted.opacity(0.4))
-                        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(gestureStyle == style ? RidgeTheme.forest.opacity(0.07) : RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
-                            .overlay { RoundedRectangle(cornerRadius: RidgeTheme.controlRadius).strokeBorder(gestureStyle == style ? RidgeTheme.forest.opacity(0.4) : RidgeTheme.line) }
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel(style.title + ". " + style.subtitle)
-                        .accessibilityAddTraits(gestureStyle == style ? .isSelected : [])
-                }
-            }
-            Text("Pinch to zoom. Double-tap to fit the area.")
-                .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
-        }
+    private func resetConnectionCheck() {
+        sourceError=nil;connectionCheckID=nil;connectionChecking=false;connectionResult=nil
+    }
+    private func saveSourceAndDismiss() {
+        // Closing unchanged settings also works when no local address has been entered yet.
+        guard sourceHasChanges else { dismiss(); return }
+        do {
+            let root = try WorldLibrary.root(mode: selectedMapMode, local: worldAddressDraft)
+            // Publish the address first so Explore never switches to an old endpoint.
+            if selectedMapMode == "local" { localMapServer = root.absoluteString }
+            mapMode = selectedMapMode
+            dismiss()
+        } catch { sourceError = error.localizedDescription }
     }
 
+    private var worldGestureSection: some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text("Map controls").font(RidgeTheme.sectionTitle)
+            Text("Drag with one finger to move. Pinch to zoom. Drag two fingers left or right to turn around the terrain, or up and down to tilt. Twisting does not turn the camera; the horizon stays level.")
+                .font(.subheadline).foregroundStyle(RidgeTheme.muted)
+            Text("The overview button looks straight down. Zooming keeps the angle you chose.")
+                .font(.caption).foregroundStyle(RidgeTheme.muted)
+        }
+    }
     private var offlineSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Offline maps").font(RidgeTheme.sectionTitle)
-            Text("Download a region from Packs, then choose smaller areas to open in 3D. Packs include terrain, maps and paths for offline use.")
+            Text("Maps load automatically from your selected source and are cached on this device. Choose Save area offline in the terrain menu to keep its terrain, maps and walking paths.")
                 .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
             if store.activeTerrain == nil {
             VStack(spacing: 0) {
@@ -108,46 +174,12 @@ struct SettingsView: View {
         }
     }
 
-    private var downloadServerSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Download server").font(RidgeTheme.sectionTitle)
-            Text("Connect to a download server to see available areas. Downloaded areas work offline.")
-                .font(.system(size: 13)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
-            TextField("http://your-mac.local:8787", text: $serverAddress)
-                .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                .padding(15).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
-                .accessibilityLabel("Download server address")
-            Button {
-                connectingServer = true; serverMessage = nil
-                Task { @MainActor in
-                    defer { connectingServer = false }
-                    do {
-                        guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                            throw RidgeError.message("Enter the download server’s address.")
-                        }
-                        let count = try await store.packs.connectSourceServer(url)
-                        await store.refresh()
-                        serverMessage = "Connected · \(count) \(count == 1 ? "pack" : "packs") available. Open Packs to download a region, or Explore to choose a smaller area."
-                    } catch { serverMessage = error.localizedDescription }
-                }
-            } label: {
-                HStack {
-                    if connectingServer { ProgressView().tint(RidgeTheme.forest) }
-                    Label(connectingServer ? "Connecting…" : "Connect and refresh coverage", systemImage: "externaldrive.connected.to.line.below")
-                }.font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).padding(15)
-                    .background(RidgeTheme.forest.opacity(0.08), in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
-            }.disabled(connectingServer || store.activeTerrain != nil || serverAddress.isEmpty)
-            if store.activeTerrain != nil { Text("Return to the map before changing download coverage.").font(.footnote).foregroundStyle(RidgeTheme.muted) }
-            if let serverMessage { Text(serverMessage).font(.footnote).foregroundStyle(RidgeTheme.muted).lineSpacing(3) }
-        }
-    }
-
     private var legendSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Map legend").font(RidgeTheme.sectionTitle)
             MapLegendView()
                 .padding(20).background(RidgeTheme.panel, in: RoundedRectangle(cornerRadius: RidgeTheme.cardRadius))
-            Text("Follow paths uses mapped paths. Direct line joins waypoints without following paths. Planned routes are shown in orange.")
+            Text("Routes follow mapped walking paths and are shown in orange.")
                 .font(.system(size: 12)).foregroundStyle(RidgeTheme.muted).lineSpacing(4)
         }
     }
@@ -155,6 +187,10 @@ struct SettingsView: View {
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Storage").font(RidgeTheme.sectionTitle)
+            Button { showDownloadedMaps=true } label: {
+                Label("Downloaded maps",systemImage:"externaldrive").font(.headline)
+                    .frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,10)
+            }.buttonStyle(.plain)
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("\(savedCount)").font(.system(size: 30, weight: .medium, design: .default))

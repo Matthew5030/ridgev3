@@ -1,0 +1,24 @@
+{
+  "source": {
+    "attribution": "\u00a9 OpenStreetMap contributors",
+    "attributionURL": "https://www.openstreetmap.org/copyright",
+    "bounds": [
+      -14.858498,
+      49.4192,
+      2.641786,
+      61.13564
+    ],
+    "coverageStatement": "Geofabrik United Kingdom extract: England, Scotland, Wales and Northern Ireland; excludes Isle of Man and Channel Islands",
+    "generator": "osmium/1.16.0",
+    "license": "Open Data Commons Open Database License 1.0",
+    "md5": "20b80be21a95af1b37d864d65a6a1f24",
+    "path": "uk/united-kingdom-260823.osm.pbf",
+    "sha256": "52fb73d2a98acc8c43f6d3a0b1e5df1e0ee1d09209d22b584e7f22f9f5c8a6fd",
+    "sizeBytes": 2245953586,
+    "snapshot": "2026-08-23T20:21:36Z",
+    "url": "https://download.geofabrik.de/europe/united-kingdom-260823.osm.pbf"
+  },
+  "generator": "Tools/build_atlas_places.py",
+  "selection": "Named OSM city, town and village nodes",
+  "count": 16927
+}
