@@ -1,9 +1,15 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct WorldPreviewPresentedKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 struct ContentView: View {
     @State private var store = AppStore()
     @State private var world = WorldModel()
+    @State private var previewPresented = false
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         ZStack {
@@ -16,11 +22,12 @@ struct ContentView: View {
                     case .routes: RouteLibraryView(store: store, world: world)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                tabBar.disabled(store.isPreparing)
+                if !previewPresented { tabBar.disabled(store.isPreparing) }
             }
             if store.isPreparing && !store.preparingFromAtlas { PreparationOverlay(store: store) }
         }
         .tint(RidgeTheme.forest).preferredColorScheme(.light)
+        .onPreferenceChange(WorldPreviewPresentedKey.self) { previewPresented=$0 }
         .task { await store.bootstrap() }
         .onChange(of: scenePhase) { _, phase in if phase != .active { store.savePlanningSession() } }
         .onOpenURL { url in if url.pathExtension.lowercased() == "gpx" { store.importGPX(url) } else { store.importPack(url) } }

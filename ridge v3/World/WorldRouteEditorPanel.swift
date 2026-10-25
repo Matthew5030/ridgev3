@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum WorldRouteDetailsSection: String, CaseIterable, Identifiable {
+    case waypoints = "Waypoints", elevation = "Elevation"
+    var id: Self { self }
+}
+
 /// The route stays visible beside the terrain throughout editing and playback.
 /// Actions resolve waypoint IDs against the current route in the host.
 struct WorldRouteEditorPanel: View {
@@ -20,22 +25,43 @@ struct WorldRouteEditorPanel: View {
     @Bindable var tour: WorldRouteTour
     var dismiss: (() -> Void)? = nil
     var onAction: (Action) -> Void
+    var section: Binding<WorldRouteDetailsSection> = .constant(.waypoints)
+    var elevationSamples: [RouteProfileSample] = []
+    var selectedDistance: Double? = nil
+    var onScrub: (Double) -> Void = { _ in }
+    var compact = false
     private var imported: Bool { route?.segments.contains { $0.mode == "imported" } == true }
     private var previewAvailable: Bool { (route?.points.count ?? 0)>1 && !busy }
 
     var body: some View {
         VStack(spacing:0) {
-            header.padding(18).fixedSize(horizontal:false,vertical:true)
+            header.padding(compact ? 12 : 18).fixedSize(horizontal:false,vertical:true)
             Divider()
             if let route {
+                if elevationSamples.count > 1 {
+                    Picker("Route details", selection: section) {
+                        ForEach(WorldRouteDetailsSection.allCases) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 16).padding(.vertical, 10)
+                }
                 if tour.isPresented {
                     WorldRouteTourControls(tour:tour,returnLabel:editing ? "Back to editing" : "Back to route")
                         .padding(12).fixedSize(horizontal:false,vertical:true)
                     Divider()
                 }
-                waypointList(route)
+                if section.wrappedValue == .elevation, elevationSamples.count > 1 {
+                    ScrollView {
+                        WorldRouteElevationStrip(samples: elevationSamples, selectedDistance: selectedDistance,
+                            tour: tour, onScrub: onScrub, chartHeight: 140).padding(.vertical, 16)
+                        Text("Drag the profile to see that point on the map.")
+                            .font(.caption).foregroundStyle(RidgeTheme.muted).padding(.horizontal, 16)
+                    }
+                } else { waypointList(route) }
                 Divider()
                 footer(route).padding(16).fixedSize(horizontal:false,vertical:true)
+                if compact, editing, !tour.isPresented, section.wrappedValue == .waypoints {
+                    WorldRouteToolbar(route: route, editing: editing, busy: busy, pathsReady: pathsReady,
+                        canUndo: canUndo, canRedo: canRedo, selectedWaypoint: selectedWaypoint, onAction: onAction)
+                }
             } else {
                 WorldRoutePlanPrompt(pathsReady:pathsReady,busy:busy,plan:{ onAction(.start) },library:{ onAction(.library) }).padding(16)
                 Spacer()
@@ -47,26 +73,46 @@ struct WorldRouteEditorPanel: View {
         .accessibilityElement(children:.contain)
         .accessibilityLabel("Route editor")
     }
-    private var header: some View {
+    @ViewBuilder private var header: some View {
+        if compact, let route {
+            HStack(spacing:8) {
+                VStack(alignment:.leading,spacing:4) {
+                    Text(route.name).font(.headline).lineLimit(2)
+                    if busy { ProgressView("Updating route…").font(.caption) }
+                    else { Text(summary).font(.caption).foregroundStyle(RidgeTheme.muted) }
+                }.frame(maxWidth:.infinity,alignment:.leading)
+                routeOptions
+                if let dismiss {
+                    Button(action:dismiss) { Image(systemName:"xmark").frame(width:44,height:44) }.accessibilityLabel("Hide route details")
+                }
+            }.buttonStyle(.plain)
+        } else { standardHeader }
+    }
+    private var routeOptions: some View {
+        Menu {
+            Button("Rename route",systemImage:"pencil") { onAction(.rename) }
+            Button("Start another route",systemImage:"plus") { onAction(.start) }.disabled(!pathsReady)
+            Button("Saved routes",systemImage:"folder") { onAction(.library) }
+            Button("Show entire route",systemImage:"arrow.up.left.and.arrow.down.right") { onAction(.fitRoute) }
+        } label: { Image(systemName:"ellipsis").frame(width:44,height:44) }.disabled(busy).accessibilityLabel("Route options")
+    }
+    private var standardHeader: some View {
         VStack(alignment:.leading,spacing:10) {
             HStack(spacing:8) {
                 Label(editing ? "Route editor" : "Your route",systemImage:"point.topleft.down.to.point.bottomright.curvepath")
                     .font(.subheadline.weight(.semibold))
                 Spacer(minLength:4)
                 if let dismiss {
-                    Button(action:dismiss) { Image(systemName:"sidebar.left").frame(width:36,height:36) }.accessibilityLabel("Hide route panel")
+                    Button(action:dismiss) { Image(systemName:compact ? "xmark" : "sidebar.left").frame(width:44,height:44) }.accessibilityLabel("Hide route details")
                 }
                 if route != nil {
-                    Menu {
-                        Button("Rename route",systemImage:"pencil") { onAction(.rename) }
-                        Button("Start another route",systemImage:"plus") { onAction(.start) }.disabled(!pathsReady)
-                    } label: { Image(systemName:"ellipsis").frame(width:36,height:36) }.disabled(busy).accessibilityLabel("Route options")
+                    routeOptions
                 }
             }
             if let route {
                 Text(route.name).font(.title3.weight(.semibold)).fixedSize(horizontal:false,vertical:true)
                 if busy { ProgressView("Updating route…").font(.caption) }
-                else { Label(editing ? "Changes saved automatically" : "Saved on this device",systemImage:"checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
+                else if !compact { Label(editing ? "Changes saved automatically" : "Saved on this device",systemImage:"checkmark.circle").font(.caption).foregroundStyle(RidgeTheme.muted) }
                 if !summary.isEmpty { Text(summary).font(.subheadline).foregroundStyle(RidgeTheme.muted).fixedSize(horizontal:false,vertical:true) }
             }
         }.frame(maxWidth:.infinity,alignment:.leading)
@@ -141,7 +187,7 @@ struct WorldRouteEditorPanel: View {
                     Spacer(minLength:4)
                     Button("Cancel") { onAction(.cancelPlacement) }.font(.caption.weight(.semibold))
                 }
-            } else if editing && !tour.isPresented {
+            } else if editing && !tour.isPresented && !compact {
                 Text("Tap the map to extend your route. Preview whenever you like.").font(.caption).foregroundStyle(RidgeTheme.muted).frame(maxWidth:.infinity,alignment:.leading)
             }
             if !tour.isPresented {
@@ -156,7 +202,7 @@ struct WorldRouteEditorPanel: View {
                     Spacer(minLength:0)
                     Button("Export GPX",systemImage:"square.and.arrow.up") { onAction(.export) }
                 }.font(.subheadline).frame(minHeight:44).disabled(busy)
-                Button("Find this route in Routes",systemImage:"folder") { onAction(.library) }.font(.caption)
+                if !compact { Button("Find this route in Routes",systemImage:"folder") { onAction(.library) }.font(.caption) }
             }
         }
     }
