@@ -92,6 +92,74 @@ import simd
             let converted=WorldFlightPlan.converted(source,from:frame,to:output)
             try check(converted.fieldOfView==source.fieldOfView,"Scene origin changes preserve the adaptive lens")
         }
-        print("PASS \(checks) adaptive composition, calm framing, zoom continuity and low straight-flight checks")
+        // Imported elevations deliberately stay at 100 m. Framing must follow
+        // the saved terrain snapshot, including a hill and its descent, rather
+        // than the route file or the early clearance lift of the flight rail.
+        let slopes:[(String,(Double)->Double)]=[
+            ("climb",{ 100+0.12*$0 }),
+            ("descent",{ 900-0.12*$0 }),
+            ("crest",{ 300+300*sin($0 * .pi/6000) }),
+            ("hilly bends",{ 300+300*sin($0 * .pi/6000) }),
+            ("steep hill",{ abs($0-3000)<1500 ? 300+200*(1+cos(($0-3000) * .pi/1500)) : 300 }),
+            ("ripples on climb",{ 100+0.12*$0+0.8*sin($0/5) })]
+        for (name,elevation) in slopes {
+            let points=stride(from:0.0,through:6000.0,by:20).map { point(name=="hilly bends" ? 400*sin($0/500) : 0,-$0) }
+            let path=WorldRouteTourPath(segments:[points])!,rail=WorldFlightCorridor(path:path,tolerance:160,routeCentred:true)
+            func height(_ p:GeoPoint)->Float? { Float(elevation((p.latitude-53)*111195)) }
+            let stations=WorldFlightTerrain.distances(length:rail.length),focus=WorldFlightTerrain.focusPoints(path:path,corridor:rail)
+            let terrain=WorldFlightTerrain(path:path,corridor:rail,
+                heights:stations.map { height(rail.sample(flightDistance:$0).point) },
+                focusPoints:focus,focusHeights:focus.map { height($0.coordinate) })
+            func plan(quiet:Bool=false) throws -> WorldFlightPlan {
+                try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:quiet,
+                    clearance:10,cornerLift:12,routeFraming:true)
+            }
+            let flight=try plan(),quiet=try plan(quiet:true),scale=WorldRouteTour.previewCruiseSpeed/3.6/flight.cruiseSpeed
+            let camera=SCNNode();camera.camera=SCNCamera();let rig=WorldCameraRig();rig.beginTour(on:camera)
+            func pitch(_ sample:WorldFlightPlan.Sample)->Double {
+                let view=sample.pose.look-sample.pose.eye
+                return atan2(Double(view.y),Double(simd_length(SIMD2(view.x,view.z))))
+            }
+            var previous=pitch(flight.sample(time:0)),maxRate=0.0,maxRateDistance=0.0,minPitch=Double.infinity,maxPitch = -Double.infinity,maxBank:Float=0
+            for time in stride(from:scale/60,to:flight.duration,by:scale/60) {
+                let sample=flight.sample(time:time),angle=pitch(sample),distance=sample.routeDistance
+                let rate=abs(angle-previous)*60
+                if rate>maxRate { maxRate=rate;maxRateDistance=distance };previous=angle
+                minPitch=min(minPitch,angle);maxPitch=max(maxPitch,angle)
+                maxBank=max(maxBank,abs(sample.pose.bank))
+                try check(angle.isFinite,"\(name): finite terrain-aligned pitch")
+                try check(simd_dot(simd_normalize(sample.pose.look-sample.pose.eye),simd_normalize(sample.velocity))>0.75,"\(name): slope framing keeps looking forward")
+                rig.fly(on:camera,pose:.init(eye:sample.pose.eye,look:sample.pose.look,fieldOfView:sample.fieldOfView,bank:sample.pose.bank))
+                let axis=camera.simdWorldTransform.columns.2,front = -SIMD3(axis.x,axis.y,axis.z)
+                try check(simd_dot(front,simd_normalize(sample.pose.look-sample.pose.eye))>0.99999,"\(name): the real camera combines terrain pitch with banking")
+                // Check the original ground subject, not the lifted gaze point.
+                let ground=terrain.subject(at:rail.flightDistance(at:distance)),uv=frame.uv(ground.coordinate)
+                let subject=SIMD3(Float((uv.u-0.5)*frame.widthMeters),Float(ground.elevation!),Float((uv.v-0.5)*frame.depthMeters))
+                let delta=subject-sample.pose.eye
+                let groundPitch=atan2(Double(delta.y),Double(simd_length(SIMD2(delta.x,delta.z))))
+                try check(angle-groundPitch<(sample.fieldOfView/2-5) * .pi/180,"\(name): the walking line stays in the lower frame")
+                if distance>1000 && distance<5000 {
+                    if name=="climb" || name=="ripples on climb" {
+                        try check(angle>0.07 && angle<0.16,"\(name): the view looks uphill with the broad terrain grade (\(angle))")
+                        let reduced=quiet.sample(time:quiet.time(at:distance))
+                        try check(pitch(reduced)>0.07 && reduced.pose.bank==0,"\(name): Reduce Motion retains uphill framing without roll")
+                    }
+                    if name=="descent" { try check(abs(angle-atan(-0.12))<0.02,"Descent looks down with the terrain grade (\(angle))") }
+                    if name=="crest" && distance<2200 { try check(angle>0.015,"The rising side of a hill looks uphill") }
+                    if name=="crest" && distance>3800 { try check(angle < -0.06,"The far side of the hill looks downhill") }
+                    if name=="steep hill" && distance>2300 && distance<2700 { try check(angle>0.06,"Early ridge clearance cannot keep the climbing view pointed down") }
+                    if name=="steep hill" && distance>3400 && distance<4000 { try check(angle < -0.15,"A steep descent keeps looking down the hillside") }
+                }
+                if Int(time*60)%29==0 {
+                    let again=flight.sample(time:time)
+                    try check(again.pose.look==sample.pose.look,"\(name): scrubbing does not restart pitch adaptation")
+                }
+            }
+            print("\(name): pitch \(minPitch*180 / .pi)…\(maxPitch*180 / .pi)°; peak pitch rate \(maxRate) rad/s at \(maxRateDistance) m")
+            try check(maxRate<0.18,"\(name): terrain pitch eases smoothly without bobbing (\(maxRate))")
+            if name=="ripples on climb" { try check(maxRate<0.02,"Small terrain ripples cannot drive camera wobble") }
+            if name=="hilly bends" { try check(maxBank>0.05,"Slope-aware framing retains banked turns") }
+        }
+        print("PASS \(checks) adaptive composition, slope framing, zoom continuity and low straight-flight checks")
     }
 }

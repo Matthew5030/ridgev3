@@ -290,6 +290,8 @@ struct WorldFlightPlan {
         // Composition is based on the original prepared motion, never feedback
         // from the widening camera. Dense bends become one held wide shot.
         var framingTargets:[SIMD3<Double>]=[]
+        var terrainGrades:[Double]=[]
+        var terrainInfluence:[Double]=[]
         var framingAmount=Array(repeating:0.0,count:result.count)
         if routeFraming {
             framingTargets=result.indices.map { i in
@@ -300,8 +302,24 @@ struct WorldFlightPlan {
                 let delta=SIMD2(target.x-result[i].eye.x,target.z-result[i].eye.z),shift=max(0,80-simd_dot(delta,forward))
                 target.x+=forward.x*shift;target.z+=forward.y*shift;return target
             }
+            // Hill clearance deliberately rises early. A nearby ground target
+            // would therefore keep looking down even while climbing. Pitch
+            // follows the broad terrain grade, independently of that lift.
+            let ground=Self.smoothTargets(result.map { SIMD3<Double>(0,$0.ground,0) },
+                spacing:spacing,span:80,extendEnds:true)
+            let radius=max(1,Int(ceil(180/spacing)))
+            terrainGrades=result.indices.map { i -> Double in
+                let a=max(0,i-radius),b=min(result.count-1,i+radius)
+                return (ground[b].y-ground[a].y)/max(0.001,stations[b]-stations[a])
+            }
+            // Hold the terrain framing through crests and flat shoulders.
+            // Blending back to a ground stare whenever grade crosses zero
+            // would introduce a large nod at the top/bottom of every hill.
+            terrainInfluence=Self.heldProfile(terrainGrades.map { Self.ease((abs($0)-0.005)/0.025) },
+                spacing:spacing,before:600,ahead:600,smoothing:100)
             if adaptiveFraming && !reduceMotion {
-                let composition=Self.composition(result,targets:framingTargets,spacing:spacing,
+                let compositionTargets=Self.slopeFraming(result,targets:framingTargets,grades:terrainGrades,influence:terrainInfluence,spacing:spacing)
+                let composition=Self.composition(result,targets:compositionTargets,spacing:spacing,
                     speedScale:WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed)
                 framingAmount=composition
                 for i in result.indices {
@@ -331,16 +349,53 @@ struct WorldFlightPlan {
             // down or flip it backwards as the eye reaches the last waypoint.
             let close=Self.smoothTargets(framingTargets,spacing:spacing,span:24)
             let wide=adaptiveFraming ? Self.smoothTargets(framingTargets,spacing:spacing,span:48) : close
-            let targets=result.indices.map { i in
+            let groundTargets=result.indices.map { i in
                 close[i]+(wide[i]-close[i])*(reduceMotion && adaptiveFraming ? 1 : framingAmount[i])
             }
+            // Apply pitch after horizontal composition and from the final eye
+            // height. Focus filtering and pullback cannot tip a climb down.
+            let targets=Self.slopeFraming(result,targets:groundTargets,grades:terrainGrades,influence:terrainInfluence,spacing:spacing)
             var focus=result
             for i in focus.indices { focus[i].eye=targets[i] }
             Self.solveMotion(&focus)
             lookSegments=(0..<(focus.count-1)).map { Segment(focus[$0],focus[$0+1]) }
         }
     }
-    private static func smoothTargets(_ input:[SIMD3<Double>],spacing:Double,span:Double)->[SIMD3<Double>] {
+    /// Keep the route's horizontal bearing while looking with the terrain:
+    /// up on climbs, down on descents. Flat ground retains its accepted focus.
+    /// A broad grade and smooth blend ignore small bumps. The original ground
+    /// subject remains within the lower frame when clearance requires height.
+    private static func ease(_ x:Double)->Double { let t=min(1,max(0,x));return t*t*t*(10+t*(-15+6*t)) }
+    private static func slopeFraming(_ keys:[Key],targets:[SIMD3<Double>],grades:[Double],influence:[Double],spacing:Double)->[SIMD3<Double>] {
+        let pitches=keys.indices.map { i -> SIMD3<Double> in
+            let grade=min(0.8,max(-0.8,grades[i]))
+            let eye=keys[i].eye
+            let target=targets[i]
+            let range=max(1,simd_length(SIMD2(target.x-eye.x,target.z-eye.z)))
+            let groundPitch=atan2(target.y-eye.y,range)
+            let pitch=atan(grade)
+            let visible=groundPitch+(keys[i].fieldOfView/2-8) * .pi/180
+            // Ease into the visibility bound instead of pitching sharply when
+            // a high clearance arc brings the walking line near the frame edge.
+            let softness=2 * Double.pi/180
+            let limited=min(pitch,visible)-softness*log1p(exp(-abs(pitch-visible)/softness))
+            return SIMD3(0,limited,0)
+        }
+        // Smooth the composed pitch as well as the terrain itself: a visibility
+        // limit on a steep shoulder must not introduce a quick camera nod.
+        let smooth=Self.smoothTargets(pitches,spacing:spacing,span:60,extendEnds:true)
+        return keys.indices.map { i in
+            let weight=influence[i]
+            guard weight>0.000001 else { return targets[i] }
+            let eye=keys[i].eye
+            var target=targets[i]
+            let range=max(1,simd_length(SIMD2(target.x-eye.x,target.z-eye.z)))
+            let original=atan2(target.y-eye.y,range)
+            target.y=eye.y+range*tan(original+(smooth[i].y-original)*weight)
+            return target
+        }
+    }
+    private static func smoothTargets(_ input:[SIMD3<Double>],spacing:Double,span:Double,extendEnds:Bool=false)->[SIMD3<Double>] {
         var targets=input
         let radius=max(1,Int(ceil(span/spacing))),window=Double(radius*2+1)
         for _ in 0..<4 {
@@ -348,7 +403,15 @@ struct WorldFlightPlan {
             for target in targets { prefix.append(prefix.last!+target) }
             targets=targets.indices.map { i in
                 let a=max(0,i-radius),b=min(targets.count-1,i+radius)
-                let padding=targets[0]*Double(max(0,radius-i))+targets.last!*Double(max(0,i+radius-targets.count+1))
+                let left=Double(max(0,radius-i)),right=Double(max(0,i+radius-targets.count+1))
+                var padding=targets[0]*left+targets.last!*right
+                if extendEnds {
+                    // Estimate endpoint grade over the filter's full span;
+                    // a tiny bump at the first/last sample is not a hillside.
+                    let band=min(radius,targets.count-1),step=Double(band)
+                    padding-=(targets[band]-targets[0])*(left*(left+1)/(2*step))
+                    padding+=(targets[targets.count-1]-targets[targets.count-1-band])*(right*(right+1)/(2*step))
+                }
                 return (prefix[b+1]-prefix[a]+padding)/window
             }
         }
@@ -385,9 +448,13 @@ struct WorldFlightPlan {
             let bearing=simd_length_squared(view)>0.001 ? acos(min(1,max(-1,simd_dot(simd_normalize(view),headings[i])))) : 0
             demand[i]=min(1,max(0,max((rate-0.15)/0.75,(bearing-0.26)/0.75)))
         }
-        let before=max(1,Int(ceil(160/spacing))),ahead=max(1,Int(ceil(280/spacing)))
+        return Self.heldProfile(demand,spacing:spacing,before:160,ahead:280,smoothing:80)
+    }
+    private static func heldProfile(_ demand:[Double],spacing:Double,before:Double,ahead:Double,smoothing:Double)->[Double] {
+        let n=demand.count
+        let before=max(1,Int(ceil(before/spacing))),ahead=max(1,Int(ceil(ahead/spacing)))
         var queue=Array(repeating:0,count:n),head=0,tail=0,added=0,profile=demand
-        for i in keys.indices {
+        for i in demand.indices {
             let end=min(n-1,i+ahead)
             while added<=end {
                 while tail>head && demand[queue[tail-1]]<=demand[added] { tail-=1 }
@@ -396,11 +463,11 @@ struct WorldFlightPlan {
             while tail>head && queue[head]<i-before { head+=1 }
             profile[i]=demand[queue[head]]
         }
-        let radius=max(1,Int(ceil(80/spacing))),window=Double(radius*2+1)
+        let radius=max(1,Int(ceil(smoothing/spacing))),window=Double(radius*2+1)
         for _ in 0..<4 {
             var prefix=Array(repeating:0.0,count:n+1)
-            for i in keys.indices { prefix[i+1]=prefix[i]+profile[i] }
-            profile=keys.indices.map { i in
+            for i in demand.indices { prefix[i+1]=prefix[i]+profile[i] }
+            profile=demand.indices.map { i in
                 let a=max(0,i-radius),b=min(n-1,i+radius)
                 let pad=Double(max(0,radius-i))*profile[0]+Double(max(0,i+radius-n+1))*profile[n-1]
                 return min(1,max(0,(prefix[b+1]-prefix[a]+pad)/window))
