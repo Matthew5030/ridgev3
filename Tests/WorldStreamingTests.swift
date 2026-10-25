@@ -126,6 +126,14 @@ import ImageIO
         let (flightHeights,_)=try await preflightReader.flightElevations(flightTiles.map { $0.mesh.bounds.center },catalog:catalog,root:root,saved:flightTiles.map { $0.mesh.bounds })
         try check(flightTiles.count==3,"Flight preflight fixture crosses three storage regions")
         for i in expected.indices { try check(abs((flightHeights[i] ?? -9999)-expected[i])<0.001,"Whole-route preflight reads exact cached fine heights across source boundaries") }
+        let routeStations=flightTiles.enumerated().map { WorldFlightDetailStation(distance:Double($0.offset)*600,points:[$0.element.mesh.bounds.center]) }
+        let routeIndex=try WorldFlightDetailIndex(stations:routeStations,tiles:next.tiles,margin:0)
+        let routeRequests=WorldWorkingSet.flightRequests(source:next,priorities:routeIndex.priorities(at:0),center:point)
+        for tile in flightTiles {
+            guard let request=routeRequests.first(where:{ $0.id==tile.id }) else { throw RidgeError.message("Route tile omitted at a storage boundary") }
+            let prepared=try await second.prepare(tile,request:request,sourceBounds:next.frame,previous:nextPages[tile.id])
+            try check(request.fine && prepared.mesh != nil && prepared.geometry != nil && prepared.image.width==1032,"Route-first preparation supplies fine geometry and textures across storage regions before travel")
+        }
         let byID = Dictionary(uniqueKeysWithValues:nextGraph.nodes.map { ($0.id,$0) })
         let edge = nextGraph.edges.first { edge in
             guard ["footway","path","track","bridleway","steps"].contains(edge.kind), ["","unknown","yes","designated","permissive","public","official"].contains(edge.access), let a=byID[edge.from],let b=byID[edge.to] else { return false }

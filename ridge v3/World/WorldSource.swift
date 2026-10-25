@@ -111,11 +111,69 @@ struct WorldBackdrop: @unchecked Sendable {
     var meshes: [String: AdaptiveMesh]
 }
 
+/// A preview's known walking line and smoothed flight corridor. Distances are
+/// ordered route progress, so overlapping switchbacks keep their later visits.
+struct WorldFlightDetailStation: Sendable {
+    var distance:Double
+    var points:[GeoPoint]
+}
+struct WorldFlightDetailIndex: Sendable {
+    private var visits:[String:[Double]]=[:]
+    private var coreVisits:[String:[Double]]=[:]
+    init(stations:[WorldFlightDetailStation],tiles:[WorldTile],margin:Double=200) throws {
+        let index=WorldTileIndex(tiles:tiles)
+        for (i,station) in stations.enumerated() {
+            if i%64==0 { try Task.checkCancellation() }
+            var selected=Set<String>()
+            var core=Set<String>()
+            for point in station.points {
+                if let tile=index.tile(at:point) { core.insert(tile.id) }
+                for tile in index.tiles(near:point,radius:margin) { selected.insert(tile.id) }
+            }
+            for id in selected { visits[id,default:[]].append(station.distance) }
+            for id in core { coreVisits[id,default:[]].append(station.distance) }
+        }
+    }
+    func priorities(at distance:Double)->[String:Double] {
+        func priority(_ distances:[Double])->Double {
+            var a=0,b=distances.count
+            while a<b { let m=(a+b)/2;if distances[m]<distance-100 { a=m+1 } else { b=m } }
+            // Keep short routes resident when they fit. On longer routes the
+            // next encounter wins over passed scenery, including on a return.
+            return a<distances.count ? max(0,distances[a]-distance) : 1e12+distance-distances.last!
+        }
+        var result=visits.mapValues { priority($0)+800 }
+        for (id,distances) in coreVisits { result[id]=min(result[id] ?? .infinity,priority(distances)) }
+        return result
+    }
+}
+
 /// Bounded residency with a retention margin, independent of download size.
 enum WorldWorkingSet {
     static let maximumTextures = 256
     static let meshBudget: Int64 = ProcessInfo.processInfo.physicalMemory >= 6 * 1024 * 1024 * 1024 ? 192 * 1024 * 1024 : 96 * 1024 * 1024
     static let textureBudget: Int64 = 192 * 1024 * 1024
+    /// Route tiles, in encounter order, consume the fine budget before scenery
+    /// beside the camera. A short route can stay prepared in its entirety; a
+    /// long one keeps a bounded forward buffer instead of filling GPU memory.
+    static func flightRequests(source:WorldSource,priorities:[String:Double],center:GeoPoint,meshLimit:Int64=meshBudget)->[WorldTileRequest] {
+        let ranges=Dictionary(uniqueKeysWithValues:source.tiles.map { ($0.id,$0.mesh.bounds.center.distance(to:center)) })
+        let sorted=source.tiles.sorted { a,b in
+            let x=priorities[a.id],y=priorities[b.id]
+            if let x,let y { return x == y ? a.id<b.id : x<y }
+            if x != nil || y != nil { return x != nil }
+            let nearA=ranges[a.id]!,nearB=ranges[b.id]!
+            return nearA == nearB ? a.id<b.id : nearA<nearB
+        }
+        var memory:Int64=0,rank=0
+        return sorted.prefix(maximumTextures).map { tile in
+            guard priorities[tile.id] != nil else { return .init(id:tile.id,pixels:128,fine:false) }
+            defer { rank+=1 }
+            let fine=rank<24 && memory+tile.mesh.residentBytes<=meshLimit
+            if fine { memory+=tile.mesh.residentBytes }
+            return .init(id:tile.id,pixels:rank<24 ? 1024 : rank<48 ? 512 : 128,fine:fine)
+        }
+    }
     static func requests(source: WorldSource, center: GeoPoint, distance: Double, previous: [WorldTileRequest] = [], meshLimit: Int64 = meshBudget, closePreview: Bool = false) -> [WorldTileRequest] {
         let old = Dictionary(uniqueKeysWithValues: previous.map { ($0.id,$0) })
         let ranges = Dictionary(uniqueKeysWithValues: source.tiles.map { ($0.id,$0.mesh.bounds.center.distance(to:center)) })
@@ -646,5 +704,20 @@ struct WorldTileIndex {
     func tile(at point: GeoPoint) -> WorldTile? {
         guard point.isValid else { return nil }
         return cells[Self.cell(point.latitude)*100_000+Self.cell(point.longitude)]?.first { $0.mesh.bounds.contains(point) }
+    }
+    func tiles(near point:GeoPoint,radius:Double)->[WorldTile] {
+        guard point.isValid else { return [] }
+        let dy=max(0,radius)/111195,dx=dy/max(0.01,cos(point.latitude * .pi/180))
+        var result:[WorldTile]=[],seen=Set<String>()
+        for y in Self.cell(point.latitude-dy)...Self.cell(point.latitude+dy) {
+            for x in Self.cell(point.longitude-dx)...Self.cell(point.longitude+dx) {
+                for tile in cells[y*100_000+x] ?? [] where seen.insert(tile.id).inserted {
+                    let b=tile.mesh.bounds
+                    let closest=GeoPoint(latitude:min(b.maxLatitude,max(b.minLatitude,point.latitude)),longitude:min(b.maxLongitude,max(b.minLongitude,point.longitude)))
+                    if point.distance(to:closest)<=max(0,radius) { result.append(tile) }
+                }
+            }
+        }
+        return result
     }
 }

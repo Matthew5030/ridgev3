@@ -35,3 +35,5 @@ jobs:
         run: sh Tools/test_world_wingsuit_flight.sh
       - name: Anticipatory pullback and calm route framing
         run: sh Tools/test_world_flight_composition.sh
+      - name: Prepare saved terrain along the planned route
+        run: sh Tools/test_world_flight_detail.sh
