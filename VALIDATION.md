@@ -665,3 +665,5 @@ Physical-device acceptance remains for the system sheet, Dynamic Type, iPad spli
 ## 25 October 2026 — combined iPhone test build
 
 Integrated the compact route UI and preview-camera entry from PR #2 onto the accepted download/gesture and during-pinch terrain-entry fixes from PRs #3 and #4. Conflict resolution retains the removed blocking preparation panels and the earlier 8 km handoff. The bundled terrain build guard remains enabled. Applied the existing explicit-SIMD polynomial compiler compatibility fix from the UI branch. This branch is for testing the combined experience; no GitHub PR has been merged.
+
+The combined phone build passes 10,224 FPV entrance/handoff checks, 259 route playback/profile/state checks and 3,318 cinematic camera ownership/free-look checks. Its signed Release build succeeded (`/tmp/ridge-phone-ui-build.log`). The existing 8 km handoff and bundled-context guard are retained. Physical iPhone installation is in progress; these native test results do not establish hands-on layout or motion acceptance.
