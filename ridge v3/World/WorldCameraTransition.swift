@@ -2,9 +2,9 @@ import Foundation
 
 enum WorldCameraTransition {
     static let minimumAtlasSpan = 3500.0
-    static let entrySpanLimit = 5000.0
+    static let entrySpanLimit = 8000.0
     static let preparationSpanLimit = 24000.0
-    static let overheadSpanLimit = 8000.0
+    static let overheadSpanLimit = 12000.0
     static let entryDuration = 1.2
     static let exitDuration = 0.95
     static let exitSpan = 6000.0

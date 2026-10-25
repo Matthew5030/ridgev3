@@ -52,7 +52,9 @@ import simd
         check(WorldCameraTransition.minimumAtlasSpan<WorldCameraTransition.entrySpanLimit)
         check(WorldCameraTransition.entrySpanLimit<WorldCameraTransition.preparationSpanLimit)
         check(WorldCameraTransition.minimumAtlasSpan<=3500)
-        check(WorldCameraTransition.entrySpanLimit<=5000)
+        check(WorldCameraTransition.entrySpanLimit<=8000)
+        check(WorldCameraTransition.entrySpanLimit<WorldCameraTransition.overheadSpanLimit)
+        check(WorldCameraTransition.overheadSpanLimit<WorldCameraTransition.preparationSpanLimit)
         check(WorldCameraTransition.entryDuration<=1.2)
         // Regression: a textured centre or four corners cannot expose a circular
         // island/holes against the coarse horizon. Certify every visible strip.

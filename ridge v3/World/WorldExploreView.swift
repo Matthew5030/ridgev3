@@ -27,6 +27,7 @@ struct WorldExploreView: View {
     @State private var terrainEntryID:UUID?
     @State private var terrainEntryTask:Task<Void,Never>?
     @State private var terrainEntryStartedAt:Date?
+    @State private var entryRenderedBounds:GeoBounds?
     @State private var overheadSurfaceReady=false
     @State private var overheadRenderedBounds:[GeoBounds]=[]
     @State private var terrainEntrySpan=WorldCameraTransition.minimumAtlasSpan
@@ -66,7 +67,7 @@ struct WorldExploreView: View {
             }
         }
         .task(id:connectionID) {
-            cancelTerrainEntry();exploring=false;didFitRegions=false
+            cancelTerrainEntry();entryRenderedBounds=nil;exploring=false;didFitRegions=false
             if verifyingPreinstalledAtlas {
                 didFitRegions=true;exploring=true
                 let point=GeoPoint(latitude:53.0685,longitude:-4.0763)
@@ -176,7 +177,7 @@ struct WorldExploreView: View {
                 WorldScene(model: world, route: store.activeRoute?.points ?? [], segments: store.activeRoute?.segments.map(\.points) ?? [], waypoints: store.activeRoute?.waypoints ?? [], command: store.camera,
                     onTap: tapped, onAtlas: leaveWorld, onEntryStarted: { date in
                         if terrainEntryID != nil { terrainEntryStartedAt=date }
-                    }, overheadViewport:overheadViewport,onSurfaceReady:{ bounds in overheadRenderedBounds=bounds;overheadSurfaceReady = !bounds.isEmpty },atlasRequest:atlasRequest, tour:tour, tourConfiguration:tour.configuration).ignoresSafeArea(edges: .bottom).allowsHitTesting(world.in3D).transition(.identity)
+                    }, overheadViewport:overheadViewport,onSurfaceReady:{ bounds in overheadRenderedBounds=bounds;overheadSurfaceReady = !bounds.isEmpty },onEntrySurfaceReady:{ bounds in entryRenderedBounds=bounds },atlasRequest:atlasRequest, tour:tour, tourConfiguration:tour.configuration).ignoresSafeArea(edges: .bottom).allowsHitTesting(world.in3D).transition(.identity)
             }
             // Retain the actual atlas while SceneKit presents its matching
             // top-down first frame, then dissolve into the descending camera.
@@ -235,8 +236,6 @@ struct WorldExploreView: View {
                                 Text((TerrainGestureStyle(rawValue:gestureStyle) ?? .moveWithOneFinger).shortGuide)
                                     .font(.caption).fixedSize(horizontal:false,vertical:true).frame(maxWidth:220)
                             }
-                            if world.streaming { ProgressView("Preparing saved terrain").font(.caption) }
-                            if world.pending > 0 { Label("Preparing detail",systemImage:"mountain.2").font(.caption).foregroundStyle(RidgeTheme.muted) }
                         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                         Spacer()
                         VStack(spacing:8) {
@@ -268,7 +267,6 @@ struct WorldExploreView: View {
                     }.scrollBounceBehavior(.basedOnSize).frame(maxWidth:500,maxHeight:min(380,mapSize.height*0.46))
                         .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                 }
-                if !world.in3D,let phase=world.downloadPhase, (visibleBounds?.depthMeters ?? 0)<WorldCameraTransition.entrySpanLimit { preparationCard(phase) }
                 if let message = world.message {
                     HStack { Text(message).font(.caption);Spacer();Button("Retry") { if world.catalog == nil { retryConnection() } else { world.retry() } } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
@@ -303,15 +301,6 @@ struct WorldExploreView: View {
         .overlay {
             if world.in3D && tour.isPresented && tour.isEntering {
                 WorldFlightEntryView(tour:tour).transition(.opacity)
-            }
-        }
-        .overlay(alignment:.bottom) {
-            if terrainEntryID != nil,!world.in3D {
-                HStack(spacing:10) {
-                    ProgressView().controlSize(.small)
-                    Text("Opening saved terrain…").font(.caption)
-                    Button("Stay on map") { exploring=false;cancelTerrainEntry() }.font(.caption.weight(.semibold))
-                }.padding(12).background(.regularMaterial,in:Capsule()).padding(.bottom,68)
             }
         }
     }
@@ -409,12 +398,14 @@ struct WorldExploreView: View {
         if let overlay=WorldRegionMapOverlay.at(point,in:regionMaps) { selectRegion(overlay.pack);explorePoint=point }
         if world.in3D { atlasRequest=UUID() }
     }
-    private func openRegion(_ pack:WorldRegionPack) {
+    private func savedPoint(in pack:WorldRegionPack) -> GeoPoint? {
         let overlay=(regionMaps+parkMaps).first { $0.id==pack.id }
-        let point=explorePoint.flatMap { world.hasCoverage($0) ? $0 : nil } ?? overlay?.savedPoint
+        return explorePoint.flatMap { world.hasCoverage($0) ? $0 : nil } ?? overlay?.savedPoint
             ?? world.offlineBounds.filter { tile in pack.cells.contains { $0.bounds.contains(tile.center) } }
                 .min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }?.center
-        guard let point else { return }
+    }
+    private func openRegion(_ pack:WorldRegionPack) {
+        guard let point=savedPoint(in:pack) else { return }
         world.cancelDownload();openPlace(point)
     }
     /// A saved route's destination must survive tab recreation and asynchronous
@@ -446,6 +437,7 @@ struct WorldExploreView: View {
         cancelTerrainEntry();exploring=false;atlasGestureActive=false;explorePoint=nil;world.cancelRegionLoad()
         query="";searchFocused=false
         if world.downloadRegion?.id != pack.id { world.offerRegionDownload(pack) }
+        if let point=savedPoint(in:pack) { world.prepareTerrainEntry(at:point) }
         let bounds=pack.bounds
         let span=max(bounds.depthMeters,bounds.widthMeters/Double(max(0.3,mapSize.width/max(1,mapSize.height))))*1.8
         // Leave room below the selected landscape for the inline download panel.
@@ -569,7 +561,7 @@ struct WorldExploreView: View {
         visibleBounds=bounds
         guard !world.in3D,!world.isSavingOffline else { return }
         exploring=true;atlasGestureActive = !gestureEnded
-        if atlasGestureActive || bounds.depthMeters>=WorldCameraTransition.entrySpanLimit { cancelTerrainEntry() }
+        if bounds.depthMeters>=WorldCameraTransition.entrySpanLimit { cancelTerrainEntry() }
         // A selected region must not trap a pinch zoom behind its Explore button.
         // browse() still checks saved coverage before preparing any terrain.
         if bounds.depthMeters < WorldCameraTransition.preparationSpanLimit,world.downloadRegion != nil {
@@ -586,9 +578,9 @@ struct WorldExploreView: View {
         if world.canEnterTerrain(at:bounds.center) {
             world.update(center:bounds.center,distance:WorldCameraTransition.entry(span:bounds.depthMeters,progress:1).distance,renderingSurface:true)
         }
-        // Warm saved terrain while the atlas is still zooming. Keep the active
-        // gesture on its original view; fly into the prepared scene on release.
-        if bounds.depthMeters >= WorldCameraTransition.entrySpanLimit || atlasGestureActive {
+        // Warm terrain during the approach, then hand off inside the pinch.
+        // Waiting for release makes the zoom hit a wall before it can glide.
+        if bounds.depthMeters >= WorldCameraTransition.entrySpanLimit {
             if world.hasCoverage(bounds.center) { world.browse(bounds.center) }
             return
         }
@@ -605,11 +597,11 @@ struct WorldExploreView: View {
         terrainEntryTask=Task { @MainActor in
             do {
                 while !Task.isCancelled,terrainEntryID==id {
-                    guard let bounds=visibleBounds,!world.in3D,exploring,!atlasGestureActive,
+                    guard let bounds=visibleBounds,!world.in3D,exploring,
                           bounds.depthMeters<WorldCameraTransition.entrySpanLimit,world.hasCoverage(bounds.center),
                           world.downloadRegion == nil,!world.isSavingOffline else { cancelTerrainEntry();return }
-                    if world.canEnterTerrain(at:bounds.center),overheadSurfaceReady,
-                       WorldMapSurface.coversDownloaded(bounds,downloaded:world.offlineBounds,rendered:overheadRenderedBounds) {
+                    if world.canEnterTerrain(at:bounds.center),let rendered=entryRenderedBounds,
+                       WorldMapSurface.covers(bounds,tiles:[rendered]) {
                         terrainEntrySpan=bounds.depthMeters;terrainEntryStartedAt=nil
                         world.center=bounds.center;world.cameraPose=nil;world.entrySpan=bounds.depthMeters
                         world.distance=max(1800,bounds.depthMeters);atlasRequest=nil;world.in3D=true
@@ -621,7 +613,6 @@ struct WorldExploreView: View {
                         terrainEntryTask=nil;terrainEntryID=nil;terrainEntryStartedAt=nil
                         return
                     }
-                    if world.message != nil { cancelTerrainEntry();return }
                     try await Task.sleep(for:.milliseconds(60))
                 }
             } catch { /* Cancellation keeps the current atlas or terrain view. */ }
@@ -629,6 +620,7 @@ struct WorldExploreView: View {
     }
     private func leaveWorld(_ bounds:GeoBounds) {
         cancelTerrainEntry()
+        entryRenderedBounds=nil
         focus=AtlasFocus(point:bounds.center,scale:1,bounds:bounds,exactViewport:true)
         world.suspend();atlasRequest=nil;world.in3D=false
         exploring=false;atlasGestureActive=false
