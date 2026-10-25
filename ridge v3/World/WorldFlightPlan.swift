@@ -6,6 +6,7 @@ import simd
 struct WorldFlightTerrain {
     let heights:[Float]
     let available:[Bool]
+    private let clearanceHeights:[Float]
     let places:[MapPlace]
     private let origin:GeoPoint
     private let scale:Double
@@ -15,7 +16,20 @@ struct WorldFlightTerrain {
         let step=max(4,length/40000)
         var result=Array(stride(from:0.0,to:length,by:step));result.append(length);return result
     }
-    init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,heights:[Float?],places:[MapPlace]=[]) {
+    /// Five lanes cover the steering corridor. They share a single cache-only
+    /// terrain read; no geometry or height queries run during playback.
+    static func clearancePoints(corridor:WorldFlightCorridor)->[GeoPoint] {
+        distances(length:corridor.length).flatMap { distance -> [GeoPoint] in
+            let rail=corridor.sample(flightDistance:distance)
+            let right=SIMD2(-rail.direction.y,rail.direction.x)
+            return [-1.0,-0.5,0,0.5,1].map { lane in
+                let offset=right*(lane*WorldFlightGlide.lateralLimit)
+                return GeoPoint(latitude:rail.point.latitude-offset.y/111195,
+                                longitude:rail.point.longitude+offset.x/(111195*max(0.01,cos(rail.point.latitude * .pi/180))))
+            }
+        }
+    }
+    init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,heights:[Float?],places:[MapPlace]=[],clearanceHeights:[Float?]? = nil) {
         let distances=Self.distances(length:corridor.length)
         let samples=distances.map { corridor.sample(flightDistance:$0) }
         origin=samples[0].point;scale=max(0.01,cos(origin.latitude * .pi/180))
@@ -23,11 +37,12 @@ struct WorldFlightTerrain {
         points=samples.map { SIMD2(($0.point.longitude-origin.longitude)*111195*scale,(origin.latitude-$0.point.latitude)*111195) }
         let preparedHeights=samples.indices.map { i in heights[i] ?? Float(path.sample(at:samples[i].routeDistance).elevation ?? 0) }
         self.heights=preparedHeights
+        self.clearanceHeights=preparedHeights.indices.map { max(preparedHeights[$0],clearanceHeights?[$0] ?? preparedHeights[$0]) }
         available=heights.map { $0 != nil };self.places=places.sorted { $0.id<$1.id }
         for i in points.indices { cells[Self.cell(points[i]),default:[]].append(i) }
     }
     private static func cell(_ p:SIMD2<Double>)->SIMD2<Int> { SIMD2(Int(floor(p.x/24)),Int(floor(p.y/24))) }
-    func elevation(_ p:GeoPoint)->Float {
+    private func nearest(_ p:GeoPoint)->Int? {
         let point=SIMD2((p.longitude-origin.longitude)*111195*scale,(origin.latitude-p.latitude)*111195),key=Self.cell(point)
         var error=Double.infinity,best:Int?
         for y in -1...1 { for x in -1...1 {
@@ -35,14 +50,16 @@ struct WorldFlightTerrain {
                 let delta=simd_length_squared(point-points[i]);if delta<error { error=delta;best=i }
             }
         } }
-        return best.map { heights[$0] } ?? 0
+        return best
     }
+    func elevation(_ p:GeoPoint)->Float { nearest(p).map { heights[$0] } ?? 0 }
+    func clearanceElevation(_ p:GeoPoint)->Float { nearest(p).map { clearanceHeights[$0] } ?? 0 }
 }
 
 /// Immutable camera choreography, prepared before playback. This includes the
 /// complete height and speed timeline, with heading and bank derived from its
 /// velocity and acceleration. At runtime
-/// the only flight operation is interpolation; finger-look is a separate offset.
+/// playback interpolates the rail; steering adds a continuous glide within its corridor.
 struct WorldFlightPlan {
     struct Sample {
         var pose:WorldRouteTourCamera.Pose
@@ -52,10 +69,22 @@ struct WorldFlightPlan {
         var heightAboveGround:Double
         var cameraPoint:GeoPoint? = nil
     }
+    /// Convert both eye and velocity together when streaming changes the scene
+    /// origin. Steering state stays in the immutable plan frame.
+    static func converted(_ sample:Sample,from frame:GeoBounds,to output:GeoBounds)->Sample {
+        guard frame != output else { return sample }
+        func point(_ value:SIMD3<Float>)->SIMD3<Float> {
+            let geo=frame.point(u:Double(value.x)/frame.widthMeters+0.5,v:Double(value.z)/frame.depthMeters+0.5),uv=output.uv(geo)
+            return SIMD3(Float((uv.u-0.5)*output.widthMeters),value.y,Float((uv.v-0.5)*output.depthMeters))
+        }
+        var result=sample
+        result.pose.eye=point(sample.pose.eye);result.pose.look=point(sample.pose.look)
+        result.velocity=point(sample.pose.eye+sample.velocity)-result.pose.eye
+        return result
+    }
     private struct Key {
         var time:Double;var route:Double;var eye:SIMD3<Double>;var ground:Double;var overview:Double
         var bank=0.0
-        var pitch=0.0
         var velocity:SIMD3<Double> = .zero
         var acceleration:SIMD3<Double> = .zero
     }
@@ -88,7 +117,7 @@ struct WorldFlightPlan {
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
         var result:[Key]=[],time=0.0,lastTravel=0.0,lastSpeed=0.0
-        var minimumHeights:[Float]=[]
+        var minimumHeights:[Double]=[]
         let desiredSpacing=max(corridor.length/40000,min(3,max(0.5,cruiseSpeed*0.12)))
         let intervals=max(2,Int(ceil(corridor.length/desiredSpacing))),spacing=corridor.length/Double(intervals)
         let stations=(0...intervals).map { Double($0)*spacing }
@@ -105,23 +134,21 @@ struct WorldFlightPlan {
             let ground=terrain.elevation(rail.point)
             let uv=frame.uv(point)
             let eye=SIMD3((uv.u-0.5)*frame.widthMeters,Double(ground),(uv.v-0.5)*frame.depthMeters)
-            minimumHeights.append(ground+Float(self.clearance+max(0,cornerLift)*rail.overview))
+            minimumHeights.append(Double(terrain.clearanceElevation(rail.point))+self.clearance+max(0,cornerLift)*rail.overview)
             result.append(Key(time:time,route:rail.routeDistance,eye:eye,ground:Double(ground),overview:rail.overview))
             lastTravel=travel;lastSpeed=speed
         }
-        // FPV anticipates a busy switchback cluster with a broad, precomputed
-        // lift while cutting its small bends; ordinary straights stay low.
-        // Upper parabolic envelope: anticipate each hill locally while
-        // bridging small ripples. A linear-time distance transform avoids
-        // either copying the ground samples or lifting the entire journey.
-        let nHeights=minimumHeights.count,penalty=spacing*spacing/(2*120)
-        var support=Array(repeating:0,count:nHeights),boundary=Array(repeating:Double.infinity,count:nHeights+1),k=0
+        // Anticipate hills with a broad upper parabolic envelope. Its 1.4 km
+        // vertical radius bridges short hollows without lifting the whole route
+        // to the highest summit. This distance transform is linear in key count.
+        let count=minimumHeights.count,penalty=spacing*spacing/(2*1400)
+        var support=Array(repeating:0,count:count),boundary=Array(repeating:Double.infinity,count:count+1),k=0
         boundary[0] = -.infinity
-        for q in 1..<nHeights {
+        for q in 1..<count {
             var split=0.0
             while true {
                 let j=support[k]
-                split=(Double(minimumHeights[j]-minimumHeights[q])+penalty*(Double(q*q)-Double(j*j)))/(2*penalty*Double(q-j))
+                split=(minimumHeights[j]-minimumHeights[q]+penalty*(Double(q*q)-Double(j*j)))/(2*penalty*Double(q-j))
                 if split>boundary[k] || k==0 { break };k-=1
             }
             k+=1;support[k]=q;boundary[k]=split;boundary[k+1] = .infinity
@@ -129,24 +156,46 @@ struct WorldFlightPlan {
         var heights=minimumHeights;k=0
         for i in heights.indices {
             while boundary[k+1]<Double(i) { k+=1 }
-            let delta=Double(i-support[k]);heights[i]=minimumHeights[support[k]]-Float(penalty*delta*delta)
+            let delta=Double(i-support[k]);heights[i]=minimumHeights[support[k]]-penalty*delta*delta
         }
-        for _ in 0..<2 {
-            for i in 1..<heights.count { let w=Float(1-exp(-(stations[i]-stations[i-1])/35));heights[i]=heights[i-1]+(heights[i]-heights[i-1])*w }
-            for i in stride(from:heights.count-2,through:0,by:-1) { let w=Float(1-exp(-(stations[i+1]-stations[i])/35));heights[i]=heights[i+1]+(heights[i]-heights[i+1])*w }
-        }
-        // Clearance corrections belong to the hill that needs them; a single
-        // summit must not lift the entire valley to cruising altitude.
-        let deficits=zip(minimumHeights,heights).map { max(0,$0-$1) }
-        var corrections=Array(repeating:Float(0),count:heights.count)
-        let reach=max(1,Int(ceil(90/spacing)))
-        for j in deficits.indices where deficits[j]>0 {
-            for i in max(0,j-reach)...min(deficits.count-1,j+reach) {
-                let d=(stations[i]-stations[j])/90,w=Float(max(0,1-d*d))
-                corrections[i]=max(corrections[i],deficits[j]*w*w*w)
+        // Symmetric filtering removes the envelope's support changes. Double
+        // precision matters: rounding heights to Float before solving the motion
+        // spline amplifies tiny height errors into acceleration and pitch noise.
+        // Four bounded box convolutions form a C2 smoothing kernel. Finite
+        // support avoids the long filter tails that can lift distant valleys.
+        let radius=max(1,Int(ceil(120/spacing))),window=Double(radius*2+1)
+        for _ in 0..<4 {
+            try Task.checkCancellation()
+            var sums=Array(repeating:0.0,count:count+1)
+            for i in heights.indices { sums[i+1]=sums[i]+heights[i] }
+            heights=heights.indices.map { i in
+                let a=max(0,i-radius),b=min(count-1,i+radius)
+                let padding=Double(max(0,radius-i))*heights[0]+Double(max(0,i+radius-count+1))*heights[count-1]
+                return (sums[b+1]-sums[a]+padding)/window
             }
         }
-        for i in result.indices { result[i].eye.y=Double(heights[i]+corrections[i]) }
+        // Filtering can shave a summit's clearance. Restore only that deficit
+        // with a conservative C2 spline, not local max bumps with sharp joins.
+        // Every control contributing to a band includes that band's maximum;
+        // positive spline weights guarantee the correction clears its samples.
+        let deficits=zip(minimumHeights,heights).map { max(0,$0-$1) }
+        let bandWidth=max(200,spacing),bandCount=max(1,Int(ceil(corridor.length/bandWidth)))
+        var peaks=Array(repeating:0.0,count:bandCount)
+        for i in stations.indices {
+            let band=min(bandCount-1,Int(stations[i]/bandWidth))
+            peaks[band]=max(peaks[band],deficits[i])
+        }
+        func control(_ index:Int)->Double {
+            (-2...1).map { peaks[min(bandCount-1,max(0,index+$0))] }.max()!
+        }
+        for i in result.indices {
+            let x=stations[i]/bandWidth,band=Int(floor(x)),t=x-Double(band),u=1-t
+            let correction=(control(band-1)*u*u*u
+                + control(band)*(3*t*t*t-6*t*t+4)
+                + control(band+1)*(-3*t*t*t+3*t*t+3*t+1)
+                + control(band+2)*t*t*t)/6
+            result[i].eye.y=heights[i]+correction
+        }
         if let change=speedChangeAt,let initialAltitude {
             let travel=corridor.flightDistance(at:change)
             let index=min(result.count-2,max(0,Int(travel/spacing)))
@@ -178,14 +227,6 @@ struct WorldFlightPlan {
         // zero-bank knot followed immediately by a full bank.
         Self.solveMotion(&result)
         let n=result.count
-        // Keep yaw locked to actual movement, but stabilize the gaze over
-        // broad terrain slopes. Centimetre-scale clearance changes must not
-        // nod the viewer's head at every mesh sample.
-        let gazeSpan=max(1,Int(ceil(125/spacing)))
-        for i in result.indices {
-            let a=max(0,i-gazeSpan),b=min(n-1,i+gazeSpan)
-            result[i].pitch=min(0.28,max(-0.32,atan2(result[b].eye.y-result[a].eye.y,stations[b]-stations[a])))
-        }
         // Roll anticipates the same trajectory over a short time window.
         // Smooth roll only: heading stays exactly tangent to forward motion.
         var banks=result.map { key -> Double in
@@ -246,9 +287,7 @@ struct WorldFlightPlan {
             }
             let next=convert(eye+velocity);eye=convert(eye);velocity=next-eye
         }
-        let horizontal=SIMD2(velocity.x,velocity.z),flat=simd_length_squared(horizontal)>0.00001 ? simd_normalize(horizontal) : SIMD2<Float>(0,-1)
-        let pitch=Float(left.pitch+(right.pitch-left.pitch)*Double(t))
-        let direction=SIMD3(flat.x*cos(pitch),sin(pitch),flat.y*cos(pitch))
+        let direction=simd_length_squared(velocity)>0.00001 ? simd_normalize(velocity) : SIMD3<Float>(0,0,-1)
         let ground=left.ground+(right.ground-left.ground)*Double(t)
         return Sample(pose:.init(eye:eye,look:eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
                       speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint)

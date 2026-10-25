@@ -85,7 +85,7 @@ import simd
         let heights=stations.map { Float?(100+200*Float(exp(-pow(($0-1200)/200,2)))) }
         let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:heights)
         let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:15)
-        try check(plan.sample(time:0).heightAboveGround<17 && plan.sample(time:plan.duration).heightAboveGround<17,"A summit cannot lift the entire valley above the fixed low glide")
+        try check(plan.sample(time:0).heightAboveGround<17 && plan.sample(time:plan.duration).heightAboveGround<17,"A summit cannot lift the entire valley above the fixed low glide (start \(plan.sample(time:0).heightAboveGround), end \(plan.sample(time:plan.duration).heightAboveGround))")
         for time in stride(from:0.0,through:plan.duration,by:0.1) { try check(plan.sample(time:time).heightAboveGround>14.0,"Local hill anticipation preserves clearance") }
         print("PASS \(checks) FPV route tracking, low clearance and responsive speed checks")
     }

@@ -29,3 +29,7 @@ jobs:
         run: sh Tools/test_world_flight_arrival.sh
       - name: Camera ownership and free look
         run: sh Tools/test_world_cinematic_camera.sh
+      - name: Smooth terrain flight and forward steering
+        run: sh Tools/test_world_flight_glide.sh
+      - name: Switchbacks, clearance and responsive speed
+        run: sh Tools/test_world_wingsuit_flight.sh

@@ -40,7 +40,7 @@ struct WorldRouteTourControls: View {
                 Spacer()
                 Text(tour.isPlaying ? "Preview" : "Paused")
             }.font(.caption).foregroundStyle(RidgeTheme.muted)
-            Text("Drag the map to look around. Release to drift back.")
+            Text("Drag while flying to steer. Release to rejoin the route.")
                 .font(.caption).foregroundStyle(RidgeTheme.muted).fixedSize(horizontal:false,vertical:true)
             if tour.isPreparing {
                 HStack(spacing:8) { ProgressView().controlSize(.small);Text("Preparing flight plan…") }
