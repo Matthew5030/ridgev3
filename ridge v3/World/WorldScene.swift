@@ -14,15 +14,16 @@ struct WorldScene: UIViewRepresentable {
     var onEntryStarted: ((Date)->Void)? = nil
     var overheadViewport:GeoBounds? = nil
     var onSurfaceReady:(([GeoBounds])->Void)? = nil
+    var onEntrySurfaceReady:((GeoBounds)->Void)? = nil
     var atlasRequest: UUID? = nil
     var tour: WorldRouteTour
     var tourConfiguration: WorldRouteTour.Configuration
     func makeUIView(context: Context) -> WorldSceneView {
-        let view = WorldSceneView(); view.model = model; view.onTap = onTap; view.onAtlas = onAtlas; view.onEntryStarted=onEntryStarted;view.overheadViewport=overheadViewport;view.onSurfaceReady=onSurfaceReady; view.tour = tour
+        let view = WorldSceneView(); view.model = model; view.onTap = onTap; view.onAtlas = onAtlas; view.onEntryStarted=onEntryStarted;view.overheadViewport=overheadViewport;view.onSurfaceReady=onSurfaceReady;view.onEntrySurfaceReady=onEntrySurfaceReady; view.tour = tour
         view.refresh(route: route, segments: segments, waypoints: waypoints, command: command, atlasRequest:atlasRequest); return view
     }
     func updateUIView(_ view: WorldSceneView, context: Context) {
-        view.model = model; view.onTap = onTap; view.onAtlas = onAtlas; view.onEntryStarted=onEntryStarted;view.overheadViewport=overheadViewport;view.onSurfaceReady=onSurfaceReady; view.tour = tour
+        view.model = model; view.onTap = onTap; view.onAtlas = onAtlas; view.onEntryStarted=onEntryStarted;view.overheadViewport=overheadViewport;view.onSurfaceReady=onSurfaceReady;view.onEntrySurfaceReady=onEntrySurfaceReady; view.tour = tour
         view.refresh(route: route, segments: segments, waypoints: waypoints, command: command, atlasRequest:atlasRequest)
     }
     static func dismantleUIView(_ view: WorldSceneView, coordinator: ()) { view.stopTour(restore:false); view.stopFlight(); view.cancelCameraNotification(); view.scene = nil; view.model = nil }
@@ -67,6 +68,9 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     var onEntryStarted: ((Date)->Void)?
     var overheadViewport:GeoBounds?
     var onSurfaceReady:(([GeoBounds])->Void)?
+    var onEntrySurfaceReady:((GeoBounds)->Void)?
+    private var pendingEntrySurface:UUID?
+    private var reportedEntrySurface:UUID?
     private var reportedSurface=false
     private var reportedCoverage:[GeoBounds]=[]
     private var pendingSurfaceCoverage:[GeoBounds]=[]
@@ -148,8 +152,9 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
            let h = mesh.elevation(at:point) { return Float(h) }
         return overview.elevation(point, bounds: source.bounds)
     }
+    private var sceneUpdatesDeferred:Bool { !cameraRig.touring && (navigationGesture.isInteracting || flightEntrySpan != nil) }
     func refresh(route: [RoutePoint], segments: [[RoutePoint]], waypoints: [RouteWaypoint], command: TerrainCameraCommand, atlasRequest: UUID?) {
-        if navigationGesture.isInteracting,!cameraRig.touring {
+        if sceneUpdatesDeferred {
             deferredRefresh=DeferredRefresh(route:route,segments:segments,waypoints:waypoints,command:command,atlasRequest:atlasRequest)
             return
         }
@@ -194,7 +199,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             applyOverhead(overheadViewport);return
         }
         delegate=nil
-        if reportedSurface,let span=model.entrySpan {
+        if reportedSurface || reportedEntrySurface != nil,let span=model.entrySpan {
             model.entrySpan=nil;beginEntry(span:span)
         }
         syncTour()
@@ -239,6 +244,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         return m
     }
     private func buildScene(_ source: WorldSource, overview: WorldOverview) {
+        pendingEntrySurface=nil;reportedEntrySurface=nil;reportedSurface=false;reportedCoverage=[];pendingSurfaceCoverage=[]
         let scene = SCNScene(); scene.background.contents = backgroundColor
         scene.fogColor = backgroundColor; scene.fogDensityExponent = 1
         cancelCameraNotification()
@@ -301,7 +307,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     }
     private func uploadTerrain() {
         uploadNotification = nil
-        guard !navigationGesture.isInteracting || cameraRig.touring else { return }
+        guard !sceneUpdatesDeferred else { return }
         guard let model, let scene else { return }
         let began = CACurrentMediaTime()
         if cameraRig.touring,!uploadQueue.isEmpty {
@@ -360,7 +366,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 }
             }
             while contextMaskPending && !Task.isCancelled {
-                if navigationGesture.isInteracting,!cameraRig.touring {
+                if sceneUpdatesDeferred {
                     try? await Task.sleep(nanoseconds:100_000_000);continue
                 }
                 contextMaskPending=false
@@ -374,7 +380,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 let preparation=Task.detached(priority:.utility) { (distant.geometry(excluding:covered),distant.seams(boundaries,covered:covered)) }
                 let (geometry,seams)=await preparation.value
                 guard !Task.isCancelled, distantID==distant.id else { return }
-                if navigationGesture.isInteracting,!cameraRig.touring { contextMaskPending=true;continue }
+                if sceneUpdatesDeferred { contextMaskPending=true;continue }
                 let current=Set(nodes.keys.compactMap { contextKeys[$0] })
                 if current != covered { contextMaskPending=true }
                 let material=SCNMaterial();material.lightingModel = .constant
@@ -392,7 +398,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     private func updateOfflineBoundary(force: Bool = false) {
         guard let model, let source else { return }
         let focus=coordinate(target)
-        if !navigationGesture.isInteracting && (force || offlineBoundaryEdges != model.offlineEdges || offlineBoundaryCenter == nil || offlineBoundaryCenter!.distance(to:focus)>250) {
+        if !sceneUpdatesDeferred && (force || offlineBoundaryEdges != model.offlineEdges || offlineBoundaryCenter == nil || offlineBoundaryCenter!.distance(to:focus)>250) {
             offlineBoundaryEdges=model.offlineEdges;offlineBoundaryCenter=focus
             offlineBoundaryNode.geometry=WorldOfflineBoundary.geometry(edges:offlineBoundaryEdges,focus:focus,frame:source.frame,elevation:height)
         }
@@ -402,6 +408,15 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     nonisolated func renderer(_ renderer:any SCNSceneRenderer,didRenderScene scene:SCNScene,atTime time:TimeInterval) {
         DispatchQueue.main.async { [weak self] in
             guard let self,self.overheadViewport != nil,let source=self.source else { return }
+            // The continuous bundled mesh can hand off immediately. Fine tile
+            // coverage still controls the sharper top-down atlas replacement.
+            if let distant=self.model?.distantTerrain,self.distantID==distant.id,
+               self.distantNode.geometry != nil,self.reportedEntrySurface != distant.id {
+                if self.pendingEntrySurface==distant.id {
+                    self.reportedEntrySurface=distant.id
+                    self.onEntrySurfaceReady?(distant.bounds)
+                } else { self.pendingEntrySurface=distant.id;self.setNeedsDisplay() }
+            }
             // Only visible, textured local terrain counts. The low-resolution
             // distant horizon cannot certify a close-map handoff.
             let coverage=source.tiles.compactMap { tile -> GeoBounds? in
@@ -417,6 +432,9 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             }
             self.reportedCoverage=coverage;self.reportedSurface = !coverage.isEmpty
             self.onSurfaceReady?(coverage)
+            if self.reportedEntrySurface == nil,let viewport=self.overheadViewport,WorldMapSurface.covers(viewport,tiles:coverage) {
+                self.onEntrySurfaceReady?(viewport)
+            }
         }
     }
     private func applyOverhead(_ viewport:GeoBounds) {
@@ -477,6 +495,15 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     func stopFlight() {
         flightLink?.invalidate();flightLink=nil;flightEntrySpan=nil;flightExitPose=nil
         if !cameraRig.touring { rendersContinuously=false }
+        DispatchQueue.main.async { [weak self] in self?.resumeSceneUpdates() }
+    }
+    private func resumeSceneUpdates() {
+        guard scene != nil,!sceneUpdatesDeferred else { return }
+        if let value=deferredRefresh {
+            deferredRefresh=nil
+            refresh(route:value.route,segments:value.segments,waypoints:value.waypoints,command:value.command,atlasRequest:value.atlasRequest)
+        }
+        uploadTerrain();scheduleLabels();scheduleContextMask()
     }
     private func interruptFlight() {
         guard flightLink != nil else { return }
@@ -769,7 +796,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     }
     private func scheduleLabels() {
         setNeedsDisplay()
-        guard !cameraRig.touring,!navigationGesture.isInteracting else { return }
+        guard !cameraRig.touring,!sceneUpdatesDeferred else { return }
         // Only placement/decluttering waits for the gesture to settle. The
         // labels themselves are rendered with the terrain on every frame.
         labelNotification?.cancel()
@@ -792,11 +819,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             // Cancellation callbacks precede the recognizer clearing contacts.
             DispatchQueue.main.async { [weak self] in
                 guard let self,self.scene != nil,!self.navigationGesture.isInteracting else { return }
-                if let value=self.deferredRefresh {
-                    self.deferredRefresh=nil
-                    self.refresh(route:value.route,segments:value.segments,waypoints:value.waypoints,command:value.command,atlasRequest:value.atlasRequest)
-                }
-                self.uploadTerrain();self.scheduleLabels();self.scheduleContextMask()
+                self.resumeSceneUpdates()
             }
         }
     }

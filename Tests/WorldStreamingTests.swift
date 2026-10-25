@@ -16,7 +16,7 @@ import ImageIO
         func check(_ value: Bool,_ reason: String) throws {
             guard value else { throw RidgeError.message(reason) }; checks += 1
         }
-        let root = try WorldLibrary.root(mode:"local",local:"http://127.0.0.1:8787")
+        let root = try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent("ridge-stream-test-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog = try await WorldCatalogStore(cacheURL:cache).open(root:root)

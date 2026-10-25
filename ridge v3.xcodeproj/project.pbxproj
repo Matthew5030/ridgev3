@@ -52,6 +52,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 70DA177A3056DDF8006F6FCF /* Build configuration list for PBXNativeTarget "ridge v3" */;
 			buildPhases = (
+				C076A31E2F012DAD00000001 /* Check bundled terrain */,
 				70DA176B3056DDF8006F6FCF /* Sources */,
 				70DA176C3056DDF8006F6FCF /* Frameworks */,
 				70DA176D3056DDF8006F6FCF /* Resources */,
@@ -113,6 +114,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C076A31E2F012DAD00000001 /* Check bundled terrain */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ();
+			name = "Check bundled terrain";
+			outputPaths = ();
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "for bundle in WorldContext WorldAtlas; do\n  if [ ! -f \"$SRCROOT/ridge v3/Resources/$bundle.bundle/index.json\" ]; then\n    echo \"error: Missing $bundle bundled terrain. Restore Resources/$bundle.bundle (including sparse checkout paths) before building.\" >&2\n    exit 1\n  fi\ndone\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		70DA176B3056DDF8006F6FCF /* Sources */ = {

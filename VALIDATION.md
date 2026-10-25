@@ -631,3 +631,13 @@ Those reruns passed **98** real Eryri archive/offline/reopen/resume checks and *
 The updated build installed successfully and was explicitly cold launched on the iPad. The real screen now shows **Maps saved**, without the payload-checking phase or a download offer; screenshot and aggregate results are in `Artifacts/eryri-downloads-2026-10-25/`. All prior terrain stays installed. GitHub packing checks passed in run `40192005926`. The user has been asked to repeat wide zoom, close zoom and pan on this build; gesture acceptance remains pending that test.
 
 The user repeated the wide-zoom, close-zoom and pan sequence on the physical iPad and confirmed **“Smooth now”**. The download/reopen/gesture fix has passed its hardware acceptance check. The separate request to make 2D-to-3D entry immediate is follow-up work.
+
+## 25 October 2026 — progressive entry during the 2D zoom
+
+The 2D-to-3D handoff no longer waits for every visible downloaded tile or walking graph, and no longer waits for the pinch to end. Selecting a saved region prewarms a bounded bundled terrain surface. A runtime-only height field supplies its camera target until the downloaded overview arrives; it has no route data and is never persisted. Entry waits only for a rendered continuous surface, keeps the matching atlas through the existing 0.3-second dissolve, and retains the existing aligned 1.2-second descent. The preparation panels have been removed from this flow.
+
+The small `WorldContext.bundle` was present in Git but omitted by the working copy's sparse-checkout rules, and therefore absent from recent local device builds. It is restored to this checkout. The Xcode target now rejects builds missing the bundled context or atlas indexes. All 674 bundled elevation pages in the signed app were checked against their index hashes (3,433,134-byte source bundle). The build guard accepts complete resources and rejects an empty temporary checkout.
+
+Detailed terrain and routing continue in the background. Scene reconciliation, node uploads, seams, boundary rebuilds and label placement defer during the entry animation, then resume; the already accepted gesture deferral remains in place. Returning to the atlas clears the old rendered-entry receipt.
+
+Passed 4,166 camera-transition checks, 1,049 bundled terrain/entry checks, and 1,628 streaming/retention/geometry reuse/memory/routing checks. A cold model with real bundled resources and no terrain-window origin became entry-ready in 0.203 seconds on the Mac; the separate 366-tile detailed window took 7.56 seconds. These are local test measurements, not iPad transition timings. Signed Release build and physical-device acceptance are recorded below after the final during-pinch change.

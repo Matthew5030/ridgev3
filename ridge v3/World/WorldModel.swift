@@ -10,6 +10,7 @@ import CoreGraphics
     var source: WorldSource?
     var overview: WorldOverview?
     var backdrop: WorldBackdrop?
+    @ObservationIgnored private var contextOnly=false
     var streaming = false
     var loadedRadius = 0.0
     @ObservationIgnored var mapPreparationViewport:GeoBounds?
@@ -109,7 +110,7 @@ import CoreGraphics
         cancelRegionLoad(); distantLoad?.cancel(); distantLoad=nil; distantTerrain=nil; generation += 1; let token = generation
         work?.cancel(); work = nil; wanted = []; failed = []; tiles = [:]; previewPages = [:]
         tilesByID = [:]; changedTileIDs = []
-        source = nil; overview = nil; backdrop = nil; routeTerrain = nil
+        source = nil; overview = nil; backdrop = nil; routeTerrain = nil; contextOnly=false
         loadedCenter = nil; loadedRadius = 0; retryAfter = .distantPast
         cancelDownload(); offlineMessage=nil;downloadedDestination=nil;requestedDownloadPoint=nil
         downloadRegion=selectedRegion
@@ -152,6 +153,13 @@ import CoreGraphics
     func hasCoverage(_ point: GeoPoint) -> Bool {
         offlineBounds.contains { $0.contains(point) }
     }
+    /// Selecting a saved region warms only bundled scenery; it does not scan
+    /// the download, open its graph, or start a transfer.
+    func prepareTerrainEntry(at point:GeoPoint) {
+        guard hasCoverage(point),let region=catalog?.region(at:point) else { return }
+        loadDistantTerrain(around:point,frame:source?.frame ?? region.bounds)
+        prepareEntrySurface(at:point)
+    }
     func canEnterTerrain(at point:GeoPoint) -> Bool {
         guard hasCoverage(point),let source,overview != nil,source.bounds.contains(point) else { return false }
         if !streaming,source.tiles.contains(where: { $0.mesh.bounds.contains(point) }) { return true }
@@ -174,6 +182,7 @@ import CoreGraphics
             if !in3D { requestedDownloadPoint=point }
             return false
         }
+        prepareEntrySurface(at:point)
         // The previous focus may have been outside published or saved coverage.
         // Clear that warning as soon as this destination is valid, including
         // while its overview/detail is still preparing.
@@ -245,7 +254,8 @@ import CoreGraphics
         return ready
     }
     private func receivePreview(_ metadata:WorldSource,elevation:WorldOverview,files candidate:WorldLandscapeStore,ticket:Int,sessionID:String) {
-        guard ticket==selectionGeneration,source == nil else { return }
+        guard ticket==selectionGeneration,source == nil || contextOnly else { return }
+        contextOnly=false
         var starter=metadata;starter.id=sessionID
         files=candidate;overview=elevation;backdrop=WorldBackdrop(geometries:[:],meshes:[:]);source=starter
         revision+=1
@@ -271,7 +281,7 @@ import CoreGraphics
         files=candidate;overview=elevation;backdrop=visible;source=current;revision+=1
     }
     private func loadDistantTerrain(around point: GeoPoint,frame:GeoBounds) {
-        guard distantLoad == nil, distantTerrain == nil || distantTerrain!.center.distance(to:point) > 20000 else { return }
+        guard distantLoad == nil, distantTerrain == nil || distantTerrain!.frame != frame || distantTerrain!.center.distance(to:point) > 20000 else { return }
         distantLoad = Task { [weak self] in
             guard let self else { return }
             defer { if !Task.isCancelled { distantLoad=nil } }
@@ -279,8 +289,17 @@ import CoreGraphics
                 let next = try await distantStore.build(center:point,frame:frame)
                 guard !Task.isCancelled else { return }
                 distantTerrain=next
+                prepareEntrySurface(at:requestedPoint ?? point)
             } catch { if !Task.isCancelled { NSLog("Ridge distant terrain: %@",error.localizedDescription) } }
         }
+    }
+    private func prepareEntrySurface(at point:GeoPoint) {
+        guard !in3D,hasCoverage(point),source == nil || source?.bounds.contains(point) == false,
+              let distant=distantTerrain,let region=catalog?.region(at:point),
+              distant.frame == (source?.frame ?? region.bounds),distant.center.distance(to:point)<20000 else { return }
+        let (starter,elevation)=distant.entrySurface(region:region)
+        contextOnly=true;source=starter;overview=elevation;routeTerrain=nil
+        backdrop=WorldBackdrop(geometries:[:],meshes:[:]);revision+=1
     }
     @ObservationIgnored private var windowCenter: GeoPoint?
     @ObservationIgnored private var windowRadius = 0.0
@@ -290,7 +309,7 @@ import CoreGraphics
         generation += 1; work?.cancel(); work = nil; wanted = []; failed = []; policyCenter = nil
         // Rendering uses already admitted, cache-only files. Rechecking every
         // saved region here makes each camera window pay for the whole library.
-        files = candidate; source = next; overview = elevation; backdrop = background
+        files = candidate; source = next; overview = elevation; backdrop = background; contextOnly=false
         tilesByID = Dictionary(uniqueKeysWithValues:next.tiles.map { ($0.id,$0) })
         changedTileIDs.removeAll(keepingCapacity:true)
         // All windows use the same frame, so overlapping meshes, images and

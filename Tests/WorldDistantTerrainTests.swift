@@ -44,9 +44,48 @@ import AppKit
             let data=try Data(contentsOf:path)
             check(data.count==49*49*2 && AdaptiveTerrainCodec.hash(data)==part["sha256"] as! String,"Verified bundled elevation")
         }
-        let root=try WorldLibrary.root(mode:"local",local:"http://127.0.0.1:8787")
+        let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         let catalog=try await WorldCatalogStore().open(root:root)
         let region=catalog.region(at:center)!
+        let (starter,overview)=terrain.entrySurface(region:region)
+        check(starter.id==region.id && starter.frame==frame,"Entry keeps the eventual local frame and session")
+        check(starter.tiles.isEmpty && starter.graph.byteCount==0,"Entry does not require downloaded meshes or a walking graph")
+        check(overview.heights.count==65*65 && overview.heights.allSatisfy(\.isFinite),"Bounded bundled camera height field")
+        check(abs(overview.elevation(center,bounds:region.bounds)-terrain.elevation(at:center))<20,"Entry target uses real bundled heights")
+        check(terrain.bounds.contains(center),"Continuous horizon covers the entry point")
+        for cell in terrain.cells.prefix(100) {
+            let i=Int(cell.indices[0]),p=terrain.positions[i]
+            let point=frame.point(u:Double(p.x)/frame.widthMeters+0.5,v:Double(p.z)/frame.depthMeters+0.5)
+            check(abs(terrain.elevation(at:point)-Float(p.y))<0.1,"Bundled sampling agrees at mesh vertices")
+        }
+        let immediate=await MainActor.run { () -> Bool in
+            let model=WorldModel(distantStore:store)
+            model.offlineBounds=[region.bounds];model.source=starter;model.overview=overview;model.distantTerrain=terrain;model.streaming=true
+            return model.canEnterTerrain(at:center) && model.routeTerrain == nil
+        }
+        check(immediate,"3D entry is independent of all detailed tile, graph and streaming completion")
+        // Real bundled resources, no downloaded window or catalogue origin:
+        // prewarming must create a navigable surface without any asset reads.
+        let coldStart=Date()
+        let coldModel=await MainActor.run { () -> WorldModel in
+            let model=WorldModel(distantStore:store)
+            model.catalog=catalog;model.offlineBounds=[region.bounds]
+            model.prepareTerrainEntry(at:center)
+            return model
+        }
+        for _ in 0..<200 {
+            if await MainActor.run(body:{ coldModel.canEnterTerrain(at:center) }) { break }
+            try await Task.sleep(for:.milliseconds(25))
+        }
+        let coldReady=await MainActor.run { () -> Bool in
+            guard coldModel.canEnterTerrain(at:center),coldModel.source?.tiles.isEmpty == true,
+                  coldModel.routeTerrain == nil,!coldModel.streaming,coldModel.libraryRoot == nil else { return false }
+            let id=coldModel.distantTerrain?.id
+            coldModel.prepareTerrainEntry(at:center)
+            return coldModel.distantTerrain?.id==id
+        }
+        check(coldReady,"A cold saved region opens using bundled files alone, then reuses that surface")
+        print("Bundled cold entry ready in \(Date().timeIntervalSince(coldStart)) s on Mac; no detailed terrain window opened")
         let source=try await WorldSourceStore().manifest(address:root.appendingPathComponent(region.path).absoluteString)
         for tile in source.tiles { check(WorldDistantTerrain.key(for:tile.mesh.bounds) != nil,"Actual published terrain aligns with context holes") }
         if CommandLine.arguments.count>2 {

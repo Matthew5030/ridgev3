@@ -17,6 +17,35 @@ struct WorldDistantTerrain: @unchecked Sendable {
     let positions: [SCNVector3]
     let left: Int
     let top: Int
+    var bounds: GeoBounds {
+        GeoBounds(minLatitude:Self.latitude(Double(top+9)/1024),minLongitude:Double(left)/1024*360-180,
+                  maxLatitude:Self.latitude(Double(top)/1024),maxLongitude:Double(left+9)/1024*360-180)
+    }
+    /// Sample the actual bundled mesh. Entry needs a camera target height, not
+    /// a detailed window or walking graph. No downloaded file is opened here.
+    func elevation(at point:GeoPoint) -> Float {
+        let x=(point.longitude+180)/360*1024,y=Self.mercatorY(point.latitude)*1024
+        let column=min(8,max(0,Int(floor(x))-left)),row=min(8,max(0,Int(floor(y))-top))
+        let page=Self.pageBounds(x:left+column,y:top+row),uv=page.uv(point)
+        let u=min(48,max(0,uv.u*48)),v=min(48,max(0,uv.v*48))
+        let ix=min(47,Int(u)),iy=min(47,Int(v)),tx=Float(u-Double(ix)),ty=Float(v-Double(iy))
+        let i=(row*9+column)*49*49+iy*49+ix
+        let north=Float(positions[i].y)*(1-tx)+Float(positions[i+1].y)*tx
+        let south=Float(positions[i+49].y)*(1-tx)+Float(positions[i+50].y)*tx
+        return north*(1-ty)+south*ty
+    }
+    func entrySurface(region:WorldCatalog.Region) -> (WorldSource,WorldOverview) {
+        let side=65
+        let heights=(0..<side*side).map { i in
+            elevation(at:region.bounds.point(u:Double(i%side)/Double(side-1),v:Double(i/side)/Double(side-1)))
+        }
+        // Runtime metadata only: these empty assets are never read or persisted.
+        // Routing remains nil until a real downloaded window has been installed.
+        let unused=WorldMapAsset(file:"",byteCount:0,sha256:"")
+        let source=WorldSource(schemaVersion:1,id:region.id,name:"Terrain",revision:id.uuidString,bounds:region.bounds,
+            columns:1,rows:1,overview:unused,graph:unused,tiles:[],places:[],sources:[],renderBounds:frame)
+        return (source,WorldOverview(width:side,height:side,heights:heights))
+    }
     struct Boundary: @unchecked Sendable { let key: String; let geometry: SCNGeometry }
     static func neighbor(_ key:String,edge:Int) -> String {
         var v=key.split(separator:":").map { Int($0)! }
