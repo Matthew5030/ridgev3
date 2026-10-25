@@ -37,6 +37,8 @@ jobs:
         run: sh Tools/test_world_flight_composition.sh
       - name: Continuous heading and coordinated banked turns
         run: sh Tools/test_world_flight_turns.sh
+      - name: Movement-aligned FPV and coordinated flight physics
+        run: sh Tools/test_world_flight_physics.sh
   route-terrain-detail:
     runs-on: macos-15
     timeout-minutes: 5

@@ -41,6 +41,14 @@ struct WorldFlightPace {
 /// A coordinated turn: radius and actual speed determine the lean. Busy
 /// switchbacks use a higher, calmer view and a smaller maximum bank.
 enum WorldFlightTurn {
+    /// Signed normal acceleration in the horizontal flight plane. No bank
+    /// clamp or independent lag: the prepared pace bounds the actual turn.
+    static func coordinatedBank(velocity:SIMD3<Double>,acceleration:SIMD3<Double>)->Float {
+        let speed=hypot(velocity.x,velocity.z)
+        guard speed>0.00001 else { return 0 }
+        let lateral=(velocity.x*acceleration.z-velocity.z*acceleration.x)/speed
+        return Float(-atan(lateral/9.81))
+    }
     static func maximumBank(overview:Double)->Double { (18-6*min(1,max(0,overview))) * .pi/180 }
     static func bank(curvature:Double,speed:Double,overview:Double)->Float {
         let limit=maximumBank(overview:overview)
@@ -50,9 +58,9 @@ enum WorldFlightTurn {
 
 /// A bounded steering manoeuvre around the prepared rail. The offset is a
 /// critically damped position, not a camera rotation: its analytic velocity is
-/// added to the rail velocity. Production framing holds the route target in
-/// view while the underlying motion keeps its coordinated glide. Framed flight
-/// retains its prepared roll cue, adding only a bounded steering correction.
+/// added to the rail velocity. Movement-aligned FPV includes steering's velocity
+/// and acceleration in both its forward view and coordinated bank. The older
+/// subject-framed choreography remains available to isolated camera fixtures.
 /// Positive spline/response weights keep the eye within the sampled lateral
 /// corridor, including a small descent using the prepared clearance buffer.
 /// Release rejoins gently;
@@ -64,9 +72,14 @@ struct WorldFlightGlide {
     private var previousVelocity:SIMD3<Double>?
     private var previousBaseVelocity:SIMD3<Double>?
     private var steeringBank=0.0
+    private var first=SIMD3<Double>.zero
+    private var second=SIMD3<Double>.zero
     mutating func reset() { self=Self() }
     mutating func advance(reference:WorldFlightPlan.Sample,yaw:Float,pitch:Float,
                           speedScale:Double,seconds:Double,frame:GeoBounds,reduceMotion:Bool,clearance:Double=15)->WorldFlightPlan.Sample {
+        if reference.movementAligned {
+            return coordinated(reference:reference,yaw:yaw,pitch:pitch,speedScale:speedScale,seconds:seconds,frame:frame,reduceMotion:reduceMotion,clearance:clearance)
+        }
         let dt=max(0,min(0.1,seconds)),baseVelocity=SIMD3<Double>(reference.velocity)*speedScale
         let horizontal=SIMD2(baseVelocity.x,baseVelocity.z),speed=simd_length(baseVelocity)
         let forward=simd_length_squared(horizontal)>0.00001 ? simd_normalize(horizontal) : SIMD2<Double>(0,-1)
@@ -106,6 +119,35 @@ struct WorldFlightGlide {
         result.pose = .init(eye:eye,look:reference.routeTarget ?? eye+direction*80,focus:point,bank:reduceMotion ? 0 : bank)
         result.velocity=SIMD3<Float>(velocity);result.speed=simd_length(velocity)
         result.heightAboveGround += offset.y;result.cameraPoint=point
+        return result
+    }
+    /// Three positive response stages make manual steering a continuous
+    /// manoeuvre, including acceleration and therefore bank. Position, gaze and
+    /// roll all use these same derivatives; the input never pans a camera alone.
+    private mutating func coordinated(reference:WorldFlightPlan.Sample,yaw:Float,pitch:Float,
+                                      speedScale:Double,seconds:Double,frame:GeoBounds,reduceMotion:Bool,clearance:Double)->WorldFlightPlan.Sample {
+        let dt=max(0,min(0.1,seconds)),baseVelocity=SIMD3<Double>(reference.velocity)*speedScale
+        let horizontal=SIMD2(baseVelocity.x,baseVelocity.z)
+        let forward=simd_length_squared(horizontal)>0.000001 ? simd_normalize(horizontal) : SIMD2<Double>(0,-1)
+        let right=SIMD3(-forward.y,0,forward.x),descent=min(10,max(0,clearance-5))
+        let vertical=(pitch<0 ? descent : 12)*tanh(Double(pitch)*2)
+        let target=right*(12*tanh(Double(yaw)*1.5))+SIMD3(0,vertical,0)
+        let omega=0.45,u=omega*dt,decay=exp(-u)
+        let a=first-target,b=second-target,c=offset-target
+        first=target+a*decay
+        second=target+(b+a*u)*decay
+        offset=target+(c+b*u+a*(u*u/2))*decay
+        let steeringVelocity=(second-offset)*omega
+        let steeringAcceleration=(first-second*2+offset)*(omega*omega)
+        let velocity=baseVelocity+steeringVelocity
+        let acceleration=SIMD3<Double>(reference.acceleration)*speedScale*speedScale+steeringAcceleration
+        let eye=reference.pose.eye+SIMD3<Float>(offset)
+        let direction=simd_length_squared(velocity)>0.000001 ? SIMD3<Float>(simd_normalize(velocity)) : simd_normalize(reference.pose.look-reference.pose.eye)
+        let point=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
+        var result=reference
+        result.pose = .init(eye:eye,look:eye+direction*80,focus:point,bank:reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:velocity,acceleration:acceleration))
+        result.velocity=SIMD3<Float>(velocity);result.acceleration=SIMD3<Float>(acceleration);result.speed=simd_length(velocity)
+        result.heightAboveGround+=offset.y;result.cameraPoint=point
         return result
     }
 }

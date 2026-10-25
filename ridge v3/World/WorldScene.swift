@@ -663,7 +663,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 }
                 try Task.checkCancellation()
                 let build=Task.detached(priority:.userInitiated) {
-                    try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift,routeFraming:true)
+                    try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift,routeFraming:true,movementAligned:true)
                 }
                 let plan=try await withTaskCancellationHandler(operation:{try await build.value},onCancel:{build.cancel()})
                 guard let self,self.flightPreparationID==token,self.tour?.sessionID==session,self.tour?.isPresented==true,!Task.isCancelled else { return }
@@ -831,7 +831,9 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         cameraNode.camera?.zFar=tour.isEntering ? 500000 : 60000
         let atmosphere=WorldAtmosphere.range(cameraDistance:tour.isEntering ? Double(pose.eye.y) : 3000)
         scene?.fogStartDistance=atmosphere.start;scene?.fogEndDistance=atmosphere.end
-        let bank=flightPlayback.roll(toward:pose.bank,seconds:step)
+        // Prepared flight already limits roll by retiming the actual movement.
+        // Filtering bank again would make the horizon lag behind the turn.
+        let bank=prepared.movementAligned ? pose.bank : flightPlayback.roll(toward:pose.bank,seconds:step)
         let fieldOfView=tour.isEntering ? flightArrival?.fieldOfView(elapsed:flightArrivalTime) ?? prepared.fieldOfView : prepared.fieldOfView
         cameraRig.fly(on:cameraNode,pose:.init(eye:pose.eye,look:pose.eye+direction*80,fieldOfView:fieldOfView,bank:bank,up:pose.up))
         placeLabels.scale(camera:cameraNode,viewport:bounds.size)

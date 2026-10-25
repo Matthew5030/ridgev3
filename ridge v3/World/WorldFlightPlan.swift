@@ -136,6 +136,8 @@ struct WorldFlightPlan {
         var cameraPoint:GeoPoint? = nil
         var routeTarget:SIMD3<Float>? = nil
         var fieldOfView=WorldRouteTour.fieldOfView
+        var acceleration=SIMD3<Float>.zero
+        var movementAligned=false
     }
     /// Convert both eye and velocity together when streaming changes the scene
     /// origin. Steering state stays in the immutable plan frame.
@@ -148,6 +150,7 @@ struct WorldFlightPlan {
         var result=sample
         result.pose.eye=point(sample.pose.eye);result.pose.look=point(sample.pose.look)
         result.velocity=point(sample.pose.eye+sample.velocity)-result.pose.eye
+        result.acceleration=point(sample.pose.eye+sample.acceleration)-result.pose.eye
         result.routeTarget=sample.routeTarget.map { point($0) }
         return result
     }
@@ -179,6 +182,7 @@ struct WorldFlightPlan {
     let hasSpeedTransition:Bool
     let routeFraming:Bool
     let adaptiveFraming:Bool
+    let movementAligned:Bool
     private var keys:[Key]
     private var segments:[Segment]
     private var lookSegments:[Segment]=[]
@@ -186,10 +190,11 @@ struct WorldFlightPlan {
     var count:Int { keys.count }
 
     init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,terrain:WorldFlightTerrain,frame:GeoBounds,cruiseSpeed:Double,reduceMotion:Bool,
-         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,movementAligned:Bool=false,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
         self.routeFraming=routeFraming;self.adaptiveFraming=adaptiveFraming
+        self.movementAligned=movementAligned
         var result:[Key]=[],time=0.0,lastTravel=0.0,lastSpeed=0.0
         var minimumHeights:[Double]=[]
         let desiredSpacing=max(corridor.length/40000,min(3,max(0.5,cruiseSpeed*0.12)))
@@ -331,6 +336,14 @@ struct WorldFlightPlan {
                 Self.solveMotion(&result)
             }
         }
+        if movementAligned {
+            // One trajectory supplies position, velocity, pitch and bank. Pace
+            // must change to fit that trajectory, rather than faking a gentle
+            // bank while crossing a hairpin at the straight-line cruise speed.
+            try Self.retimeFlight(&result,cruiseSpeed:cruiseSpeed)
+            keys=result;segments=(0..<(result.count-1)).map { Segment(result[$0],result[$0+1]) }
+            return
+        }
         let n=result.count
         // Unframed flight banks from its trajectory. Route-framed flight below
         // coordinates its visible heading and roll from one prepared turn.
@@ -368,6 +381,101 @@ struct WorldFlightPlan {
             for i in focus.indices { focus[i].eye=targets[i] }
             Self.solveMotion(&focus)
             lookSegments=(0..<(focus.count-1)).map { Segment(focus[$0],focus[$0+1]) }
+        }
+    }
+    /// Prepare a coordinated-turn speed envelope in actual playback seconds.
+    /// v² κ is lateral acceleration; bank is atan(v² κ / g). Curvature change
+    /// also limits pace, so rolling into a bend takes time. Braking is planned
+    /// backwards along the whole journey, never discovered by the live camera.
+    private static func retimeFlight(_ keys:inout [Key],cruiseSpeed:Double) throws {
+        let n=keys.count,scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed
+        var distance=Array(repeating:0.0,count:n)
+        for i in 1..<n { distance[i]=distance[i-1]+simd_distance(keys[i].eye,keys[i-1].eye) }
+        for i in keys.indices { keys[i].time=distance[i] }
+        Self.solveMotion(&keys)
+        let curvature=keys.map { key -> Double in
+            let v=SIMD2(key.velocity.x,key.velocity.z),a=SIMD2(key.acceleration.x,key.acceleration.z)
+            return (v.x*a.y-v.y*a.x)/max(0.0000001,pow(simd_length(v),3))
+        }
+        let cruise=WorldRouteTour.previewCruiseSpeed/3.6
+        var caps=keys.indices.map { i -> Double in
+            let a=max(0,i-1),b=min(n-1,i+1)
+            let change=abs(curvature[b]-curvature[a])/max(0.001,distance[b]-distance[a])
+            let k=abs(curvature[i])
+            let lateral=sqrt(3.2/max(0.0000001,k)),angular=0.20/max(0.0000001,k)
+            let roll=pow(9.81*0.08/max(0.000000001,change),1.0/3)
+            return pow(min(cruise,lateral,angular,roll),2)
+        }
+        let spacing=distance.last!/Double(n-1)
+        let radius=max(1,Int(ceil(20/max(0.001,spacing))))
+        func envelope(_ limits:[Double])->[Double] {
+            var values=limits
+            // Four m/s² acceleration and braking, with no speed steps.
+            for i in 1..<n { values[i]=min(values[i],values[i-1]+8*(distance[i]-distance[i-1])) }
+            for i in stride(from:n-2,through:0,by:-1) { values[i]=min(values[i],values[i+1]+8*(distance[i+1]-distance[i])) }
+            // A minimum over the complete filter support, then positive box
+            // filters, stays below every original cap while easing its joins.
+            let reach=radius*4
+            var queue=Array(repeating:0,count:n),head=0,tail=0,added=0
+            let input=values
+            for i in values.indices {
+                while added<=min(n-1,i+reach) {
+                    while tail>head && input[queue[tail-1]]>=input[added] { tail-=1 }
+                    queue[tail]=added;tail+=1;added+=1
+                }
+                while head<tail && queue[head]<i-reach { head+=1 }
+                values[i]=input[queue[head]]
+            }
+            for _ in 0..<4 {
+                var prefix=Array(repeating:0.0,count:n+1)
+                for i in values.indices { prefix[i+1]=prefix[i]+values[i] }
+                values=values.indices.map { i in
+                    let a=max(0,i-radius),b=min(n-1,i+radius)
+                    let pad=Double(max(0,radius-i))*values[0]+Double(max(0,i+radius-n+1))*values[n-1]
+                    return (prefix[b+1]-prefix[a]+pad)/Double(radius*2+1)
+                }
+            }
+            return values
+        }
+        var residual=1.0
+        for _ in 0..<8 {
+            try Task.checkCancellation()
+            let speeds=envelope(caps).map { sqrt(max(0.0001,$0)) }
+            keys[0].time=0
+            for i in 1..<n {
+                keys[i].time=keys[i-1].time+2*(distance[i]-distance[i-1])/(speeds[i]+speeds[i-1])*scale
+            }
+            Self.solveMotion(&keys)
+            var factors=Array(repeating:1.0,count:n),last:(bank:Double,time:Double)?,valid=true
+            residual=1
+            for i in 0..<(n-1) {
+                let segment=Segment(keys[i],keys[i+1])
+                for fraction in [0.0,0.5,1.0] {
+                    let sample=segment.sample(fraction),v=sample.velocity*scale,a=sample.acceleration*scale*scale
+                    let horizontal=SIMD2(v.x,v.z),acceleration=SIMD2(a.x,a.z),speed=simd_length(horizontal)
+                    let cross=horizontal.x*acceleration.y-horizontal.y*acceleration.x
+                    let lateral=cross/max(0.00001,speed),rate=cross/max(0.00001,speed*speed)
+                    let bank=atan(-lateral/9.81),time=(keys[i].time+(keys[i+1].time-keys[i].time)*fraction)/scale
+                    var factor=max(1,sqrt(abs(lateral)/3.8),abs(rate)/0.22)
+                    if let previous=last,time>previous.time+0.000001 {
+                        let rollRate=abs(bank-previous.bank)/(time-previous.time)
+                        factor=max(factor,pow(rollRate/0.18,1.0/3))
+                        residual=max(residual,rollRate/0.18)
+                    }
+                    if factor>1.001 { valid=false }
+                    residual=max(residual,factor)
+                    factors[i]=max(factors[i],factor);factors[i+1]=max(factors[i+1],factor)
+                    last=(bank,time)
+                }
+            }
+            if valid { break }
+            for i in caps.indices { caps[i]/=pow(max(1,factors[i]*1.02),2) }
+        }
+        if residual>1.001 {
+            // A pathological join still gets one continuous, slower timeline;
+            // never silently fall back to clamping the visible bank alone.
+            for i in keys.indices { keys[i].time*=residual*1.02 }
+            Self.solveMotion(&keys)
         }
     }
     private static func unwrappedHeadings(_ keys:[Key],targets:[SIMD3<Double>])->[Double] {
@@ -569,8 +677,12 @@ struct WorldFlightPlan {
     }
     func sample(time:Double,in outputFrame:GeoBounds? = nil)->Sample {
         let (a,b,t)=bracket(time,byTime:true),left=keys[a],right=keys[b],motion=segments[a].sample(Double(t))
-        var eye=SIMD3<Float>(motion.position),velocity=SIMD3<Float>(motion.velocity)
-        let bank=Float(left.bank+(right.bank-left.bank)*Double(t))
+        var eye=SIMD3<Float>(motion.position),velocity=SIMD3<Float>(motion.velocity),acceleration=SIMD3<Float>(motion.acceleration)
+        let bank:Float
+        if movementAligned {
+            let scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed
+            bank=reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:motion.velocity*scale,acceleration:motion.acceleration*scale*scale)
+        } else { bank=Float(left.bank+(right.bank-left.bank)*Double(t)) }
         let cameraPoint=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         let routeDistance=left.route+(right.route-left.route)*Double(t)
         let focus=cameraPoint
@@ -579,7 +691,7 @@ struct WorldFlightPlan {
                 let geo=frame.point(u:Double(p.x)/frame.widthMeters+0.5,v:Double(p.z)/frame.depthMeters+0.5),uv=outputFrame.uv(geo)
                 return SIMD3(Float((uv.u-0.5)*outputFrame.widthMeters),p.y,Float((uv.v-0.5)*outputFrame.depthMeters))
             }
-            let next=convert(eye+velocity);eye=convert(eye);velocity=next-eye
+            let next=convert(eye+velocity),nextAcceleration=convert(eye+acceleration);eye=convert(eye);velocity=next-eye;acceleration=nextAcceleration-eye
         }
         let direction=simd_length_squared(velocity)>0.00001 ? simd_normalize(velocity) : SIMD3<Float>(0,0,-1)
         var routeTarget:SIMD3<Float>?=lookSegments.isEmpty ? nil : SIMD3<Float>(lookSegments[a].sample(Double(t)).position)
@@ -594,6 +706,6 @@ struct WorldFlightPlan {
         }
         let ground=left.ground+(right.ground-left.ground)*Double(t)
         return Sample(pose:.init(eye:eye,look:routeTarget ?? eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
-                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t))
+                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t),acceleration:acceleration,movementAligned:movementAligned)
     }
 }
