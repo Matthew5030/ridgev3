@@ -1,10 +1,12 @@
 # Eryri download reliability
 
-Selecting a region checks the local section indexes and asset receipts before offering a download. The card shows the remaining transfer and uses “Download remaining terrain” when part of the region is already saved. A completed region reopens from storage. Backgrounding Ridge pauses an active transfer; completed sections and partial archive bytes remain available for continuation.
+Selecting a completed packed region uses its admitted coverage, pinned file inventory and current pack descriptors. It does not rehash the entire terrain payload. Incomplete regions resolve the remaining transfer and use “Download remaining terrain” when part is already saved. Full integrity checks remain in download/repair and asset-reading paths. Backgrounding Ridge pauses an active transfer; completed sections and partial archive bytes remain available for continuation.
 
 Returning to Ridge rechecks a paused selection's remaining bytes without starting a transfer. The card explicitly says “Download paused”, with a single “Resume download” action. Resume performs any outstanding check and continues the transfer; cancelling that check prevents a delayed restart. The displayed reduction from a fresh download includes both reused file bytes and skipped transport metadata.
 
 Remaining bytes and the download action precede the optional terrain explanation. An incomplete region's exploration action says “Explore saved part” and uses secondary styling; it does not imply the entire region is ready. Completed regions retain the primary “Explore in 3D” action.
+
+During ordinary 3D pan/pinch gestures, camera transforms continue immediately. Terrain-node reconciliation, texture uploads, seam replacement, boundary geometry and label decluttering wait until contact ends. The latest pending scene update is applied after release, and terrain-window requests resume from the latest pose. Existing geography stays visible while detail is pending; tours retain their separate update policy.
 
 The current Eryri selection has 73 published sections containing 16,199 available tiles. Its section packs total 1,111,456,185 bytes, which exceeds the original region archive limit of 1 GiB. Raising that limit in the catalogue would break older installed clients. Instead, `regionArchiveGroups` adds a list of independently resumable archives that each retain the existing validated format. Older clients ignore this additive field and continue using section packs.
 

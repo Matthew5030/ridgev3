@@ -21,7 +21,7 @@ actor ArchiveAudit {
             guard value else { throw RidgeError.message(message) }
             checks+=1;print("PASS: \(message)");fflush(stdout)
         }
-        let root=try WorldLibrary.root(mode:"local",local:"http://127.0.0.1:8787")
+        let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("region-archive-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
         let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
@@ -64,7 +64,10 @@ actor ArchiveAudit {
         try check(offline.bytes==0,"A new offline store recognises saved chunks without network access")
         let model=WorldModel(cacheURL:cache)
         await model.configure(mode:"local",local:root.absoluteString)
+        let reopenStart=Date()
         model.offerRegionDownload(region)
+        try check(model.regionComplete && !model.checkingDownload,"Opening a fully saved region does not rescan the terrain payload")
+        print("Completed region inventory lookup: \(Date().timeIntervalSince(reopenStart)) seconds")
         let deadline=Date().addingTimeInterval(120)
         while (model.checkingDownload || model.regionPlan?.isEstimate==true),Date()<deadline { try await Task.sleep(for:.milliseconds(20)) }
         try check(model.regionPlan?.bytes==0 && model.offlineBounds.count==plan.tileCount && model.downloadError==nil,"Reopening the app model preserves saved terrain and offers zero download bytes")
@@ -86,6 +89,8 @@ actor ArchiveAudit {
             let index=cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8))+".index")
             try Data("damaged metadata".utf8).write(to:index)
         }
+        try check(WorldRegionDownloadPlan.completed(pack:region,catalog:catalog,root:root,cache:cache,saved:model.offlineBounds)==nil,
+                  "Missing installed references cannot pass the completed inventory lookup")
         let recovered=ArchiveAudit()
         try await store.download(plan,progress:{ bytes,_ in await recovered.progress(bytes) })
         let recoveryBytes=await recovered.bytes

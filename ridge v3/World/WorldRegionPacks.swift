@@ -232,6 +232,34 @@ struct WorldRegionDownloadPlan: Sendable {
     var archive:WorldRegionArchive? = nil
     var archives:[WorldRegionArchive] = []
 
+    /// Opening a completed region is an inventory lookup, not another integrity
+    /// scan of the entire terrain payload. Downloads and tile reads verify data.
+    static func completed(pack:WorldRegionPack,catalog:WorldCatalog,root:URL,cache:URL,saved:[GeoBounds])->Self? {
+        guard let estimate=estimate(pack:pack,catalog:catalog,root:root),saved.count>=estimate.tileCount,
+              let data=try? Data(contentsOf:cache.appendingPathComponent("pins.json")),
+              let pins=try? JSONDecoder().decode(Set<String>.self,from:data) else { return nil }
+        let saved=Set(saved)
+        var sizes:[String:Int]=[:]
+        for part in estimate.parts {
+            let region=part.region
+            guard let pack=region.pack,
+                  let data=try? Data(contentsOf:WorldSectionPack.reference(region.id,cache:cache)),
+                  let installed=try? JSONDecoder().decode(WorldSectionPack.Installed.self,from:data),
+                  installed.sourceID==region.id,installed.asset.sha256==pack.sha256,installed.asset.byteCount==pack.byteCount else { return nil }
+            let physical=installed.container?.asset ?? installed.asset
+            guard pins.contains(physical.sha256),
+                  installed.container.map({ WorldSectionPack.validRegion(physical) && $0.offset>=12 && $0.offset<=physical.byteCount-pack.byteCount }) ?? WorldSectionPack.valid(physical) else { return nil }
+            let size=sizes[physical.sha256] ?? (try? WorldSectionPack.file(physical,cache:cache).resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? -1
+            sizes[physical.sha256]=size
+            let address=root.appendingPathComponent(region.path).absoluteString
+            let index=cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8))+".index")
+            guard size==physical.byteCount,FileManager.default.fileExists(atPath:index.path),
+                  saved.lazy.filter({ region.bounds.contains($0.center) }).count==region.tileCount else { return nil }
+        }
+        return Self(pack:pack,root:root,parts:estimate.parts.map { .init(region:$0.region,missingBytes:0) },
+                    bytes:0,totalBytes:estimate.totalBytes,tileCount:estimate.tileCount)
+    }
+
     /// Catalogue-only offer: no section requests, disk scans or asset hashing.
     static func estimate(pack:WorldRegionPack,catalog:WorldCatalog,root:URL)->Self? {
         guard pack.terrainAvailability(in:catalog).canDownload else { return nil }

@@ -137,9 +137,10 @@ import CoreGraphics
                 do {
                     let fresh=try await catalogs.open(root:root,preferCached:false)
                     guard generation==token,!Task.isCancelled else { return }
-                    if catalog?.revision != fresh.revision { loadedCenter=nil;retryAfter = .distantPast }
+                    let changed=catalog?.revision != fresh.revision
+                    if changed { loadedCenter=nil;retryAfter = .distantPast }
                     catalog=fresh
-                    if let selected=downloadRegion,!isSavingOffline,!regionComplete { offerRegionDownload(selected,resuming:regionPaused) }
+                    if let selected=downloadRegion,!isSavingOffline,(!regionComplete || changed) { offerRegionDownload(selected,resuming:regionPaused) }
                 } catch { /* The existing offline catalogue remains usable. */ }
             }
         } catch {
@@ -496,6 +497,11 @@ import CoreGraphics
             return
         }
         regionTotal=pack.sources(in:catalog).count
+        if !startAfterCheck,let completed=WorldRegionDownloadPlan.completed(pack:pack,catalog:catalog,root:root,
+            cache:WorldOfflineCoverage.cache(cacheURL),saved:offlineBounds) {
+            regionPlan=completed;regionComplete=true;regionPaused=false
+            return
+        }
         if let estimate=WorldRegionDownloadPlan.estimate(pack:pack,catalog:catalog,root:root) {
             regionPlan=estimate
         }
