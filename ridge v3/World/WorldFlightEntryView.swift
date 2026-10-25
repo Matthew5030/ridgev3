@@ -20,7 +20,7 @@ struct WorldFlightEntryView: View {
                                 Text("FPV FLY-THROUGH").font(.caption2.weight(.semibold)).tracking(2)
                                 HStack(spacing:8) {
                                     if !tour.isTerrainReady { ProgressView().tint(.white).controlSize(.small) }
-                                    Text(tour.isPreparing ? "Preparing your preview…" : tour.isTerrainReady ? "Descending to the route…" : "Preparing the scenery…").font(.caption)
+                                    Text(tour.isPreparing ? "Preparing your preview…" : tour.isTerrainReady ? "Joining the route…" : "Preparing the scenery…").font(.caption)
                                 }.opacity(0.85)
                             }
                             Spacer()
@@ -34,7 +34,7 @@ struct WorldFlightEntryView: View {
         }
         .task(id:tour.sessionID) {
             while !Task.isCancelled,tour.isPresented,tour.isEntering,!tour.isRevealing {
-                if tour.isTerrainReady && Date().timeIntervalSince(tour.entryStartedAt)>=(reduceMotion ? 0.25 : 0.6) {
+                if tour.isTerrainReady && !tour.isPreparing {
                     tour.revealEntry();break
                 }
                 do { try await Task.sleep(for:.milliseconds(100)) } catch { break }

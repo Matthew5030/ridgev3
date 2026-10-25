@@ -16,5 +16,6 @@ xcrun swiftc -swift-version 5 -O -parse-as-library \
  "$ROOT/ridge v3/Core/RouteEngine.swift" \
  "$ROOT/ridge v3/World/WorldRouteProfile.swift" "$ROOT/ridge v3/World/WorldRouteElevationStrip.swift" "$ROOT/ridge v3/World/WorldRouteToolbar.swift" \
  "$ROOT/ridge v3/World/WorldRouteEditorPanel.swift" \
+ "$ROOT/ridge v3/World/WorldRouteActionBar.swift" \
  "$ROOT/ridge v3/Views/Theme.swift" "$ROOT/Tools/render_world_route_tour.swift" -o "$TEST/run"
 RIDGE_FLIGHT_ASSETS="$ROOT/ridge v3/Assets.xcassets" "$TEST/run" "$OUTPUT"

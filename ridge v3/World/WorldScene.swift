@@ -590,15 +590,8 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         }
         model?.setClosePreviewDetail(true)
         prepareFlightPlan()
-        if changed,flightPlan == nil,tour.isEntering,!UIAccessibility.isReduceMotionEnabled,let source,let corridor=tour.corridor {
-            let rail=corridor.sample(routeDistance:tourDistance)
-            let direction=SIMD3<Float>(Float(rail.direction.x),0,Float(rail.direction.y))
-            let high=WorldFlightArrival.approach(path:path,frame:source.frame,velocity:direction*Float(tour.metersPerSecond),fallbackAltitude:Double(height(rail.point))+tour.clearance,focus:rail.point)
-            tourBasePose=high;cameraNode.camera?.zFar=500000
-            let atmosphere=WorldAtmosphere.range(cameraDistance:Double(high.eye.y))
-            scene?.fogStartDistance=atmosphere.start;scene?.fogEndDistance=atmosphere.end
-            cameraRig.fly(on:cameraNode,pose:.init(eye:high.eye,look:high.look,fieldOfView:WorldRouteTour.fieldOfView,bank:0,up:high.up))
-        }
+        // Hold the real browsing pose while preparing. A speculative approach
+        // used to move the camera before the final path/height was available.
         // Terrain/UI notifications can arrive between display frames. Keep a
         // single camera sample per playback frame instead of interleaving them.
         if changed || tourLink == nil { applyTourCamera() }
@@ -756,7 +749,14 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             if tour.isEntering && !UIAccessibility.isReduceMotionEnabled {
                 if flightArrival == nil,let path=tour.path {
                     var entry=plan.sample(time:flightTime);entry.velocity *= Float(flightPlayback.speed/plan.cruiseSpeed)
-                    flightArrival=WorldFlightArrival(path:path,flight:entry,frame:plan.frame,aspect:Double(bounds.width/max(1,bounds.height)))
+                    let held=cameraRig.heldPose
+                    func convert(_ value:SIMD3<Float>)->SIMD3<Float> {
+                        let point=source.frame.point(u:Double(value.x)/source.frame.widthMeters+0.5,v:Double(value.z)/source.frame.depthMeters+0.5),uv=plan.frame.uv(point)
+                        return SIMD3(Float((uv.u-0.5)*plan.frame.widthMeters),value.y,Float((uv.v-0.5)*plan.frame.depthMeters))
+                    }
+                    let opening=held.map { WorldRouteTourCamera.Pose(eye:convert($0.eye),look:convert($0.look),focus:entry.pose.focus,up:$0.up) }
+                    flightArrival=WorldFlightArrival(path:path,flight:entry,frame:plan.frame,aspect:Double(bounds.width/max(1,bounds.height)),
+                        from:opening,fieldOfView:held?.fieldOfView ?? WorldRouteTour.fieldOfView)
                 }
                 let elapsed=flightArrivalTime
                 tourBasePose=flightArrival?.sample(elapsed:elapsed,in:source.frame) ?? prepared.pose
@@ -787,7 +787,8 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         let atmosphere=WorldAtmosphere.range(cameraDistance:tour.isEntering ? Double(pose.eye.y) : 3000)
         scene?.fogStartDistance=atmosphere.start;scene?.fogEndDistance=atmosphere.end
         let bank=flightPlayback.roll(toward:pose.bank,seconds:step)
-        cameraRig.fly(on:cameraNode,pose:.init(eye:pose.eye,look:pose.eye+direction*80,fieldOfView:WorldRouteTour.fieldOfView,bank:bank,up:pose.up))
+        let fieldOfView=tour.isEntering ? flightArrival?.fieldOfView(elapsed:flightArrivalTime) ?? WorldRouteTour.fieldOfView : WorldRouteTour.fieldOfView
+        cameraRig.fly(on:cameraNode,pose:.init(eye:pose.eye,look:pose.eye+direction*80,fieldOfView:fieldOfView,bank:bank,up:pose.up))
         placeLabels.scale(camera:cameraNode,viewport:bounds.size)
         if now-tourLastLabels>=0.25 {
             tourLastLabels=now;placeLabels.select(in:self,focus:target)
