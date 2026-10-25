@@ -199,7 +199,9 @@ actor WorldLandscapeStore {
         // handoff needs complete textured geography, not walking-path data.
         for index in parts.indices where !parts[index].routingLoaded && WorldWindow.distance(center,to:parts[index].source.bounds)<=WorldWindow.routingRadius {
             try Task.checkCancellation()
-            parts[index].graph=try await parts[index].files.walkingGraph(parts[index].source)
+            let (asset,graph)=try await parts[index].files.routingGraph(parts[index].source)
+            parts[index].source.graph=asset;parts[index].graph=graph
+            parts[index].connected=asset.file.hasPrefix("paths-connected") || catalog.sources.first(where:{ $0.id==parts[index].source.id })?.routing?.sha256==asset.sha256
             parts[index].routingLoaded=true
         }
         let routingParts=parts.map { part in

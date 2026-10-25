@@ -175,6 +175,8 @@ actor WorldSourceStore {
     private var pins: Set<String> = []
     private var sectionPack:WorldSectionPack.Reader?
     private var packedSourceID:String?
+    private var originalGraph:WorldMapAsset?
+    private var publishedGraph:WorldMapAsset?
     private var stagedManifest:(url:URL,data:Data,sourceID:String,tileIDs:Set<String>)?
     private var bytesSincePrune = 0
     private var writesSincePrune = 0
@@ -225,6 +227,7 @@ actor WorldSourceStore {
             }
         }
         var source = try JSONDecoder().decode(WorldSource.self, from: manifest); try source.validate()
+        originalGraph=source.graph;publishedGraph=routing
         if let routing { source.graph = routing }
         packedSourceID=source.id
         sectionPack=WorldSectionPack.open(sourceID:source.id,cache:cache)
@@ -242,7 +245,38 @@ actor WorldSourceStore {
         return (source, overview, graph)
     }
     func walkingGraph(_ source: WorldSource) async throws -> WalkingGraph {
-        try JSONDecoder().decode(WalkingGraph.self,from:await read(source.graph,maximumBytes:64_000_000))
+        try await routingGraph(source).1
+    }
+    func routingGraph(_ source:WorldSource) async throws -> (WorldMapAsset,WalkingGraph) {
+        do {
+            let data=try await read(source.graph,maximumBytes:64_000_000)
+            return (source.graph,try JSONDecoder().decode(WalkingGraph.self,from:data))
+        } catch {
+            try Task.checkCancellation()
+            guard !allowsNetwork,publishedGraph?.sha256==source.graph.sha256 else { throw error }
+            // A catalogue refresh must not invalidate a previously admitted
+            // offline save. Recover its verified connected sidecar from the
+            // receipt/pack index; geometry and cartography are never candidates.
+            var known=Set(Self.assets(tiles:source.tiles,source:source).map(\.sha256))
+            if let originalGraph { known.insert(originalGraph.sha256) }
+            let shared=WorldOfflineCoverage.sharedAssets(source:source,at:cache)
+            var candidates=shared.filter { !known.contains($0.hash) }
+                .map { WorldMapAsset(file:"paths-connected-saved.json",byteCount:$0.bytes,sha256:$0.hash) }
+            if let sectionPack {
+                candidates += sectionPack.ordered.filter { !known.contains($0.sha256) }
+                    .map { WorldMapAsset(file:"paths-connected-saved.json",byteCount:$0.byteCount,sha256:$0.sha256) }
+            }
+            if let originalGraph,shared.contains(where:{ $0.hash==originalGraph.sha256 }) {
+                candidates.append(originalGraph)
+            }
+            for asset in candidates {
+                try Task.checkCancellation()
+                guard let data=try? await read(asset,maximumBytes:64_000_000),
+                      let graph=try? JSONDecoder().decode(WalkingGraph.self,from:data) else { continue }
+                return (asset,graph)
+            }
+            throw error
+        }
     }
     func backdrop(source: WorldSource, overview: WorldOverview, frame: GeoBounds? = nil) async throws -> WorldBackdrop {
         try await prefetch(source.tiles.compactMap(\.background).map { WorldMapAsset(file:$0.path,byteCount:$0.byteCount,sha256:$0.sha256) })

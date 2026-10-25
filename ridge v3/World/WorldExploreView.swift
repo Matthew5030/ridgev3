@@ -123,6 +123,9 @@ struct WorldExploreView: View {
         .onAppear { updateElevationProfile();if world.in3D { world.resume() }; store.isWorldBrowsing=true; if let terrain=world.routeTerrain { store.activeTerrain=terrain } }
         .onDisappear { cancelTerrainEntry();tour.close();world.suspend();UIApplication.shared.isIdleTimerDisabled=false }
         .onChange(of:world.isSavingOffline) { _, _ in updateIdleTimer() }
+        .onChange(of:world.regionComplete) { _, complete in
+            if complete,!world.isSavingOffline { world.cancelDownload();exploring=true;explorePoint=nil }
+        }
         .onChange(of:tour.isPlaying) { _, _ in updateIdleTimer() }
         .onChange(of:store.activeRoute) { _, _ in updateElevationProfile();if tour.isPresented { tour.close() } }
         .onChange(of:store.activeRoute?.id) { _, value in showRoutePanel = value != nil && dockedRoutePanel; routeDetailsSection = .waypoints }
@@ -204,6 +207,7 @@ struct WorldExploreView: View {
                 OfflineAtlasView(atlas:store.atlas,entries:[],savedEntries:[],focus:focus,selecting:false,
                     selectedBounds:.constant(nil),draggingSelection:.constant(false),admittedBounds:nil,selectionAllowed:false,
                     requiredBounds:nil,route:[],routeSegments:[],onViewport:viewportChanged,onUserViewport:userViewportChanged,minimumViewportSpan:WorldCameraTransition.minimumAtlasSpan,terrainIsVisible:world.in3D ? overheadSurfaceReady : overheadCanReveal,onWorldTap:visit,
+                    worldOfflineBounds:world.offlineDisplayBounds,worldOfflineEdges:world.offlineEdges,
                     worldDownloadTiles:world.regionTileProgress.tiles,
                     worldCompletedTiles:world.regionTileProgress.completed,
                     worldActiveTiles:world.regionTileProgress.active,
@@ -288,7 +292,7 @@ struct WorldExploreView: View {
                                 Image(systemName:"xmark").padding(12)
                             }.accessibilityLabel("Close region").disabled(world.isSavingOffline)
                             WorldRegionDownloadCard(world:world,pack:pack,
-                                saved:(regionMaps+parkMaps).first { $0.id==pack.id },explore: { openRegion(pack) },
+                                saved:(regionMaps+parkMaps).first { $0.id==pack.id },
                                 selectWholePark:parkMaps.first { $0.id==pack.parkID && $0.id != pack.id }.map { whole in
                                     { selectRegion(whole.pack) }
                                 },retryConnection:retryConnection)
@@ -425,9 +429,8 @@ struct WorldExploreView: View {
     private var regionMapBar:some View {
         VStack(alignment:.leading,spacing:8) {
             HStack(spacing:12) {
-                statusKey("Downloaded",color:RidgeTheme.forest,symbol:"checkmark.circle.fill")
-                statusKey("Part saved",color:RidgeTheme.offlineBoundary,symbol:"circle.lefthalf.filled")
-                statusKey("Not saved",color:RidgeTheme.muted,symbol:"arrow.down.circle")
+                statusKey("Clear · saved",color:RidgeTheme.forest,symbol:"checkmark.circle.fill")
+                statusKey("Shaded · download",color:RidgeTheme.muted,symbol:"arrow.down.circle")
                 Spacer(minLength:0)
                 Button { if !world.isSavingOffline { world.cancelDownload() };exploring=false;world.cancelRegionLoad();focusAllRegions() } label: {
                     Image(systemName:"globe.europe.africa")
@@ -435,7 +438,7 @@ struct WorldExploreView: View {
             }
             statusKey("Unavailable terrain",color:Color(red:0.70,green:0.19,blue:0.16),symbol:"exclamationmark.triangle.fill")
             if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps").font(.caption) }
-            else { Text("Zoom into saved terrain · tap a region to download").font(.caption).foregroundStyle(RidgeTheme.muted) }
+            else { Text("Zoom into clear terrain · tap shaded areas to download").font(.caption).foregroundStyle(RidgeTheme.muted) }
             if let regionMapError { Text(regionMapError).font(.caption) }
         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }
@@ -452,10 +455,6 @@ struct WorldExploreView: View {
         return explorePoint.flatMap { world.hasCoverage($0) ? $0 : nil } ?? overlay?.savedPoint
             ?? world.offlineBounds.filter { tile in pack.cells.contains { $0.bounds.contains(tile.center) } }
                 .min { $0.center.distance(to:pack.bounds.center)<$1.center.distance(to:pack.bounds.center) }?.center
-    }
-    private func openRegion(_ pack:WorldRegionPack) {
-        guard let point=savedPoint(in:pack) else { return }
-        world.cancelDownload();openPlace(point)
     }
     /// A saved route's destination must survive tab recreation and asynchronous
     /// catalogue/coverage loading. Region-overlay artwork is not a prerequisite.
@@ -599,7 +598,7 @@ struct WorldExploreView: View {
         guard !world.in3D,!world.isSavingOffline else { return }
         exploring=true;atlasGestureActive = !gestureEnded
         if bounds.depthMeters>=WorldCameraTransition.entrySpanLimit { cancelTerrainEntry() }
-        // A selected region must not trap a pinch zoom behind its Explore button.
+        // A download selection must never block the ordinary zoom gesture.
         // browse() still checks saved coverage before preparing any terrain.
         if bounds.depthMeters < WorldCameraTransition.preparationSpanLimit,world.downloadRegion != nil {
             world.cancelDownload();explorePoint=nil

@@ -512,7 +512,8 @@ struct OfflineAtlasView: View {
 
                 }
                 drawAreas(context: &context, size: size)
-                if worldRegions.isEmpty { drawWorldOfflineCoverage(context: &context, size: size) }
+                if usesWorldStyle { drawWorldAvailability(context:&context,size:size) }
+                else if worldRegions.isEmpty { drawWorldOfflineCoverage(context: &context, size: size) }
                 var downloadOutline=Path()
                 for edge in worldDownloadEdges {
                     downloadOutline.move(to:screen(edge.start,size:size));downloadOutline.addLine(to:screen(edge.end,size:size))
@@ -523,7 +524,7 @@ struct OfflineAtlasView: View {
                 drawSelection(context: &context, size: size)
                 var savedContext=context
                 if let footprint=downloadFootprint(size:size) { savedContext.clip(to:footprint,style:FillStyle(eoFill:true)) }
-                for bounds in worldSavedDownloadFills where worldDownloading || !nativeMapSurface {
+                for bounds in worldSavedDownloadFills where !nativeMapSurface {
                     let rect=rectangle(bounds,size:size)
                     if CGRect(origin:.zero,size:size).intersects(rect) {
                         savedContext.fill(Path(rect),with:.color(RidgeTheme.forest.opacity(0.30)))
@@ -541,10 +542,10 @@ struct OfflineAtlasView: View {
                             guard viewport.intersects(rect) else { continue }
                             let done=worldCompletedTiles.contains(bounds), active=worldActiveTiles.contains(bounds)
                             let age=tileCompletionTimes[bounds].map { timeline.date.timeIntervalSince($0) } ?? 1
-                            let fade=reduceMotion || !worldDownloading ? 1 : max(0,min(1,age/0.4))
+                            let fade=nativeMapSurface ? max(0,1-age/1.2) : reduceMotion || !worldDownloading ? 1 : max(0,min(1,age/0.4))
                             let color=done ? RidgeTheme.forest : active ? RidgeTheme.orange : RidgeTheme.forest
                             context.fill(Path(rect),with:.color(color.opacity(done ? 0.30*fade : active ? 0.18+pulse : 0.04)))
-                            context.stroke(Path(rect),with:.color(color.opacity(done || active ? 0.65 : 0.18)),lineWidth:1)
+                            context.stroke(Path(rect),with:.color(color.opacity(done ? 0.65*fade : active ? 0.65 : 0.18)),lineWidth:1)
                             if done && rect.width>18 && rect.height>18 {
                                 var tick=Path(); tick.move(to:CGPoint(x:rect.midX-4,y:rect.midY))
                                 tick.addLine(to:CGPoint(x:rect.midX-1,y:rect.midY+3));tick.addLine(to:CGPoint(x:rect.midX+5,y:rect.midY-4))
@@ -930,7 +931,7 @@ struct OfflineAtlasView: View {
     }
     private func drawWorldRegions(context:inout GraphicsContext,size:CGSize) {
         guard !worldRegions.isEmpty else { return }
-        let viewport=CGRect(origin:.zero,size:size)
+        let viewport=CGRect(origin:.zero,size:size),savedMask=savedWorldPath(size:size)
         for region in worldRegions {
             let selected=region.id==selectedWorldRegion,available = !region.available.isEmpty
             let color:Color=region.isBlocked ? Color(red:0.70,green:0.19,blue:0.16) : region.downloadState == .saved ? RidgeTheme.forest
@@ -957,6 +958,7 @@ struct OfflineAtlasView: View {
             if !nativeMapSurface { standardContext.fill(standard,with:.color(Color(red:0.28,green:0.48,blue:0.65).opacity(selected ? 0.20 : 0.11))) }
             var missingContext=context
             missingContext.clip(to:fill,style:FillStyle(eoFill:true))
+            if usesWorldStyle { missingContext.clip(to:savedMask,options:.inverse) }
             missingContext.fill(gaps,with:.color(Color(red:0.70,green:0.19,blue:0.16).opacity(selected ? 0.30 : 0.22)))
             var outline=fill
             if region.pack.mapShapes == nil {
@@ -982,6 +984,29 @@ struct OfflineAtlasView: View {
                 lettering.draw(text.foregroundStyle(item.region.isBlocked ? Color(red:0.62,green:0.16,blue:0.14) : RidgeTheme.ink.opacity(item.region.available.isEmpty ? 0.6 : 0.95)),at:point)
             }
         }
+    }
+    private func savedWorldPath(size:CGSize)->Path {
+        let viewport=CGRect(origin:.zero,size:size)
+        var saved=Path()
+        // Compact receipt coverage is authoritative; temporary rendered meshes
+        // and a region-wide completion flag cannot clear unsaved holes.
+        for bounds in worldOfflineBounds+worldSavedDownloadFills {
+            let rect=rectangle(bounds,size:size)
+            if viewport.intersects(rect) { saved.addRect(rect) }
+        }
+        return saved
+    }
+    private func drawWorldAvailability(context:inout GraphicsContext,size:CGSize) {
+        let viewport=CGRect(origin:.zero,size:size)
+        var shaded=context
+        shaded.clip(to:savedWorldPath(size:size),options:.inverse)
+        shaded.fill(Path(viewport),with:.color(RidgeTheme.paper.opacity(0.36)))
+        var edge=Path()
+        for item in worldOfflineEdges {
+            edge.move(to:screen(item.start,size:size));edge.addLine(to:screen(item.end,size:size))
+        }
+        context.stroke(edge,with:.color(RidgeTheme.paper.opacity(0.9)),lineWidth:3)
+        context.stroke(edge,with:.color(RidgeTheme.muted.opacity(0.8)),style:StrokeStyle(lineWidth:1.2,dash:[5,4]))
     }
     private func drawWorldOfflineCoverage(context: inout GraphicsContext, size: CGSize) {
         guard !worldOfflineBounds.isEmpty else { return }
