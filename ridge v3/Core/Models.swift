@@ -168,11 +168,15 @@ struct RegionManifest: Codable, Hashable, Identifiable, Sendable {
     var adaptive: AdaptiveTerrainSource? = nil
     var totalBytes: Int64 {
         let layers = horizon?.layers ?? []
-        let maps = cartographySourceID == nil ? cartography.map { [$0.totalBytes] }
+        let maps: [Int64] = cartographySourceID == nil ? cartography.map { [$0.totalBytes] }
             ?? (textures + (detailTextures ?? []) + layers.flatMap(\.textures)).map(\.byteCount)
             : []
-        let sizes = (levels + layers.flatMap(\.levels)).map(\.byteCount) + maps + [graphByteCount ?? 0, adaptive?.downloadBytes ?? 0]
-        return sizes.reduce(0) { sum, size in
+        var sizes: [Int64] = levels.map(\.byteCount)
+        sizes.append(contentsOf: layers.flatMap(\.levels).map(\.byteCount))
+        sizes.append(contentsOf: maps)
+        sizes.append(graphByteCount ?? 0)
+        sizes.append(adaptive?.downloadBytes ?? 0)
+        return sizes.reduce(Int64(0)) { sum, size in
             let result = sum.addingReportingOverflow(max(0, size))
             return result.overflow ? .max : result.partialValue
         }
