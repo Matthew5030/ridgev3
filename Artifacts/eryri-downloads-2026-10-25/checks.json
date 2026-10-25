@@ -1,0 +1,24 @@
+{
+  "codeCommit": "6287f12706c8e67e5916aa818812f7539f84588c",
+  "tests": {
+    "realEryriArchives": 98,
+    "regions": 73957,
+    "cameraOwnership": 3318,
+    "sectionPacks": 25,
+    "catalogueOffline": 59,
+    "packing": 6,
+    "publication": 3
+  },
+  "completedInventoryLookupLocalSeconds": 0.023231029510498047,
+  "hardware": {
+    "expectedSections": 73,
+    "savedSections": 73,
+    "tileReceipts": 16199,
+    "physicalAssetSizesMatch": true,
+    "partialFiles": 0,
+    "coldLaunchShowsMapsSaved": true,
+    "gestureAcceptance": "pending"
+  },
+  "timingTrace": "Instruments could not attach; no frame-time claim",
+  "ciRun": 40192005926
+}
