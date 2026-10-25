@@ -24,8 +24,38 @@ struct OfflinePackSummary: Sendable {
     var download: AreaDownloadEstimate
     var complete: Bool { download.downloadBytes == 0 }
 }
+struct DownloadedSourceStorage:Identifiable,Sendable {
+    var entry:PackEntry
+    var bytes:Int64
+    var id:String { entry.id }
+}
 
 extension PackStore {
+    func downloadedSourceStorage() throws -> [DownloadedSourceStorage] {
+        try sourceEntriesForStorage().compactMap { entry in
+            let receipt=entry.directory.appendingPathComponent("downloaded.json")
+            guard let data=try? Data(contentsOf:receipt) else { return nil }
+            let hashes=try JSONDecoder().decode([String:String].self,from:data)
+            var bytes:Int64=0
+            for name in hashes.keys {
+                let file=try Self.assetPathForDownload(name,in:entry.directory)
+                bytes+=Int64((try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? 0)
+            }
+            return bytes>0 ? DownloadedSourceStorage(entry:entry,bytes:bytes) : nil
+        }
+    }
+    func removeDownloadedSource(_ entry:PackEntry) throws {
+        let entries=try sourceEntriesForStorage()
+        guard let current=entries.first(where:{ $0.id==entry.id && $0.directory.standardizedFileURL.path==entry.directory.standardizedFileURL.path }) else {
+            throw RidgeError.message("This downloaded pack could not be found.")
+        }
+        let receipt=current.directory.appendingPathComponent("downloaded.json")
+        guard FileManager.default.fileExists(atPath:receipt.path) else { return }
+        let hashes=try JSONDecoder().decode([String:String].self,from:Data(contentsOf:receipt))
+        let files=try hashes.keys.map { try Self.assetPathForDownload($0,in:current.directory) }
+        for file in files where FileManager.default.fileExists(atPath:file.path) { try FileManager.default.removeItem(at:file) }
+        try JSONEncoder().encode([String:String]()).write(to:receipt,options:.atomic)
+    }
     /// A storage operation, deliberately independent of scene admission and decoding.
     static func offlinePackAssets(_ manifest: RegionManifest) throws -> [SourceAsset] {
         guard let adaptive = manifest.adaptive, adaptive.isSource, adaptive.index == nil,

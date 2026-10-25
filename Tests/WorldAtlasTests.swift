@@ -19,6 +19,9 @@ import ImageIO
         }
         let data = try JSONSerialization.data(withJSONObject: ["schemaVersion":1,"tileSize":256,"minZoom":5,"maxZoom":10,"tiles":pages])
         let index = try WorldAtlasIndex(data: data)
+        check(index.renderer==nil && index.capturedSections==0,"Legacy inventories remain readable")
+        let native = try WorldAtlasIndex(data:JSONSerialization.data(withJSONObject:["schemaVersion":1,"tileSize":256,"minZoom":5,"maxZoom":13,"tiles":pages,"renderer":"WorldPreview","semanticSectionCount":674]))
+        check(native.renderer=="WorldPreview" && native.capturedSections==674,"The base-map view can verify its preinstalled renderer independently of terrain downloads")
         for scale in [7400.0, 32000, 128000, 4000000, 16000000] {
             for x in [0.475, 0.487, 0.502] {
                 let selected = index.pages(centerX:x, centerY:0.32, scale:scale, width:1366, height:1024)
@@ -41,6 +44,7 @@ import ImageIO
             let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
             let real = try WorldAtlasIndex(data: Data(contentsOf: root.appendingPathComponent("index.json")))
             check(!real.available.isEmpty, "Bundled inventory is populated")
+            if real.renderer=="WorldPreview" { check(real.capturedSections==674 && real.maxZoom==13,"The installed native atlas contains the complete UK reference layer") }
             for page in real.available {
                 check(FileManager.default.fileExists(atPath: root.appendingPathComponent(page.key).path), "Bundled page exists: \(page.key)")
                 if page.zoom > real.minZoom, let parent = page.parent { check(real.available.contains(parent), "Bundled parent coverage") }

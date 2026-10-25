@@ -82,6 +82,9 @@ A preview JPEG is **not a coverage mask**. The native renderer starts transparen
 
 ## International baseline (2026-10-09)
 
+For a bounded Scottish experiment using cached UK map features and the free
+Copernicus DEM, see [the Ben Nevis adaptive pilot](../global_source/SCOTLAND-TEST.md).
+
 `../global_source/batch.py` builds new terrain/vector/route sources from public Copernicus GLO-30 and Geofabrik OSM extracts. This is a **roughly 30 m digital surface model**, including vegetation/buildings where present, not international 1 m LiDAR. Fine adaptive error is 0.5 m relative to the resampled and decimetre-quantised DSM; it does not claim 0.5 m real-world accuracy. Background adaptive error is 2 m. The same RAT codec, vector palette and app reader are reused. Per-chunk height offsets support high mountains without signed-int16 overflow. Contours are 20 m, with 100 m index lines.
 
 The first target is Switzerland. `--all-regions` queues Geofabrik leaf extracts, prioritising Switzerland, Austria, Nepal and New Zealand and excluding the existing Great Britain build. Each completed country/extract has its own app-format catalogue under `output/<extract>/catalog.json`; this is not yet an app-wide international catalogue or overview. `plan.json` records the queue, and `status.json` records progress, deferred cells and failures. No source is uploaded and no Cloudflare service is enabled.

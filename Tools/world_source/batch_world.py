@@ -61,6 +61,18 @@ def subbounds(bounds, x, y, size):
 def contains(b, lon, lat):
     return b['minLongitude'] <= lon <= b['maxLongitude'] and b['minLatitude'] <= lat <= b['maxLatitude']
 
+def reuse_tile(stage,folder,tile,original):
+    if any(tile['mesh'][key]!=original[key] for key in ['sha256','decodedSHA256','bounds']):
+        raise ValueError('Retained tile does not match the selected fine surface')
+    assets=[tile[k] for k in ['mesh','background','map']]
+    for asset in assets:
+        name=asset.get('file',asset.get('path'));read_verified(folder/name,asset['sha256'],asset['byteCount'])
+    for asset in assets:
+        name=asset.get('file',asset.get('path'));target=stage/name
+        if target.exists() or target.is_symlink():target.unlink()
+        target.symlink_to((folder/name).resolve())
+    return json.loads(rawjson(tile))
+
 def load_map(public, selection):
     folder = public / 'tiles' / '10' / str(selection['x']) / str(selection['y'])
     descriptor = folder / 'descriptor.json'
@@ -89,6 +101,13 @@ def source(a, section, selection, fine, semantic, graph, credits, archive_sha, s
     stage = a.output / '.work' / ident
     stage.mkdir(parents=True, exist_ok=True)
     b = subbounds(selection['bounds'], sx, sy, size)
+    prior_tiles={};reuse_folder=None
+    reuse_root=getattr(a,'reuse_world',None)
+    if reuse_root and (reuse_root/'sources'/ident/'world.json').exists():
+        reuse_folder=reuse_root/'sources'/ident;prior=json.loads((reuse_folder/'world.json').read_bytes())
+        if prior['semanticArchiveSHA256']!=archive_sha or prior['bounds']!=b or prior['columns']!=size or prior['rows']!=size:
+            raise ValueError('Retained section differs from semantic input or source grid')
+        prior_tiles={t['id']:t for t in prior['tiles']}
     width = math.radians(b['maxLongitude']-b['minLongitude'])*6371008.8*math.cos(math.radians((b['minLatitude']+b['maxLatitude'])/2))
     depth = math.radians(b['maxLatitude']-b['minLatitude'])*6371008.8
     tw, th = width/size, depth/size
@@ -146,6 +165,12 @@ def source(a, section, selection, fine, semantic, graph, credits, archive_sha, s
     # Missing fine cells remain absent from tiles; zero overview values never grant coverage.
     def build(c):
         x,y=cell(c);x-=sx;y-=sy;tid=f'c{x:02d}-r{y:02d}'
+        original=fine[c['id']]
+        if original['sourceSHA256']!=c['sourceSHA256'] or original['bounds']!=c['bounds']:raise ValueError('Fine/raw mismatch')
+        if tid in prior_tiles:
+            retained=reuse_tile(stage,reuse_folder,prior_tiles[tid],original)
+            validate_tile(stage,retained,binaries)
+            return retained
         checkpoint=stage/(tid+'.checkpoint.json')
         if checkpoint.exists():
             old=json.loads(checkpoint.read_bytes())
@@ -264,7 +289,7 @@ def region_results(jobs, slots):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--selection',type=Path,required=True);p.add_argument('--fine',type=Path,required=True);p.add_argument('--public',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--staged-public',type=Path);p.add_argument('--workers',type=int,default=2);p.add_argument('--region-workers',type=int,default=1);p.add_argument('--source-cells',type=int,choices=(8,16),default=16);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--section');p.add_argument('--limit-sources',type=int);p.add_argument('--deadline-unix',type=float);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--selection',type=Path,required=True);p.add_argument('--fine',type=Path,required=True);p.add_argument('--public',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--staged-public',type=Path);p.add_argument('--reuse-world',type=Path);p.add_argument('--workers',type=int,default=2);p.add_argument('--region-workers',type=int,default=1);p.add_argument('--source-cells',type=int,choices=(8,16),default=16);p.add_argument('--reserve-gib',type=int,default=35);p.add_argument('--section');p.add_argument('--limit-sources',type=int);p.add_argument('--deadline-unix',type=float);a=p.parse_args()
     if not 1<=a.workers<=4:p.error('Use 1–4 tile workers per region')
     if not 1<=a.region_workers<=16:p.error('Use 1–16 region workers')
     if a.limit_sources is not None and a.limit_sources < 1:p.error('Source limit must be positive')

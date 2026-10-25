@@ -31,14 +31,22 @@ struct WorldGestureMotion {
     enum Step: Equatable {
         case none, rebase
         case pan(CGPoint,CGPoint)
-        case zoom(CGPoint,CGPoint,Double)
+        case zoom(CGPoint,CGPoint,Double,Double)
         case angle(Double,Double)
     }
     private var previous: [Finger] = []
     private var start: [Finger] = []
     private var moving = false
     private(set) var intent = WorldGestureIntent.undecided
-    private var horizontal = false
+    var rotateWithOneFinger = false
+
+    private func angleStep(_ delta: CGPoint) -> Step {
+        // Suppress small cross-axis jitter, but let direction change naturally
+        // during the same drag instead of locking it at first recognition.
+        let dx=abs(delta.x) < abs(delta.y)*0.4 ? 0 : delta.x
+        let dy=abs(delta.y) < abs(delta.x)*0.4 ? 0 : delta.y
+        return .angle(dx,dy)
+    }
     private static func midpoint(_ p: [Finger]) -> CGPoint {
         CGPoint(x:(p[0].point.x+p[1].point.x)/2,y:(p[0].point.y+p[1].point.y)/2)
     }
@@ -60,26 +68,34 @@ struct WorldGestureMotion {
                 // Consume the recognition threshold instead of jumping by it.
                 return .rebase
             }
+            if rotateWithOneFinger {
+                return angleStep(CGPoint(x:p[0].point.x-previous[0].point.x,y:p[0].point.y-previous[0].point.y))
+            }
             return .pan(previous[0].point,p[0].point)
         }
         if intent == .undecided {
             intent=WorldGestureIntent.resolve(startA:start[0].point,startB:start[1].point,a:p[0].point,b:p[1].point)
             guard intent != .undecided else { return .none }
-            let origin=Self.midpoint(start),now=Self.midpoint(p)
-            horizontal=abs(now.x-origin.x)>abs(now.y-origin.y)
             start=p;moving=true
             return .rebase
         }
         if intent == .angle {
             // A pinch can start after the fingers initially travel together.
             // Rebase at that point rather than replaying the accumulated scale.
-            if abs(Self.span(p)/Self.span(start)-1)>0.10 && abs(Self.span(p)-Self.span(start))>12 {
+            let startAngle=atan2(start[1].point.y-start[0].point.y,start[1].point.x-start[0].point.x)
+            let nowAngle=atan2(p[1].point.y-p[0].point.y,p[1].point.x-p[0].point.x)
+            let twist=abs(atan2(sin(nowAngle-startAngle),cos(nowAngle-startAngle)))
+            if (abs(Self.span(p)/Self.span(start)-1)>0.10 && abs(Self.span(p)-Self.span(start))>12) || twist>0.10 {
                 intent = .transform;return .rebase
             }
             let a=Self.midpoint(previous),b=Self.midpoint(p)
-            return .angle(horizontal ? b.x-a.x : 0,horizontal ? 0 : b.y-a.y)
+            if rotateWithOneFinger { return .pan(a,b) }
+            return angleStep(CGPoint(x:b.x-a.x,y:b.y-a.y))
         }
-        return .zoom(Self.midpoint(previous),Self.midpoint(p),Self.span(p)/Self.span(previous))
+        let before=atan2(previous[1].point.y-previous[0].point.y,previous[1].point.x-previous[0].point.x)
+        let after=atan2(p[1].point.y-p[0].point.y,p[1].point.x-p[0].point.x)
+        let rotation=atan2(sin(after-before),cos(after-before))
+        return .zoom(Self.midpoint(previous),Self.midpoint(p),Self.span(p)/Self.span(previous),rotation)
     }
     var recognized: Bool { moving }
 }

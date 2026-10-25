@@ -1,0 +1,26 @@
+{
+  "sceneID": "S2C_30UVD_20250712_0_L2A",
+  "datetime": "2025-07-12T11:27:02.419000Z",
+  "strength": 0.66,
+  "bounds": {
+    "maxLatitude": 53.120405283106564,
+    "maxLongitude": -3.984375,
+    "minLatitude": 53.04990420466113,
+    "minLongitude": -4.1015625
+  },
+  "usablePercent": 96.5738559454394,
+  "addedMapBytes": 1942091,
+  "samplePixelsPerTile": [
+    49,
+    49
+  ],
+  "border": 8,
+  "referenceLuminance": 0.0758987459699433,
+  "attribution": "Contains modified Copernicus Sentinel data 2025. Satellite-guided illustrative ground colours.",
+  "inputManifestSHA256": "5bfda0070eecbf7a28f6499281eb1edcc2c22cccb5fb1a91ac00cbc990e75db9",
+  "cachedWindowSHA256": "ae50f206671ce60756be4deca5130613092bb2199e0473e093680fea407ecf5b",
+  "limitations": [
+    "Approximately 10 m observed colour variation, not recovered fine texture or land-cover classification.",
+    "SCL masking is conservative but is not a guarantee of cloud-free imagery."
+  ]
+}

@@ -17,6 +17,13 @@ struct RouteStatistics: Sendable {
     static let empty = RouteStatistics(distanceMeters: 0, ascentMeters: 0, descentMeters: 0, estimatedMinutes: 0, hasElevation: false, hasCompleteElevation: false, segmentCount: 0)
 }
 
+/// Availability comes from completed downloads, independently of the current
+/// render window or the route's historical region identifier.
+struct RouteOfflineCoverage:Equatable,Sendable {
+    var openingPoint:GeoPoint?
+    var isComplete:Bool
+}
+
 enum RouteError: LocalizedError, Equatable {
     case invalidCoordinate
     case outsideArea
@@ -39,7 +46,7 @@ enum RouteError: LocalizedError, Equatable {
         case .missingElevation: return "There is a gap in the terrain along this line. Choose a different point."
         case .noWalkingGraph: return "This area has no offline walking network. Choose an area with mapped walking paths."
         case .invalidGraph: return "This area's walking network is damaged or too large to open safely."
-        case .noNearbyPath: return "There is no eligible walking path within 150 metres. Tap closer to a mapped path."
+        case .noNearbyPath: return "No eligible walking path was found in the loaded network. Try another point or expand the downloaded area."
         case .disconnectedPaths: return "These paths do not connect in the downloaded walking network. Choose another point on the connected walking network."
         case .pathStartMismatch: return "Your last point is off the walking network. Move it onto a mapped path to continue."
         case .tooManyPoints: return "This route has too many points. Divide it into smaller routes."
@@ -52,9 +59,95 @@ enum RouteError: LocalizedError, Equatable {
 
 /// Pure, bounded route calculations. Run these on a background task for large networks.
 enum RouteEngine {
+    /// Only the old generated storage label is eligible for repair. A custom
+    /// title, including one containing digits, always belongs to its author.
+    static func isTileRouteName(_ name:String)->Bool {
+        name.range(of:#"^z[0-9]+-x[0-9]+-y[0-9]+(?: \([0-9]+,\s*[0-9]+\))? route$"#,options:.regularExpression) != nil
+    }
+    static func suggestedRouteName(start:GeoPoint?,places:[MapPlace],areaName:String? = nil)->String {
+        guard let start,start.isValid else { return "New route" }
+        func usable(_ name:String)->Bool {
+            let text=name.trimmingCharacters(in:.whitespacesAndNewlines)
+            return !text.isEmpty && text.rangeOfCharacter(from:.letters) != nil
+                && (!(text.contains("-x") && text.contains("-y")) || text.range(of:#"z[0-9]+-x[0-9]+-y[0-9]+"#,options:.regularExpression) == nil)
+                && (!(text.contains(",") || text.contains("/")) || text.range(of:#"[+-]?[0-9]{1,3}(?:\.[0-9]+)?\s*[,/]\s*[+-]?[0-9]{1,3}(?:\.[0-9]+)?"#,options:.regularExpression) == nil)
+        }
+        var nearest:(MapPlace,Double)?
+        for place in places where place.coordinate.isValid {
+            let distance=start.distance(to:place.coordinate)
+            guard distance<=10000,usable(place.name) else { continue }
+            if nearest == nil || distance<nearest!.1 || (distance==nearest!.1 && place.name<nearest!.0.name) {
+                nearest=(place,distance)
+            }
+        }
+        if let (place,distance)=nearest {
+            return String("Walk \(distance<1000 ? "from" : "near") \(place.name.trimmingCharacters(in:.whitespacesAndNewlines))".prefix(120))
+        }
+        if let areaName,usable(areaName) { return String("\(areaName.trimmingCharacters(in:.whitespacesAndNewlines)) walk".prefix(120)) }
+        return "My walk"
+    }
+
+    static func offlineCoverage(for route:RidgeRoute,in saved:[GeoBounds])->RouteOfflineCoverage {
+        let paths=route.segments.isEmpty ? [route.waypoints.map(\.point)] : route.segments.map(\.points)
+        let coordinates=(paths.flatMap { $0 }+route.waypoints.map(\.point)).map(\.coordinate)
+        guard let first=coordinates.first,coordinates.allSatisfy(\.isValid) else { return .init(openingPoint:nil,isComplete:false) }
+        let extent=GeoBounds(minLatitude:coordinates.map(\.latitude).min()!,minLongitude:coordinates.map(\.longitude).min()!,
+                             maxLatitude:coordinates.map(\.latitude).max()!,maxLongitude:coordinates.map(\.longitude).max()!)
+        let bounds=saved.filter { $0.isValid && $0.intersects(extent) }
+        guard !bounds.isEmpty else { return .init(openingPoint:nil,isComplete:false) }
+        func contains(_ point:GeoPoint)->Bool { bounds.contains { $0.contains(point) } }
+        // Clip each leg against the union of saved rectangles. Checking only
+        // GPX vertices would incorrectly mark a leg across a download hole saved.
+        func intervals(_ a:GeoPoint,_ b:GeoPoint)->[(Double,Double)] {
+            let extent=GeoBounds(minLatitude:min(a.latitude,b.latitude),minLongitude:min(a.longitude,b.longitude),
+                                 maxLatitude:max(a.latitude,b.latitude),maxLongitude:max(a.longitude,b.longitude))
+            return bounds.compactMap { box -> (Double,Double)? in
+                guard box.intersects(extent) else { return nil }
+                var lo=0.0,hi=1.0
+                for (start,delta,minimum,maximum) in [(a.latitude,b.latitude-a.latitude,box.minLatitude,box.maxLatitude),
+                                                      (a.longitude,b.longitude-a.longitude,box.minLongitude,box.maxLongitude)] {
+                    if abs(delta)<1e-14 { if start<minimum || start>maximum { return nil } }
+                    else {
+                        let x=(minimum-start)/delta,y=(maximum-start)/delta
+                        lo=max(lo,min(x,y));hi=min(hi,max(x,y))
+                        if lo>hi { return nil }
+                    }
+                }
+                return (lo,hi)
+            }.sorted { $0.0<$1.0 }
+        }
+        var opening:GeoPoint?=contains(first) ? first : nil
+        var complete=coordinates.allSatisfy(contains)
+        for path in paths {
+            for point in path where opening == nil && contains(point.coordinate) { opening=point.coordinate }
+            guard path.count>1 else { continue }
+            for i in 1..<path.count {
+                let a=path[i-1].coordinate,b=path[i].coordinate,ranges=intervals(a,b)
+                if opening == nil,let range=ranges.first {
+                    let t=(range.0+range.1)/2
+                    opening=GeoPoint(latitude:a.latitude+(b.latitude-a.latitude)*t,longitude:a.longitude+(b.longitude-a.longitude)*t)
+                }
+                if complete {
+                    var covered=0.0
+                    for (lo,hi) in ranges {
+                        if lo>covered+1e-9 { break }
+                        covered=max(covered,hi)
+                    }
+                    if covered<1-1e-9 { complete=false }
+                }
+            }
+        }
+        return .init(openingPoint:opening,isComplete:complete)
+    }
+
     static let maximumRoutePoints = 100_000
-    static let maximumGraphNodes = 250_000
-    static let maximumGraphEdges = 750_000
+    // Dense UK city windows can contain around one million real junctions.
+    // Keep the original admission bounds on devices with less than 6 GiB RAM.
+    static func graphLimits(physicalMemory: UInt64) -> (nodes: Int, edges: Int) {
+        physicalMemory >= 6 * 1024 * 1024 * 1024 ? (1_250_000, 3_000_000) : (250_000, 750_000)
+    }
+    static let maximumGraphNodes = graphLimits(physicalMemory: ProcessInfo.processInfo.physicalMemory).nodes
+    static let maximumGraphEdges = graphLimits(physicalMemory: ProcessInfo.processInfo.physicalMemory).edges
 
     /// Resolve a GPX against today's local catalogue, including packs added after import.
     /// Installed coverage takes priority; an existing valid association breaks ties.
@@ -135,7 +228,7 @@ enum RouteEngine {
     }
 
     static func segment(from: GeoPoint, to: GeoPoint, mode: RoutePlanningMode,
-                        terrain: LoadedTerrain, snapDistance: Double = 150) throws -> RouteSegment {
+                        terrain: LoadedTerrain, snapDistance: Double = .infinity) throws -> RouteSegment {
         try validateTerrain(terrain)
         guard from.isValid, to.isValid else { throw RouteError.invalidCoordinate }
         guard terrain.manifest.bounds.contains(from), terrain.manifest.bounds.contains(to) else { throw RouteError.outsideArea }
@@ -150,7 +243,8 @@ enum RouteEngine {
         }
     }
 
-    static func snap(_ coordinate: GeoPoint, terrain: LoadedTerrain, maxDistance: Double = 150) throws -> RoutePoint {
+    /// Snap to the nearest eligible edge in the loaded network, with no default distance cutoff.
+    static func snap(_ coordinate: GeoPoint, terrain: LoadedTerrain, maxDistance: Double = .infinity) throws -> RoutePoint {
         try validateTerrain(terrain)
         guard coordinate.isValid else { throw RouteError.invalidCoordinate }
         guard terrain.manifest.bounds.contains(coordinate) else { throw RouteError.outsideArea }
@@ -167,7 +261,7 @@ enum RouteEngine {
     }
 
     /// Edge snapping uses virtual endpoints, preserving one-way restrictions even halfway along an edge.
-    static func walkingSegment(from: GeoPoint, to: GeoPoint, graph: WalkingGraph, snapDistance: Double = 150) throws -> RouteSegment {
+    static func walkingSegment(from: GeoPoint, to: GeoPoint, graph: WalkingGraph, snapDistance: Double = .infinity) throws -> RouteSegment {
         guard from.isValid, to.isValid else { throw RouteError.invalidCoordinate }
         let prepared = try PreparedGraph(graph)
         let start = try nearestEdge(to: from, graph: prepared, maxDistance: snapDistance)
@@ -420,7 +514,7 @@ enum RouteEngine {
     }
 
     private static func nearestEdge(to point: GeoPoint, graph: PreparedGraph, maxDistance: Double) throws -> EdgeSnap {
-        guard maxDistance.isFinite, maxDistance > 0, maxDistance <= 10_000 else { throw RouteError.noNearbyPath }
+        guard !maxDistance.isNaN, maxDistance > 0 else { throw RouteError.noNearbyPath }
         let longitudeScale = cos(point.latitude * .pi / 180)
         var nearest: EdgeSnap?
         var distance = maxDistance
@@ -474,14 +568,16 @@ enum RouteEngine {
             if ["no", "private", "customers", "delivery", "agricultural", "forestry", "destination"].contains(access) { return false }
             // The older pack normalizes motorways and A-roads to majorRoad, losing
             // the distinction. Do not infer pedestrian eligibility for that class.
-            if ["motorway", "motorway_link", "trunk", "trunk_link", "majorroad", "construction", "proposed", "raceway"].contains(kind) { return false }
+            if ["motorway", "motorway_link", "majorroad", "construction", "proposed", "raceway"].contains(kind) { return false }
             let pathKinds = ["path", "footway", "footpath", "bridleway", "steps", "pedestrian", "track"]
             // Both raw OSM and Ridge's normalized path names are supported. On a
             // walking-path feature, unknown means no explicit access tag was saved.
             if pathKinds.contains(kind) { return ["", "unknown", "yes", "designated", "permissive", "public", "official"].contains(access) }
-            // Roads are usable only when the prepared pack explicitly marks pedestrian access.
-            let roadKinds = ["minorroad", "living_street", "residential", "service", "unclassified", "tertiary", "tertiary_link", "secondary", "secondary_link", "primary", "primary_link", "cycleway"]
-            return roadKinds.contains(kind) && ["yes", "designated", "permissive", "public", "official"].contains(access)
+            // Missing access tags are normal on ordinary roads. Explicit
+            // restrictions above still win; unknown does not mean foot=no.
+            let roadKinds = ["minorroad", "living_street", "residential", "service", "unclassified", "tertiary", "tertiary_link", "secondary", "secondary_link", "primary", "primary_link", "trunk", "trunk_link", "road"]
+            if roadKinds.contains(kind) { return ["", "unknown", "yes", "designated", "permissive", "public", "official"].contains(access) }
+            return kind == "cycleway" && ["yes", "designated", "permissive", "public", "official"].contains(access)
         }
     }
 

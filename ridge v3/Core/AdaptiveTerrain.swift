@@ -102,8 +102,8 @@ extension Data {
 /// Implements the published canonical RTIN traversal (MARTINI, ISC), without error analysis.
 enum AdaptiveTerrainCodec {
     static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
-    static func inflate(_ compressed: Data, byteCount: Int) throws -> Data {
-        guard byteCount > 0, byteCount <= 16_777_216, !compressed.isEmpty, compressed.count <= 16_777_216 else { throw AdaptiveTerrainError(message: "Invalid compressed terrain size.") }
+    static func inflate(_ compressed: Data, byteCount: Int, maximumByteCount: Int = 16_777_216) throws -> Data {
+        guard maximumByteCount > 0, maximumByteCount <= 64_000_000, byteCount > 0, byteCount <= maximumByteCount, !compressed.isEmpty, compressed.count <= maximumByteCount else { throw AdaptiveTerrainError(message: "Invalid compressed terrain size.") }
         var data = Data(count: byteCount), size = uLongf(byteCount)
         let status = data.withUnsafeMutableBytes { out in compressed.withUnsafeBytes { input in
             uncompress(out.bindMemory(to: Bytef.self).baseAddress!, &size, input.bindMemory(to: Bytef.self).baseAddress!, uLong(compressed.count))

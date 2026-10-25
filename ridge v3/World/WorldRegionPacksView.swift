@@ -9,6 +9,7 @@ struct WorldRegionDownloadCard: View {
     let explore:() -> Void
     var selectWholePark:(() -> Void)? = nil
     var retryConnection:(() -> Void)? = nil
+    @State private var confirmRemoval = false
     private var availability:WorldRegionPack.TerrainAvailability {
         saved?.terrainAvailability ?? pack.terrainAvailability(in:world.catalog)
     }
@@ -21,6 +22,7 @@ struct WorldRegionDownloadCard: View {
                 VStack(alignment:.leading,spacing:4) {
                     Text(pack.name).font(.headline)
                     Text(saved?.statusText ?? pack.subtitle).font(.caption).foregroundStyle(RidgeTheme.muted)
+                    Text(pack.terrainQualityText(in:world.catalog)).font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
             }
             if pack.parkID != nil {
@@ -29,7 +31,11 @@ struct WorldRegionDownloadCard: View {
             if partialCoverage {
                 Label("Partial terrain coverage",systemImage:"exclamationmark.triangle")
                     .font(.subheadline.weight(.medium))
-                Text("Red patches have no detailed terrain and aren’t included in the download. You can explore the available terrain around them.")
+                Text("Red patches have no terrain and aren’t included in the download. You can explore the available terrain around them.")
+                    .font(.caption).foregroundStyle(RidgeTheme.muted)
+            }
+            if !pack.standardTerrain(in:world.catalog).isEmpty {
+                Text("Blue areas use standard terrain from 30 m elevation data. LiDAR detail is retained wherever available.")
                     .font(.caption).foregroundStyle(RidgeTheme.muted)
             }
             if let selectWholePark,!world.isSavingOffline,!world.checkingDownload {
@@ -51,7 +57,7 @@ struct WorldRegionDownloadCard: View {
                 } else if blocked {
                     Label("Terrain unavailable",systemImage:"exclamationmark.triangle.fill")
                         .font(.headline).foregroundStyle(Color(red:0.70,green:0.19,blue:0.16))
-                    Text("Red means this map source has no detailed terrain here. It doesn’t mean you need to download it. You can still browse the overview.")
+                    Text("Red means this map source has no terrain here. It doesn’t mean you need to download it. You can still browse the overview.")
                         .font(.subheadline)
                 } else if world.regionComplete {
                     Label(partialCoverage ? "Available terrain saved" : "Maps saved",systemImage:"checkmark.circle.fill").font(.headline)
@@ -66,12 +72,15 @@ struct WorldRegionDownloadCard: View {
                     else {
                         if plan.isEstimate {
                             ProgressView(value:Double(world.regionTileProgress.savedTileCount+world.regionTileProgress.completed.count),total:Double(max(1,plan.tileCount)))
+                                .animation(.linear(duration:0.25),value:world.regionTileProgress.savedTileCount+world.regionTileProgress.completed.count)
                             Text("\(RidgeTheme.bytes(world.downloadedBytes)) downloaded").font(.headline.monospacedDigit())
                         } else {
                             ProgressView(value:Double(world.downloadedBytes),total:Double(max(1,plan.bytes)))
+                                .animation(.linear(duration:0.25),value:world.downloadedBytes)
                             Text("\(RidgeTheme.bytes(world.downloadedBytes)) of \(RidgeTheme.bytes(plan.bytes))").font(.headline.monospacedDigit())
                         }
                     }
+                    WorldDownloadSpeed(rate:world.downloadRate)
                     Text("\(world.regionSaved) of \(plan.parts.count) sections saved").font(.subheadline.monospacedDigit())
                     Text("Amber tiles are downloading. Green tiles are saved.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     Text("Keep Ridge open. The screen will stay awake while downloading. You can pause and continue later.").font(.caption).foregroundStyle(RidgeTheme.muted)
@@ -98,7 +107,26 @@ struct WorldRegionDownloadCard: View {
                         Button("Check remaining download") { world.offerRegionDownload(pack) }.buttonStyle(.bordered)
                     }
                 }
+                if saved?.savedTileCount ?? 0 > 0 {
+                    Button("Remove downloaded maps",role:.destructive) { confirmRemoval=true }
+                        .disabled(world.isRemovingDownloads)
+                }
         }.padding(16).frame(maxWidth:500,alignment:.leading)
+            .confirmationDialog("Remove downloaded maps in \(pack.name)?",isPresented:$confirmRemoval,titleVisibility:.visible) {
+                Button("Remove maps",role:.destructive) { Task { await world.removeDownloadedMaps(in:pack) } }
+            } message: { Text("You can download them again. Saved routes and map files still used by other areas are kept.") }
+    }
+}
+
+private struct WorldDownloadSpeed:View {
+    let rate:WorldDownloadRate
+    var body:some View {
+        TimelineView(.periodic(from:.now,by:1)) { timeline in
+            let value=rate.bytesPerSecond(at:timeline.date)
+            Label(value.map { RidgeTheme.bytes(Int64($0))+"/s" } ?? "Measuring speed…",systemImage:"arrow.down")
+                .font(.subheadline.monospacedDigit()).foregroundStyle(RidgeTheme.muted)
+                .accessibilityLabel(value.map { "Download speed, "+RidgeTheme.bytes(Int64($0))+" per second" } ?? "Measuring download speed")
+        }
     }
 }
 

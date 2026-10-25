@@ -95,7 +95,7 @@ enum WorldSectionPack {
             try handle.seek(toOffset:UInt64(payloadOffset+entry.offset))
             let stored=try handle.read(upToCount:entry.storedByteCount) ?? Data()
             guard stored.count==entry.storedByteCount else { throw RidgeError.message("Incomplete section pack tile.") }
-            let data=entry.compressed ? try AdaptiveTerrainCodec.inflate(stored,byteCount:entry.byteCount) : stored
+            let data=entry.compressed ? try AdaptiveTerrainCodec.inflate(stored,byteCount:entry.byteCount,maximumByteCount:64_000_000) : stored
             guard data.count==value.byteCount,AdaptiveTerrainCodec.hash(data)==value.sha256 else { throw RidgeError.message("A downloaded terrain pack is damaged. Download this region again to repair it.") }
             return data
         }

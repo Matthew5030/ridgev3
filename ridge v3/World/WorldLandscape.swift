@@ -26,6 +26,24 @@ actor WorldLandscapeStore {
     private var residentBackdrop = WorldBackdrop(geometries:[:],meshes:[:])
     private var residentPages: [String:WorldPreparedTile] = [:]
     func snapshot() -> Snapshot { Snapshot(parts:parts,backdrop:residentBackdrop,pages:residentPages) }
+    func flightElevations(_ points:[GeoPoint],catalog:WorldCatalog,root:URL,saved:[GeoBounds]) async throws -> ([Float?],[MapPlace]) {
+        var result=[Float?](repeating:nil,count:points.count),places:[MapPlace]=[]
+        guard let first=points.first else { return (result,places) }
+        let bounds=GeoBounds(minLatitude:points.map(\.latitude).min() ?? first.latitude,minLongitude:points.map(\.longitude).min() ?? first.longitude,
+                             maxLatitude:points.map(\.latitude).max() ?? first.latitude,maxLongitude:points.map(\.longitude).max() ?? first.longitude)
+        let regions=catalog.sources.filter { $0.bounds.intersects(bounds) },allowed=Set(saved)
+        for region in regions {
+            let indices=points.indices.filter { result[$0] == nil && region.bounds.contains(points[$0]) }
+            guard !indices.isEmpty,saved.contains(where:{region.bounds.contains($0.center)}) else { continue }
+            try Task.checkCancellation()
+            let files=WorldSourceStore(cacheURL:cacheURL,allowsNetwork:false)
+            let source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,preferCached:true,recoverCoverage:false)
+            let heights=try await files.flightElevations(indices.map { points[$0] },source:source,saved:allowed)
+            for (offset,i) in indices.enumerated() { result[i]=heights[offset] }
+            places+=source.places
+        }
+        return (result,Array(Set(places)))
+    }
 
     /// Build only newly exposed pieces. A candidate owns its state until the
     /// model commits it, so cancellation cannot invalidate the visible window.
@@ -45,7 +63,8 @@ actor WorldLandscapeStore {
         for region in regions {
             try Task.checkCancellation()
             let needsPaths = WorldWindow.distance(center,to:region.bounds) <= WorldWindow.routingRadius
-            if var old = oldParts[region.id], offlineBounds == nil || !old.files.allowsNetwork {
+            if var old = oldParts[region.id], old.source.graph.sha256 == (region.routing?.sha256 ?? old.source.graph.sha256),
+               offlineBounds == nil || !old.files.allowsNetwork {
                 if !needsPaths { old.graph = WalkingGraph(nodes:[],edges:[]) }
                 if !needsPaths { old.routingLoaded = false }
                 parts.append(old); continue
@@ -90,17 +109,6 @@ actor WorldLandscapeStore {
         var starter=combined;starter.tiles=[]
         try Task.checkCancellation()
         await preview(starter,overview)
-        for index in parts.indices where !parts[index].routingLoaded && WorldWindow.distance(center,to:parts[index].source.bounds)<=WorldWindow.routingRadius {
-            try Task.checkCancellation()
-            parts[index].graph=try await parts[index].files.walkingGraph(parts[index].source)
-            parts[index].routingLoaded=true
-        }
-        let routingParts=parts.map { part in
-            var selected=part
-            if let saved { selected.source.tiles=part.source.tiles.filter { saved.contains($0.mesh.bounds) } }
-            return selected
-        }
-        let graph = try Self.joinGraphs(routingParts,center:center,radius:WorldWindow.routingRadius)
         // This allowance includes retained backgrounds. New terrain cannot
         // multiply it by the number of storage regions in the window.
         let limit = WorldWindow.backgroundBudget
@@ -144,7 +152,7 @@ actor WorldLandscapeStore {
                         guard previous?.pages[tile.id] == nil else { return nil }
                         return originals[originalID]
                     }
-                    let newPages = try await part.files.mapPages(source:fetch,pixels:32)
+                    let newPages = try await part.files.mapPages(source:fetch,pixels:64)
                     var meshSource = part.source
                     meshSource.tiles = selectedTiles.compactMap { tile in
                         guard desiredAdaptive.contains(tile.id), previous?.backdrop.meshes[tile.id] == nil else { return nil }
@@ -187,6 +195,19 @@ actor WorldLandscapeStore {
                 if next < jobs.count { add(next); next += 1 }
             }
         }
+        // Publish the visual surface before decoding route graphs. A camera
+        // handoff needs complete textured geography, not walking-path data.
+        for index in parts.indices where !parts[index].routingLoaded && WorldWindow.distance(center,to:parts[index].source.bounds)<=WorldWindow.routingRadius {
+            try Task.checkCancellation()
+            parts[index].graph=try await parts[index].files.walkingGraph(parts[index].source)
+            parts[index].routingLoaded=true
+        }
+        let routingParts=parts.map { part in
+            var selected=part
+            if let saved { selected.source.tiles=part.source.tiles.filter { saved.contains($0.mesh.bounds) } }
+            return selected
+        }
+        let graph = try Self.joinGraphs(routingParts,center:center,radius:WorldWindow.routingRadius)
         residentBackdrop = background; residentPages = pages
         return (combined,overview,graph,background,pages)
     }

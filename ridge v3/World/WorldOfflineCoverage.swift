@@ -59,6 +59,107 @@ enum WorldOfflineCoverage {
             }
         }.map(\.bounds)
     }
+    struct StorageSummary:Sendable {
+        var bytes:Int64 = 0
+        var areas:[WorldRegionPack] = []
+    }
+    static func storageSummary(at cache:URL,areas:[WorldRegionPack],catalog:WorldCatalog?)->StorageSummary {
+        let saved=savedBounds(at:cache)
+        let partial=Set(((try? FileManager.default.contentsOfDirectory(at:WorldSectionPack.directory(cache),includingPropertiesForKeys:nil)) ?? [])
+            .filter { $0.pathExtension=="partial" }.map { $0.deletingPathExtension().lastPathComponent })
+        let pending=((try? FileManager.default.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil)) ?? [])
+            .filter { $0.pathExtension=="download-index" }.compactMap { file -> WorldSource? in
+                guard let data=try? Data(contentsOf:file) else { return nil }
+                return try? JSONDecoder().decode(WorldSource.self,from:data)
+            }
+        let savedIDs=Set(WorldRegionMapOverlay.make(packs:areas,catalog:catalog,offline:saved).filter { $0.savedTileCount>0 }.map(\.id))
+        let visible=areas.filter { area in
+            savedIDs.contains(area.id) || pending.contains { source in area.cells.contains { $0.bounds.contains(source.bounds.center) } }
+                || catalog?.regionArchives?.contains { $0.id==area.id && partial.contains($0.asset.sha256) } == true
+                || area.sources(in:catalog ?? WorldCatalog(schemaVersion:1,revision:"storage",sources:[])).contains { region in
+                    region.pack.map { partial.contains($0.sha256) } ?? false
+                }
+        }
+        return StorageSummary(bytes:diskBytes(at:cache),areas:visible)
+    }
+    private static func diskBytes(at root:URL)->Int64 {
+        guard let files=FileManager.default.enumerator(at:root,includingPropertiesForKeys:[.isRegularFileKey,.fileSizeKey]) else { return 0 }
+        return files.compactMap { $0 as? URL }.reduce(0) { total,file in
+            let values=try? file.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
+            return total+(values?.isRegularFile == true ? Int64(values?.fileSize ?? 0) : 0)
+        }
+    }
+    /// Remove geographic receipts first; delete only objects unreferenced by
+    /// every remaining save. A combined regional pack may serve several areas.
+    static func removeDownloads(in area:WorldRegionPack?,catalog:WorldCatalog?,at cache:URL) throws {
+        lock.lock();defer { lock.unlock() }
+        let fm=FileManager.default
+        guard fm.fileExists(atPath:cache.path) else { return }
+        if area == nil {
+            for file in try fm.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil) { try fm.removeItem(at:file) }
+            try Data().write(to:cache.appendingPathComponent("coverage-managed"),options:.atomic)
+            return
+        }
+        guard let area else { return }
+        func selected(_ bounds:GeoBounds)->Bool { area.cells.contains { $0.bounds.contains(bounds.center) } }
+        let coverage=cache.appendingPathComponent("offline-coverage.json")
+        let folder=cache.appendingPathComponent("offline-regions",isDirectory:true)
+        let records=((try? fm.contentsOfDirectory(at:folder,includingPropertiesForKeys:nil)) ?? []).filter { $0.pathExtension=="json" }
+            + (fm.fileExists(atPath:coverage.path) ? [coverage] : [])
+        var updates:[(URL,[Receipt])]=[],removed:[Receipt]=[],retained:[Receipt]=[]
+        for file in records {
+            let values=try JSONDecoder().decode([Receipt].self,from:Data(contentsOf:file))
+            let keep=values.filter { !selected($0.bounds) }
+            removed+=values.filter { selected($0.bounds) };retained+=keep
+            updates.append((file,keep))
+        }
+        let retainedHashes=Set(retained.flatMap { $0.assets.map(\.hash) })
+        var loose=Set(removed.flatMap { $0.assets.filter { $0.packed != true }.map(\.hash) })
+        var packed=Set(removed.flatMap { $0.assets.filter { $0.packed == true }.map(\.hash) })
+        let files=try fm.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil)
+        var indices:[URL]=[],sourceIDs=Set<String>()
+        for file in files where ["index","download-index"].contains(file.pathExtension) {
+            guard let data=try? Data(contentsOf:file),let source=try? JSONDecoder().decode(WorldSource.self,from:data),selected(source.bounds) else { continue }
+            indices.append(file);sourceIDs.insert(source.id)
+            loose.formUnion(WorldSourceStore.assets(tiles:source.tiles,source:source).map(\.sha256))
+        }
+        if let catalog {
+            for source in area.displaySources(in:catalog) {
+                sourceIDs.insert(source.id)
+                if let pack=source.pack { packed.insert(pack.sha256) }
+                if let routing=source.routing { loose.insert(routing.sha256) }
+            }
+            for archive in catalog.regionArchives ?? [] where archive.id==area.id { packed.insert(archive.asset.sha256) }
+        }
+        for id in sourceIDs {
+            if let data=try? Data(contentsOf:WorldSectionPack.reference(id,cache:cache)),
+               let installed=try? JSONDecoder().decode(WorldSectionPack.Installed.self,from:data) {
+                packed.insert((installed.container?.asset ?? installed.asset).sha256)
+            }
+        }
+        // Disable migration recovery so a shared container cannot silently
+        // recreate coverage that the user explicitly removed.
+        try Data().write(to:cache.appendingPathComponent("coverage-managed"),options:.atomic)
+        for (file,values) in updates { try JSONEncoder().encode(values).write(to:file,options:.atomic) }
+        for file in indices { try fm.removeItem(at:file) }
+        for id in sourceIDs {
+            let file=WorldSectionPack.reference(id,cache:cache)
+            if let data=try? Data(contentsOf:file),let installed=try? JSONDecoder().decode(WorldSectionPack.Installed.self,from:data),
+               retainedHashes.contains((installed.container?.asset ?? installed.asset).sha256) { continue }
+            if fm.fileExists(atPath:file.path) { try fm.removeItem(at:file) }
+        }
+        loose.subtract(retainedHashes);packed.subtract(retainedHashes)
+        let pinsURL=cache.appendingPathComponent("pins.json")
+        var pins=(try? JSONDecoder().decode(Set<String>.self,from:Data(contentsOf:pinsURL))) ?? []
+        pins.subtract(loose.union(packed))
+        try JSONEncoder().encode(pins).write(to:pinsURL,options:.atomic)
+        for hash in loose.union(packed) where hash.count==64 && hash.allSatisfy(\.isHexDigit) {
+            var candidates:[URL]=[]
+            if loose.contains(hash) { candidates.append(cache.appendingPathComponent(hash)) }
+            if packed.contains(hash) { candidates += [WorldSectionPack.directory(cache).appendingPathComponent(hash+".ridgepack"),WorldSectionPack.directory(cache).appendingPathComponent(hash+".partial")] }
+            for file in candidates where fm.fileExists(atPath:file.path) { try fm.removeItem(at:file) }
+        }
+    }
     /// Coalesce saved tiles for the atlas fill. Admission still uses the exact
     /// receipts; drawing a whole region should not submit 100,000 rectangles
     /// every time the user moves the map. Holes remain holes.

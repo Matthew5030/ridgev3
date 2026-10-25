@@ -158,8 +158,13 @@ class MapFeatureTransformer:
         foot = tags.get("foot", "").strip().lower()
         access = tags.get("access", "").strip().lower()
         designation = tags.get("designation", "").strip().lower()
+        restricted = {"customers", "delivery", "agricultural", "forestry", "destination", "permit"}
         if foot in {"no", "private"}:
             return foot
+        if foot in restricted:
+            return "private"
+        if foot == "use_sidepath":
+            return "no"
         if foot == "permissive":
             return "permissive"
         if foot in {"yes", "designated", "official"}:
@@ -168,6 +173,8 @@ class MapFeatureTransformer:
             return "public"
         if access in {"no", "private"}:
             return access
+        if access in restricted:
+            return "private"
         if access == "permissive":
             return "permissive"
         if access in {"yes", "designated", "official"}:

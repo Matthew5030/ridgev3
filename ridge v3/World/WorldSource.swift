@@ -73,9 +73,26 @@ struct WorldOverview: Codable, Sendable {
 }
 struct WorldVectorMap: Codable, Sendable {
     struct Path: Codable, Sendable { var kind: String; var closed: Bool; var rings: [[[Double]]]; var phase: Double? }
+    /// North-up, pixel-centred colour samples including a neighbour border.
+    /// Alpha is source confidence; zero retains the original map palette.
+    /// Stored inside the checksummed vector asset, so offline packs need no new requests.
+    struct GroundColour: Codable, Sendable {
+        var version: Int
+        var width: Int
+        var height: Int
+        var border: Int
+        var rgba: Data
+        func validate(maximumSide:Int=256,minimumBorder:Int?=nil) throws {
+            guard version == 1, (3...maximumSide).contains(width), (3...maximumSide).contains(height),
+                  (1...32).contains(border), width > 2 * border, height > 2 * border,
+                  border >= (minimumBorder ?? Int(ceil(Double(max(width, height) - 2 * border) / 8)) + 1),
+                  rgba.count == width * height * 4 else { throw RidgeError.message("Invalid ground colour samples.") }
+        }
+    }
     var width: Double
     var height: Double
     var paths: [Path]
+    var groundColour: GroundColour? = nil
 }
 struct WorldTileRequest: Equatable, Sendable {
     var id: String
@@ -99,19 +116,33 @@ enum WorldWorkingSet {
     static let maximumTextures = 256
     static let meshBudget: Int64 = ProcessInfo.processInfo.physicalMemory >= 6 * 1024 * 1024 * 1024 ? 192 * 1024 * 1024 : 96 * 1024 * 1024
     static let textureBudget: Int64 = 192 * 1024 * 1024
-    static func requests(source: WorldSource, center: GeoPoint, distance: Double, previous: [WorldTileRequest] = [], meshLimit: Int64 = meshBudget) -> [WorldTileRequest] {
+    static func requests(source: WorldSource, center: GeoPoint, distance: Double, previous: [WorldTileRequest] = [], meshLimit: Int64 = meshBudget, closePreview: Bool = false) -> [WorldTileRequest] {
         let old = Dictionary(uniqueKeysWithValues: previous.map { ($0.id,$0) })
         let ranges = Dictionary(uniqueKeysWithValues: source.tiles.map { ($0.id,$0.mesh.bounds.center.distance(to:center)) })
         let sorted = source.tiles.sorted {
-            let a = ranges[$0.id]! - (old[$0.id]?.fine == true ? 650 : 0)
-            let b = ranges[$1.id]! - (old[$1.id]?.fine == true ? 650 : 0)
+            // A ground-level camera must promote the tile under it, including
+            // corners where retention would otherwise favour the previous tile.
+            if closePreview, $0.mesh.bounds.contains(center) != $1.mesh.bounds.contains(center) {
+                return $0.mesh.bounds.contains(center)
+            }
+            let retention=closePreview ? 150.0 : 650.0
+            let a = ranges[$0.id]! - (old[$0.id]?.fine == true ? retention : 0)
+            let b = ranges[$1.id]! - (old[$1.id]?.fine == true ? retention : 0)
             return a == b ? $0.id < $1.id : a < b
         }
-        var memory:Int64=0, native=0, medium=0
+        var memory:Int64=0, native=0, medium=0, closeRank=0
         return sorted.prefix(maximumTextures).map { tile in
             let near=ranges[tile.id]!, retained=old[tile.id]
-            let fine=near < (retained?.fine == true ? 4500 : 3200) && memory+tile.mesh.residentBytes <= meshLimit
+            let nearby=closePreview ? closeRank<6 : near < (retained?.fine == true ? 4500 : 3200)
+            let fine=nearby && memory+tile.mesh.residentBytes <= meshLimit
             if fine { memory += tile.mesh.residentBytes }
+            if closePreview {
+                let rank=closeRank;closeRank+=1
+                // Flying prioritises frame time: six 1K pages and twelve 512px
+                // neighbours replace 4K/2K uploads. Retain coarse surroundings.
+                let pixels=rank<6 ? 1024 : rank<18 ? 512 : 128
+                return WorldTileRequest(id:tile.id,pixels:pixels,fine:fine)
+            }
             var pixels=256
             if native<8 && distance < (retained?.pixels == 1024 ? 3200 : 2300) && near < (retained?.pixels == 1024 ? 1600 : 1050) {
                 pixels=1024;native+=1
@@ -144,6 +175,7 @@ actor WorldSourceStore {
     private var pins: Set<String> = []
     private var sectionPack:WorldSectionPack.Reader?
     private var packedSourceID:String?
+    private var stagedManifest:(url:URL,data:Data,sourceID:String,tileIDs:Set<String>)?
     private var bytesSincePrune = 0
     private var writesSincePrune = 0
     private let diskLimit: Int64 = 2 * 1024 * 1024 * 1024
@@ -156,7 +188,8 @@ actor WorldSourceStore {
         var url = cache; var values = URLResourceValues(); values.isExcludedFromBackup = true; try? url.setResourceValues(values)
         if allowsNetwork, let data = try? Data(contentsOf: cache.appendingPathComponent("pins.json")), let saved = try? JSONDecoder().decode(Set<String>.self, from: data) { pins = saved }
     }
-    func manifest(address: String, routing: WorldMapAsset? = nil, preferCached: Bool = false, recoverCoverage: Bool = true) async throws -> WorldSource {
+    func manifest(address: String, routing: WorldMapAsset? = nil, preferCached: Bool = false, recoverCoverage: Bool = true, stageForDownload: Bool = false) async throws -> WorldSource {
+        stagedManifest=nil
         let manifest: Data
         if address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             base = bundled; manifest = try Data(contentsOf: bundled.appendingPathComponent("world.json"))
@@ -164,13 +197,13 @@ actor WorldSourceStore {
             guard let url = URL(string: address), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { throw RidgeError.message("Enter the full address of a world.json file.") }
             base = url.deletingLastPathComponent()
             let cached = cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8)) + ".index")
-            if (preferCached || !allowsNetwork), let raw = try? Data(contentsOf:cached),
+            if !stageForDownload, (preferCached || !allowsNetwork), let raw = try? Data(contentsOf:cached),
                let saved = try? JSONDecoder().decode(WorldSource.self,from:raw), (try? saved.validate()) != nil {
                 manifest = raw
             } else {
                 guard allowsNetwork else { throw RidgeError.message("This map index is missing. Download the area again while connected.") }
                 do {
-                    var request = URLRequest(url: url); request.timeoutInterval = 15
+                    var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData); request.timeoutInterval = 15
                     let (temporary, response) = try await URLSession.shared.download(for: request)
                     defer { try? FileManager.default.removeItem(at: temporary) }
                     let size = try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max
@@ -178,10 +211,16 @@ actor WorldSourceStore {
                     let raw = try Data(contentsOf: temporary)
                     guard let http = response as? HTTPURLResponse, http.statusCode == 200, raw.count < 16_000_000 else { throw RidgeError.message("The world source could not be read.") }
                     let source = try JSONDecoder().decode(WorldSource.self, from: raw); try source.validate()
-                    try raw.write(to: cached, options: .atomic); manifest = raw
+                    if stageForDownload {
+                        // A refresh must not replace the offline index until its
+                        // complete section is verified and saved successfully.
+                        stagedManifest=(cached,raw,source.id,Set(source.tiles.map(\.id)))
+                        try raw.write(to:cached.deletingPathExtension().appendingPathExtension("download-index"),options:.atomic)
+                    } else { try raw.write(to:cached,options:.atomic) }
+                    manifest = raw
                 } catch {
                     try Task.checkCancellation()
-                    guard let raw = try? Data(contentsOf: cached) else { throw error }; manifest = raw
+                    guard !stageForDownload,let raw = try? Data(contentsOf: cached) else { throw error }; manifest = raw
                 }
             }
         }
@@ -190,7 +229,7 @@ actor WorldSourceStore {
         packedSourceID=source.id
         sectionPack=WorldSectionPack.open(sourceID:source.id,cache:cache)
         // Recover the outline of completed saves made before coverage receipts existed.
-        if recoverCoverage { try? recordSavedCoverage(source.tiles, source:source) }
+        if recoverCoverage,!FileManager.default.fileExists(atPath:cache.appendingPathComponent("coverage-managed").path) { try? recordSavedCoverage(source.tiles, source:source) }
         return source
     }
     func open(address: String, routing: WorldMapAsset? = nil) async throws -> (WorldSource, WorldOverview, WalkingGraph) {
@@ -268,6 +307,22 @@ actor WorldSourceStore {
         }
         try Task.checkCancellation()
         return WorldPreparedTile(request:request,mesh:mesh,image:image,geometry:geometry)
+    }
+    /// Preflight only the saved mesh heights. No textures, SceneKit geometry or
+    /// network fallbacks are needed to prepare a complete camera journey.
+    func flightElevations(_ points:[GeoPoint],source:WorldSource,saved:Set<GeoBounds>) async throws -> [Float?] {
+        let tiles=source.tiles.filter { saved.contains($0.mesh.bounds) },index=WorldTileIndex(tiles:tiles)
+        var groups:[String:[Int]]=[:],result=[Float?](repeating:nil,count:points.count)
+        for i in points.indices { if let tile=index.tile(at:points[i]) { groups[tile.id,default:[]].append(i) } }
+        for tile in tiles {
+            guard let indices=groups[tile.id] else { continue }
+            try Task.checkCancellation()
+            let chunk=tile.mesh
+            let data=try await read(WorldMapAsset(file:chunk.path,byteCount:chunk.byteCount,sha256:chunk.sha256))
+            let mesh=try AdaptiveTerrainCodec.decode(data,chunk:chunk)
+            for i in indices { result[i]=mesh.elevation(at:points[i]).map(Float.init) }
+        }
+        return result
     }
     static func assets(tiles: [WorldTile], source: WorldSource, surroundings: [WorldMapAsset] = []) -> [WorldMapAsset] {
         var keep = [source.overview, source.graph] + surroundings
@@ -365,6 +420,7 @@ actor WorldSourceStore {
         if let sectionPack,assets.allSatisfy({ sectionPack.contains($0) && cached.contains($0.sha256) }) {
             pins=try Self.reserve([sectionPack.physicalAsset.sha256],cache:cache)
             try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
+            try commitStagedManifest(tiles,source:source)
             await progress(countCachedInProgress ? assets.reduce(0) { $0+Int64($1.byteCount) } : 0)
             await assetProgress(cached,[])
             return
@@ -403,6 +459,7 @@ actor WorldSourceStore {
         }
         try Task.checkCancellation()
         try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
+        try commitStagedManifest(tiles,source:source)
     }
     func downloadPack(_ asset:WorldMapAsset,source:WorldSource,
                       assetProgress:@escaping @Sendable (Set<String>,Set<String>) async -> Void,
@@ -424,7 +481,16 @@ actor WorldSourceStore {
         sectionPack=try WorldSectionPack.Reader(url:final,asset:asset,sourceID:source.id)
         pins=try Self.reserve([asset.sha256],cache:cache)
         try recordSavedCoverage(source.tiles,source:source,coverageID:source.id)
+        try commitStagedManifest(source.tiles,source:source)
         return count
+    }
+    private func commitStagedManifest(_ tiles:[WorldTile],source:WorldSource) throws {
+        guard let staged=stagedManifest,staged.sourceID==source.id,
+              staged.tileIDs==Set(tiles.map(\.id)) else { return }
+        try Task.checkCancellation()
+        try staged.data.write(to:staged.url,options:.atomic)
+        try? FileManager.default.removeItem(at:staged.url.deletingPathExtension().appendingPathExtension("download-index"))
+        stagedManifest=nil
     }
     private func recordSavedCoverage(_ tiles: [WorldTile], source: WorldSource, coverageID: String? = nil) throws {
         guard !base.isFileURL, !pins.isEmpty else { return }

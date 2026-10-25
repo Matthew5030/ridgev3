@@ -29,6 +29,8 @@ struct WorldAtlasIndex {
     let minZoom: Int
     let maxZoom: Int
     let tileSize: Int
+    let renderer:String?
+    let capturedSections:Int
     let available: Set<WorldAtlasPage>
     private struct Manifest: Decodable {
         let schemaVersion: Int
@@ -36,6 +38,8 @@ struct WorldAtlasIndex {
         let maxZoom: Int
         let tileSize: Int
         let tiles: [String]
+        var renderer:String?
+        var semanticSectionCount:Int?
     }
     enum Invalid: Error { case manifest }
     init(data: Data) throws {
@@ -43,6 +47,7 @@ struct WorldAtlasIndex {
         guard value.schemaVersion == 1, value.tileSize == 256,
               (0...18).contains(value.minZoom), (value.minZoom...18).contains(value.maxZoom) else { throw Invalid.manifest }
         minZoom = value.minZoom; maxZoom = value.maxZoom; tileSize = value.tileSize
+        renderer=value.renderer;capturedSections=value.semanticSectionCount ?? 0
         available = Set(value.tiles.compactMap(WorldAtlasPage.init(key:)).filter { (value.minZoom...value.maxZoom).contains($0.zoom) })
     }
 

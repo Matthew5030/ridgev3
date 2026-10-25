@@ -9,6 +9,8 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <sstream>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -31,22 +33,19 @@ double check(Tri t,double stop){
   e=max(e,abs(z-source(x,y)));if(e>stop)return e;
  }return e;
 }
-template<class T> void write(ofstream& f,T v){f.write(reinterpret_cast<char*>(&v),sizeof(v));}
-int main(int argc,char**argv){try{
- if(argc<3||argc>5)throw runtime_error("usage: park_mesh source-int16 output.rmesh [tolerance-metres] [adaptive-edges]");
- const double metres=argc>=4?stod(argv[3]):.5;
- const bool nativeEdges=argc<5;
- if(!nativeEdges&&string(argv[4])!="adaptive-edges")throw runtime_error("unknown edge mode");
+template<class T> void write(ostream& f,T v){f.write(reinterpret_cast<char*>(&v),sizeof(v));}
+struct MeshResult {string data;uint32_t vertices,triangles,width;double error;};
+MeshResult compileMesh(const int16_t* input,double metres,bool nativeEdges){
  if(!isfinite(metres)||metres<.1||metres>16)throw runtime_error("tolerance must be between 0.1 and 16 metres");
- ifstream input(argv[1],ios::binary|ios::ate);if(!input||input.tellg()!=N*2)throw runtime_error("source byte count");input.seekg(0);input.read(reinterpret_cast<char*>(heights.data()),N*2);
+ memcpy(heights.data(),input,N*2);
  for(auto h:heights)if(h==-32768)throw runtime_error("NoData in source");
  const double tolerance=metres*10-.001; // Leave a rounding margin in source decimetres.
- vector<Tri> coords;coords.reserve(NT);vector<uint8_t> split(N,0);
- for(int i=0;i<NT;i++){
+ static const vector<Tri> coords=[](){vector<Tri> result;result.reserve(NT);for(int i=0;i<NT;i++){
   int id=i+2;Point a{0,0},b{0,0},c{0,0};if(id&1){b={M,M};c={M,0};}else{a={M,M};c={0,M};}
   while((id>>=1)>1){Point p=mid(a,b);if(id&1){b=a;a=c;}else{a=b;b=c;}c=p;}
-  Tri t{a,b,c};coords.push_back(t);if(check(t,tolerance)>tolerance)split[idx(mid(a,b))]=1;
- }
+  result.push_back({a,b,c});}return result;}();
+ vector<uint8_t> split(N,0);
+ for(auto t:coords)if(check(t,tolerance)>tolerance)split[idx(mid(t.a,t.b))]=1;
  // Identical native perimeter vertices on every chunk: no T-junctions.
  if(nativeEdges)for(int p=0;p<S;p++)for(int j:{p,M*S+p,p*S,p*S+M})split[j]=1;
  for(int y=0;y<M;y++)for(int x=0;x<M;x++){
@@ -73,8 +72,24 @@ int main(int argc,char**argv){try{
  if(error>metres*10+.0000001||area2!=2*M*M)throw runtime_error("surface validation failed");
  if(nativeEdges)for(int p=0;p<S;p++)for(int j:{p,M*S+p,p*S,p*S+M})if(lookup[j]<0)throw runtime_error("missing seam vertex");
  uint32_t width=vertices.size()<=65536?2:4;
- ofstream out(argv[2],ios::binary);out.write("RME1",4);write(out,uint32_t(vertices.size()));write(out,uint32_t(triangles.size()));write(out,width);write(out,uint32_t(S));write(out,float(.1));write(out,float(0));
+ ostringstream out(ios::binary);out.write("RME1",4);write(out,uint32_t(vertices.size()));write(out,uint32_t(triangles.size()));write(out,width);write(out,uint32_t(S));write(out,float(.1));write(out,float(0));
  for(auto p:vertices){write(out,uint16_t(p.x));write(out,uint16_t(p.y));write(out,heights[idx(p)]);}
- for(auto k:indices){if(width==2)write(out,uint16_t(k));else write(out,k);}out.close();if(!out)throw runtime_error("write failed");
- cout<<"{\"vertices\":"<<vertices.size()<<",\"triangles\":"<<triangles.size()<<",\"indexWidth\":"<<width<<",\"maxErrorMetres\":"<<error/10<<",\"metalGeometryBytes\":"<<vertices.size()*48ULL+indices.size()*4ULL<<",\"compactBytes\":"<<28+vertices.size()*6ULL+indices.size()*width<<"}\n";
+ for(auto k:indices){if(width==2)write(out,uint16_t(k));else write(out,k);}
+ return {out.str(),uint32_t(vertices.size()),uint32_t(triangles.size()),width,error/10};
+}
+#ifdef RIDGE_MESH_LIBRARY
+// Process-local scratch arrays: callers serialize invocations in each process.
+extern "C" int ridge_compile_mesh(const int16_t* input,double tolerance,int nativeEdges,void* output,size_t capacity,size_t* written,double* error,char* message,size_t messageCapacity){
+ try{auto result=compileMesh(input,tolerance,nativeEdges!=0);if(result.data.size()>capacity)throw runtime_error("mesh output capacity");memcpy(output,result.data.data(),result.data.size());*written=result.data.size();*error=result.error;return 0;}
+ catch(const exception&e){if(messageCapacity){strncpy(message,e.what(),messageCapacity-1);message[messageCapacity-1]=0;}return 1;}
+}
+#else
+int main(int argc,char**argv){try{
+ if(argc<3||argc>5)throw runtime_error("usage: park_mesh source-int16 output.rmesh [tolerance-metres] [adaptive-edges]");
+ if(argc==5&&string(argv[4])!="adaptive-edges")throw runtime_error("unknown edge mode");
+ ifstream input(argv[1],ios::binary|ios::ate);if(!input||input.tellg()!=N*2)throw runtime_error("source byte count");input.seekg(0);vector<int16_t> data(N);input.read(reinterpret_cast<char*>(data.data()),N*2);
+ auto result=compileMesh(data.data(),argc>=4?stod(argv[3]):.5,argc<5);
+ ofstream out(argv[2],ios::binary);out.write(result.data.data(),result.data.size());out.close();if(!out)throw runtime_error("write failed");
+ cout<<"{\"vertices\":"<<result.vertices<<",\"triangles\":"<<result.triangles<<",\"indexWidth\":"<<result.width<<",\"maxErrorMetres\":"<<result.error<<",\"metalGeometryBytes\":"<<result.vertices*48ULL+result.triangles*12ULL<<",\"compactBytes\":"<<result.data.size()<<"}\n";
 }catch(const exception&e){cerr<<e.what()<<"\n";return 1;}}
+#endif

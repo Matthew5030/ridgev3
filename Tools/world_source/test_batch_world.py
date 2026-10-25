@@ -10,6 +10,21 @@ def fork_probe(job):
 
 
 class BatchTests(unittest.TestCase):
+    def test_reuse_requires_the_exact_fine_surface_and_checks_existing_assets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);old=root/'old';stage=root/'stage';old.mkdir();stage.mkdir()
+            def asset(name):
+                data=name.encode();(old/name).write_bytes(data)
+                return dict(file=name,byteCount=len(data),sha256=batch.sha(data))
+            tile=dict(mesh=asset('fine'),background=asset('background'),map=asset('map'))
+            tile['mesh'].update(decodedSHA256='decoded',bounds={})
+            original=dict(tile['mesh']);result=batch.reuse_tile(stage,old,tile,original)
+            self.assertEqual(result,tile);self.assertTrue((stage/'map').is_symlink())
+            original['sha256']='changed'
+            with self.assertRaises(ValueError):batch.reuse_tile(stage,old,tile,original)
+            (old/'map').write_bytes(b'corrupt')
+            with self.assertRaises(ValueError):batch.reuse_tile(stage,old,tile,tile['mesh'])
+
     def test_region_slots_respect_cpu_and_memory_reservations(self):
         gib=1024**3
         self.assertEqual(batch.region_slots(6,2,12,24*gib,gib),6)

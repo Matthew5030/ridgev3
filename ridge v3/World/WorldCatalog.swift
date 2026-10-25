@@ -33,7 +33,7 @@ enum WorldLibrary {
             case .notConnectedToInternet:
                 help = "Check Wi-Fi and allow Local Network access for Ridge in iPad or iPhone Settings."
             case .timedOut, .cannotConnectToHost, .networkConnectionLost:
-                help = "Keep the Mac awake with Docker running, and connect both devices to the same network."
+                help = "Keep the Mac awake with the download server running, and connect both devices to the same network."
             default: help = "Check Wi-Fi and Local Network access for Ridge in Settings."
             }
             throw RidgeError.message("Cannot reach \(root.host ?? "the server"). \(help) \(error.localizedDescription) (\(error.errorCode))")
@@ -68,6 +68,9 @@ struct WorldCatalog: Decodable, Sendable {
         /// complete coverage. Older sparse catalogues cannot certify this.
         var missingTerrain: [GeoBounds]? = nil
         var pack: WorldMapAsset? = nil
+        /// Standard surface-model coverage; omitted for retained LiDAR sources.
+        var standardTerrain: [GeoBounds]? = nil
+        var standardTileCount: Int? = nil
     }
     let schemaVersion: Int
     let revision: String
@@ -82,6 +85,14 @@ struct WorldCatalog: Decodable, Sendable {
             for archive in regionArchives { try archive.validate(sources:sources) }
         }
         for region in sources {
+            if let count=region.standardTileCount {
+                guard (0...region.tileCount).contains(count),region.standardTerrain != nil else { throw RidgeError.message("Invalid terrain quality metadata.") }
+            }
+            if let standard=region.standardTerrain {
+                guard standard.count<=256,standard.allSatisfy({ $0.isValid &&
+                    $0.minLongitude>=region.bounds.minLongitude-1e-8 && $0.maxLongitude<=region.bounds.maxLongitude+1e-8 &&
+                    $0.minLatitude>=region.bounds.minLatitude-1e-8 && $0.maxLatitude<=region.bounds.maxLatitude+1e-8 }) else { throw RidgeError.message("Invalid standard terrain coverage.") }
+            }
             if let pack=region.pack,!WorldSectionPack.valid(pack) { throw RidgeError.message("Invalid section pack in catalogue.") }
             if let gaps=region.missingTerrain {
                 guard gaps.count<=256,gaps.allSatisfy({ $0.isValid &&

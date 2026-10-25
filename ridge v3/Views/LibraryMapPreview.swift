@@ -1,13 +1,14 @@
 import SwiftUI
 import ImageIO
 
-/// Library previews use only local map images. No heightfields, scene or network requests.
+/// Library previews render saved terrain offscreen, without network requests.
 struct LibraryMapPreview: View {
     let entry: PackEntry?
     let route: RidgeRoute?
     let packs: PackStore
+    var worldMap:WorldRouteMapContext? = nil
     @State private var preview: LibraryMapImage?
-    private var identity: String { "\(entry?.directory.path ?? "none")|\(entry?.id ?? "none")|\(entry?.installed == true)|\(route?.id.uuidString ?? "area")|\(route?.modifiedAt.timeIntervalSince1970 ?? 0)" }
+    private var identity: String { "\(entry?.directory.path ?? "none")|\(entry?.id ?? "none")|\(entry?.installed == true)|\(route?.id.uuidString ?? "area")|\(route?.modifiedAt.timeIntervalSince1970 ?? 0)|\(worldMap?.identity ?? "legacy")" }
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -15,7 +16,7 @@ struct LibraryMapPreview: View {
             if let preview {
                 Image(uiImage: preview.image).resizable().aspectRatio(contentMode: .fit)
                 if !preview.hasMap {
-                    Text(route == nil ? "Map preview unavailable" : "Route outline · map not saved")
+                    Text(route == nil ? "Map preview unavailable" : "Route outline")
                         .font(.caption).padding(8).background(RidgeTheme.panel.opacity(0.94), in: Capsule()).padding(12)
                 }
             } else { ProgressView().tint(RidgeTheme.forest).frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -29,7 +30,7 @@ struct LibraryMapPreview: View {
             let resolved: PackEntry?
             if let entry { resolved = (try? await packs.previewMap(for: entry)) ?? entry } else { resolved = nil }
             guard !Task.isCancelled else { return }
-            let result = await LibraryMapRenderer.shared.preview(entry: resolved, route: route, key: identity)
+            let result = await LibraryMapRenderer.shared.preview(entry: resolved, route: route, key: identity,world:worldMap)
             if !Task.isCancelled { preview = result }
         }
     }
@@ -45,9 +46,10 @@ private final class LibraryMapImage: NSObject, @unchecked Sendable {
 private actor LibraryMapRenderer {
     static let shared = LibraryMapRenderer()
     private let cache = NSCache<NSString, LibraryMapImage>()
+    private let worldMaps=WorldRouteMapPreviewStore()
     init() { cache.totalCostLimit = 24 * 1_024 * 1_024; cache.countLimit = 24 }
 
-    func preview(entry: PackEntry?, route: RidgeRoute?, key: String) -> LibraryMapImage? {
+    func preview(entry: PackEntry?, route: RidgeRoute?, key: String,world:WorldRouteMapContext?) async -> LibraryMapImage? {
         guard !Task.isCancelled else { return nil }
         if let cached = cache.object(forKey: key as NSString) { return cached }
         let paths = route.map { $0.segments.isEmpty ? [$0.waypoints.map(\.point)] : $0.segments.map(\.points) } ?? []
@@ -63,16 +65,19 @@ private actor LibraryMapRenderer {
         let viewport = bounds.libraryPreviewBounds(aspect: 1.5, padding: route == nil ? 1 : 1.25, cropToFill: route == nil)
         let size = CGSize(width: 720, height: 480)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
-        var hasMap = false
+        let background=route == nil ? nil : await worldMaps.image(viewport:viewport,context:world)
+        guard !Task.isCancelled else { return nil }
+        var hasMap = background?.hasMap == true
         let image = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
             let context = renderer.cgContext
             UIColor(red: 0.94, green: 0.95, blue: 0.90, alpha: 1).setFill()
             renderer.fill(CGRect(origin: .zero, size: size))
+            if let background { UIImage(cgImage:background.image).draw(in:CGRect(origin:.zero,size:size)) }
             func position(_ point: GeoPoint) -> CGPoint {
                 let uv = viewport.uv(point)
                 return CGPoint(x: uv.u * size.width, y: uv.v * size.height)
             }
-            if let entry {
+            if background == nil,let entry {
                 var maps: [(MapTexture, Int)] = []
                 if let overview = entry.manifest.adaptive?.overview ?? entry.manifest.tiledTerrain?.overview { maps.append((overview, 0)) }
                 maps += entry.manifest.textures.map { ($0, 0) }

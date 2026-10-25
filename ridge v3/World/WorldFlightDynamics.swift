@@ -1,0 +1,49 @@
+import Foundation
+import simd
+
+/// Terrain clearance and banking use damped motion rather than inheriting each
+/// mesh sample. The desired height already anticipates hills along the rail.
+struct WorldFlightDynamics {
+    private(set) var altitude: Float?
+    private var verticalVelocity: Float = 0
+    private(set) var bank: Float = 0
+    mutating func reset() { self=Self() }
+    mutating func update(height:Float,floor:Float,bank targetBank:Float,seconds:Double)->(height:Float,bank:Float) {
+        let dt=Float(max(0,min(0.1,seconds)))
+        guard let previous=altitude else { altitude=max(floor,height);bank=targetBank;return (altitude!,bank) }
+        let omega:Float=4,offset=previous-height,impulse=verticalVelocity+omega*offset,decay=exp(-omega*dt)
+        let next=height+(offset+impulse*dt)*decay
+        verticalVelocity=(verticalVelocity-omega*impulse*dt)*decay
+        altitude=max(floor,next)
+        if next<floor { verticalVelocity=max(0,verticalVelocity) }
+        bank+=(targetBank-bank)*(1-exp(-dt*2.2))
+        return (altitude!,bank)
+    }
+}
+
+/// Ease speed changes and anticipate tight turns rather than turning the camera
+/// faster than it can follow its rail. Straight flight uses the chosen speed.
+struct WorldFlightPace {
+    private var speed:Double?
+    private var acceleration=0.0
+    var currentSpeed:Double { speed ?? 0 }
+    mutating func reset() { speed=nil;acceleration=0 }
+    mutating func metres(target:Double,seconds:Double)->Double {
+        let dt=max(0,min(0.1,seconds)),old=speed ?? target
+        let wanted=min(4,max(-6,(target-old)*2))
+        acceleration+=min(8*dt,max(-8*dt,wanted-acceleration))
+        let next=max(0,old+acceleration*dt)
+        speed=next
+        return (old+next)*0.5*dt
+    }
+}
+
+/// A coordinated turn: radius and actual speed determine the lean. Busy
+/// switchbacks use a higher, calmer view and a smaller maximum bank.
+enum WorldFlightTurn {
+    static func maximumBank(overview:Double)->Double { (18-6*min(1,max(0,overview))) * .pi/180 }
+    static func bank(curvature:Double,speed:Double,overview:Double)->Float {
+        let limit=maximumBank(overview:overview)
+        return Float(min(limit,max(-limit,-atan(speed*speed*curvature/9.81))))
+    }
+}

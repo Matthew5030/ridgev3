@@ -83,6 +83,16 @@ actor PackEvents {
         let freshPlan=try await regionStore.plan(pack:regionFixture,catalog:catalog,root:root)
         try check(freshPlan.bytes==pack.byteCount && freshPlan.totalBytes==pack.byteCount,"Region offer uses compressed wire bytes")
         let existingLandscape=WorldSourceStore(cacheURL:regionCache,allowsNetwork:false)
+        do {
+            _=try await existingLandscape.manifest(address:address,routing:region.routing,preferCached:true)
+            throw RidgeError.message("Planning exposed an unfinished offline index")
+        } catch {
+            try check(error.localizedDescription.contains("map index is missing"),"A fresh plan keeps its index staged until the download completes")
+        }
+        // This scenario models a landscape that already has metadata before
+        // a separate actor installs its pack; prime that metadata explicitly.
+        let metadata=WorldSourceStore(cacheURL:regionCache)
+        _=try await metadata.manifest(address:address,routing:region.routing,preferCached:true)
         let existingManifest=try await existingLandscape.manifest(address:address,routing:region.routing,preferCached:true)
         let regionEvents=PackEvents()
         try await regionStore.download(freshPlan,progress:{ bytes,_ in await regionEvents.update(bytes) })

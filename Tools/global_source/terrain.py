@@ -39,7 +39,10 @@ class Surface:
                     record=path.with_suffix('.provenance.json')
                     if not record.exists():atomic(record,rawjson(dict(url=url,sha256=digest(path),byteCount=path.stat().st_size)))
                     import json
-                    self.provenance.append(json.loads(record.read_bytes()))
+                    receipt=json.loads(record.read_bytes())
+                    if receipt['url']!=url or receipt['byteCount']!=path.stat().st_size or receipt['sha256']!=digest(path):
+                        raise ValueError('Cached DEM differs from its checksum receipt: '+str(path))
+                    self.provenance.append(receipt)
                     datasets.append(rasterio.open(path))
             raster,self.transform=merge(datasets,bounds=region,res=(1/3600,1/3600),nodata=float('nan'),dtype='float32',resampling=Resampling.bilinear)
             self.raster=raster[0]

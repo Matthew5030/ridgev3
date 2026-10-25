@@ -7,15 +7,16 @@ adaptive terrain and vector maps on the device.
 
 ## Start
 
-With Docker Desktop running and the source drive connected:
+With the source drive connected:
 
 ```sh
 sh Tools/download-server/start.sh '/Volumes/MLB_EXT_4TB/Ridge Sources'
 ```
 
-Allow Docker's macOS removable-volume prompt. The data mount is read-only.
+The default backend is the native, read-only Python server. Docker can stay
+closed; `RIDGE_DOWNLOAD_BACKEND=docker` selects the older container backend.
 The script prints the Mac's `.local` address. On the same network, enter it in
-Ridge → Settings → Map source → Local network, then tap **Use this source**.
+Ridge → Settings → Map source → Local network, then tap **Save map source**.
 Browse or search in Explore and zoom in; no region or tile selection is needed.
 
 The app downloads missing files, verifies SHA-256 checksums and retains completed
@@ -30,11 +31,10 @@ build reports, and accepts GET/HEAD. This is a local-network development server.
 
 `/world/catalog.json` aliases `world-v1-2026-10-04/catalog.json` on the drive.
 `/world/sources/<id>/…` exposes only world manifests, overview elevation, paths,
-compressed adaptive meshes, vector map assets and optional `paths-connected-v1.json`
-routing sidecars. The completed catalogue has
-2,531 regions. Reports and directory listings are not exposed. The start script
-validates and reloads nginx so configuration changes take effect on an existing
-container. This needs no data regeneration.
+compressed adaptive meshes, vector map assets and optional `paths-connected-v1.json` / `paths-connected-v2.json`
+routing sidecars. The completed catalogue has 5,001 source sections. Reports
+and directory listings are not exposed. Native error requests are recorded in
+`~/Library/Application Support/Ridge Download Server/native-server.log`.
 
 ```sh
 curl http://127.0.0.1:8787/world/catalog.json
@@ -94,14 +94,27 @@ updated app. Existing offline saves remain readable.
 ```sh
 curl http://127.0.0.1:8787/health
 curl http://127.0.0.1:8787/catalog.json
-docker compose -f "$HOME/Library/Application Support/Ridge Download Server/compose.yaml" logs --tail 30
-docker compose -f "$HOME/Library/Application Support/Ridge Download Server/compose.yaml" down
+tail -n 30 "$HOME/Library/Application Support/Ridge Download Server/native-server.log"
+python3 Tools/download-server/native_control.py stop
 ```
 
-The read-only bind mount and port configuration follow the [Docker Compose
-service reference](https://docs.docker.com/reference/compose-file/services/).
 The iOS app uses [NSAllowsLocalNetworking](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking)
 and a local-network usage description for explicit LAN downloads.
+
+### Verify or repair published section packs
+
+`audit_origin.py --report REPORT.json` checks every published section and region
+pack through HTTP, including retained sections from earlier publications. A
+successful geometry audit alone does not certify download availability.
+
+`repair_pack_links.py` rebuilds unavailable section packs from cached immutable
+assets. It verifies each original asset and the exact existing catalog pack
+hash before replacing the broken link. `--storage` may be repeated to use both
+drives with a 2 GiB reserve; `--zones` and `--priority park-eryri` repair the
+selected region first. No original imagery or terrain is downloaded or changed.
+Receipts and progress are saved under `--report`. Never deduplicate a source
+onto a destination that resolves to the same file or directory: that replaces
+the real file with a self-referencing link.
 
 
 ## Precomputed adaptive terrain

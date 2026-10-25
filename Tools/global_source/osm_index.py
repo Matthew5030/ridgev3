@@ -9,6 +9,8 @@ from shapely.geometry import Point, LineString, Polygon, mapping
 from common import atomic, rawjson, digest, reserve
 from osm_semantics import MapFeatureTransformer
 
+INDEX_REVISION = 2  # Preserve raw routing classes and access restrictions.
+
 LINEAR={'footpath','bridleway','track','minorRoad','majorRoad','unknownPath','boundary'}
 ROUTABLE={'footpath','bridleway','track','minorRoad','majorRoad'}
 
@@ -17,8 +19,9 @@ def _make_index(pbf, target, reserve_gib=40):
     target=Path(target)
     source_sha=digest(pbf)
     receipt=target.with_suffix('.json')
-    if target.exists() and receipt.exists() and json.loads(receipt.read_bytes())['sourceSHA256']==source_sha:
-        return json.loads(receipt.read_bytes())
+    if target.exists() and receipt.exists():
+        record=json.loads(receipt.read_bytes())
+        if record.get('indexRevision')==INDEX_REVISION and record['sourceSHA256']==source_sha:return record
     temp=target.with_suffix('.building.sqlite');temp.unlink(missing_ok=True)
     db=sqlite3.connect(temp)
     db.executescript('PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; '
@@ -56,10 +59,10 @@ def _make_index(pbf, target, reserve_gib=40):
                     stats['invalidGeometries']+=1;continue
                 coords=[(n.lon,n.lat) for n in obj.nodes]
                 route=None
-                if kind in ROUTABLE and tags.get('highway') not in {'motorway','motorway_link','trunk','trunk_link'} and tags.get('area')!='yes':
+                if kind in ROUTABLE and tags.get('highway') not in {'motorway','motorway_link'} and tags.get('area')!='yes' and (tags.get('motorroad')!='yes' or tags.get('foot') in {'yes','designated','official','permissive'}):
                     # Only explicit pedestrian one-way restrictions affect walking.
                     direction=tags.get('oneway:foot','no')
-                    route=dict(nodes=[n.ref for n in obj.nodes],coordinates=coords,bidirectional=direction not in {'yes','1','-1'},reverse=direction=='-1')
+                    route=dict(highway=tags.get('highway'),nodes=[n.ref for n in obj.nodes],coordinates=coords,bidirectional=direction not in {'yes','1','-1'},reverse=direction=='-1')
                 insert(kind,LineString(coords),f'osm:way:{obj.id}',props,route)
             elif obj.is_area() and kind not in LINEAR and kind not in {'peak','settlement'}:
                 for index,outer in enumerate(obj.outer_rings()):
@@ -68,7 +71,7 @@ def _make_index(pbf, target, reserve_gib=40):
                     insert(kind,geometry,f'osm:{"way" if obj.from_way() else "relation"}:{obj.orig_id()}:{index}',props)
         except (osmium.InvalidLocationError,ValueError):stats['invalidGeometries']+=1
     db.commit();db.close();temp.replace(target)
-    result=dict(sourceSHA256=source_sha,**stats)
+    result=dict(sourceSHA256=source_sha,indexRevision=INDEX_REVISION,**stats)
     atomic(receipt,rawjson(result));return result
 
 
@@ -76,7 +79,7 @@ def make_index(pbf,target,reserve_gib=40):
     target=Path(target);receipt=target.with_suffix('.json')
     if target.exists() and receipt.exists():
         record=json.loads(receipt.read_bytes())
-        if record['sourceSHA256']==digest(pbf):return record
+        if record.get('indexRevision')==INDEX_REVISION and record['sourceSHA256']==digest(pbf):return record
     # SQLite's random index writes are expensive on the nearly full external HDD.
     # Stage only this replaceable intermediate on the SSD, keeping 8 GiB free.
     with tempfile.TemporaryDirectory(prefix='ridge-global-index-') as directory:

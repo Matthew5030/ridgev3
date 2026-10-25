@@ -13,7 +13,7 @@ struct ContentView: View {
                     switch store.tab {
                     case .explore: WorldExploreView(store: store, world: world)
                     case .areas: OfflinePacksView(store: store)
-                    case .routes: RouteLibraryView(store: store)
+                    case .routes: RouteLibraryView(store: store, world: world)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 tabBar.disabled(store.isPreparing)
@@ -54,7 +54,7 @@ struct ContentView: View {
                     .padding(16).background(RidgeTheme.ink, in: RoundedRectangle(cornerRadius: RidgeTheme.controlRadius))
                     .padding(.horizontal, 20).padding(.top, 70).allowsHitTesting(false)
             }
-        }
+        }.environment(world)
     }
 
     private var tabBar: some View {

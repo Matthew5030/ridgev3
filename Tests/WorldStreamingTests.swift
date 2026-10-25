@@ -1,8 +1,11 @@
 import Foundation
 import SceneKit
+import CoreGraphics
+import ImageIO
 
 @MainActor private final class ProgressProbe {
     var batches: [(Set<String>,Set<String>)] = []
+    var surfaceBeforePaths=false
     func receive(_ background:WorldBackdrop,_ pages:[String:WorldPreparedTile]) {
         batches.append((Set(background.geometries.keys),Set(pages.keys)))
     }
@@ -33,11 +36,45 @@ import SceneKit
         try check(WorldWindow.nextRadius(desired:20000,loaded:24000) == 20000,"Zooming in does not retain an ever-growing window")
         let first = WorldLandscapeStore(cacheURL:cache)
         let began = Date()
-        let (source,_,graph,background,pages) = try await first.window(center:point,radius:5000,frame:anchor.bounds,catalog:catalog,root:root,previous:nil)
+        let firstProgress=ProgressProbe()
+        let (source,_,graph,background,pages) = try await first.window(center:point,radius:5000,frame:anchor.bounds,catalog:catalog,root:root,previous:nil,progress: { metadata,_,background,pages in
+            await MainActor.run {
+                if !pages.isEmpty,!FileManager.default.fileExists(atPath:cache.appendingPathComponent(metadata.graph.sha256).path) { firstProgress.surfaceBeforePaths=true }
+                firstProgress.receive(background,pages)
+            }
+        })
+        try check(firstProgress.surfaceBeforePaths,"Visible terrain publishes before walking-graph decoding")
+        try check(pages.values.allSatisfy { $0.request.pixels>=WorldMapSurface.minimumPixels },"Every initial terrain page meets close-map quality")
         print("First window: \(source.tiles.count) tiles, \(Date().timeIntervalSince(began)) s")
         try check(source.tiles.count == background.geometries.count && source.tiles.count == pages.count,"Complete textured terrain before publishing")
         try check(source.tiles.contains { !$0.id.hasPrefix(anchor.id + "__") },"Window crosses storage boundaries")
         try check(!FileManager.default.fileExists(atPath:cache.appendingPathComponent("pins.json").path),"Browsing does not pin downloads permanently")
+        if let path=ProcessInfo.processInfo.environment["RIDGE_ENTRY_QA_OUTPUT"] {
+            let viewport=WorldCameraTransition.viewport(center:point,span:WorldCameraTransition.minimumAtlasSpan,aspect:4.0/3)
+            try check(WorldMapSurface.covers(viewport,tiles:source.tiles.map { $0.mesh.bounds }),"The close-map viewport is filled by actual prepared terrain")
+            let surfaces=source.tiles.compactMap { tile -> WorldPreview.Surface? in
+                guard let geometry=background.geometries[tile.id],let page=pages[tile.id] else { return nil }
+                return .init(geometry:geometry,image:page.image,bounds:tile.mesh.bounds)
+            }
+            let image=try WorldPreview.overhead(viewport:viewport,frame:source.frame,surfaces:surfaces,background:nil,width:1024,height:768)
+            guard let destination=CGImageDestinationCreateWithURL(URL(fileURLWithPath:path) as CFURL,"public.png" as CFString,1,nil) else { throw RidgeError.message("Could not export close-map fixture") }
+            CGImageDestinationAddImage(destination,image,nil)
+            try check(CGImageDestinationFinalize(destination),"Actual prepared close-map surface exports for visual inspection")
+        }
+
+        // A semantic routing update must replace a retained graph even when
+        // every terrain tile and the camera position are unchanged.
+        var staleSnapshot = await first.snapshot()
+        guard let changedPart = staleSnapshot.parts.firstIndex(where: { !$0.graph.edges.isEmpty && $0.connected }) else { throw RidgeError.message("Missing routing update fixture") }
+        staleSnapshot.parts[changedPart].source.graph.sha256 = String(repeating:"0",count:64)
+        staleSnapshot.parts[changedPart].graph = WalkingGraph(nodes:[],edges:[])
+        let refreshedStore = WorldLandscapeStore(cacheURL:cache)
+        _ = try await refreshedStore.window(center:point,radius:5000,frame:anchor.bounds,catalog:catalog,root:root,previous:staleSnapshot)
+        let refreshedSnapshot = await refreshedStore.snapshot()
+        let restoredPart = refreshedSnapshot.parts.first { $0.source.id == staleSnapshot.parts[changedPart].source.id }
+        try check(restoredPart?.graph.edges.isEmpty == false,"A routing-only publication replaces an old resident graph")
+        try check(restoredPart?.source.graph.sha256 != String(repeating:"0",count:64),"Reload uses the catalogue's current graph checksum")
+
         let shifted = GeoPoint(latitude:point.latitude,longitude:point.longitude+0.045)
         let second = WorldLandscapeStore(cacheURL:cache)
         let nextBegan = Date()
@@ -78,6 +115,17 @@ import SceneKit
         let fineIDs = Set(requests.filter(\.fine).map(\.id))
         try check(next.tiles.filter { fineIDs.contains($0.id) }.reduce(Int64(0)) { $0+$1.mesh.residentBytes } <= WorldWorkingSet.meshBudget,"Fine geometry remains bounded")
         try check(!graph.nodes.isEmpty && !nextGraph.nodes.isEmpty,"Walking paths survive window changes")
+        var flightTiles:[WorldTile]=[],flightRegions=Set<String>(),expected:[Float]=[]
+        for tile in next.tiles {
+            guard let region=catalog.region(at:tile.mesh.bounds.center),flightRegions.insert(region.id).inserted else { continue }
+            let prepared=try await second.prepare(tile,request:.init(id:tile.id,pixels:128,fine:true),sourceBounds:next.frame,previous:nextPages[tile.id])
+            flightTiles.append(tile);expected.append(Float(prepared.mesh!.elevation(at:tile.mesh.bounds.center)!))
+            if flightTiles.count==3 { break }
+        }
+        let preflightReader=WorldLandscapeStore(cacheURL:cache)
+        let (flightHeights,_)=try await preflightReader.flightElevations(flightTiles.map { $0.mesh.bounds.center },catalog:catalog,root:root,saved:flightTiles.map { $0.mesh.bounds })
+        try check(flightTiles.count==3,"Flight preflight fixture crosses three storage regions")
+        for i in expected.indices { try check(abs((flightHeights[i] ?? -9999)-expected[i])<0.001,"Whole-route preflight reads exact cached fine heights across source boundaries") }
         let byID = Dictionary(uniqueKeysWithValues:nextGraph.nodes.map { ($0.id,$0) })
         let edge = nextGraph.edges.first { edge in
             guard ["footway","path","track","bridleway","steps"].contains(edge.kind), ["","unknown","yes","designated","permissive","public","official"].contains(edge.access), let a=byID[edge.from],let b=byID[edge.to] else { return false }

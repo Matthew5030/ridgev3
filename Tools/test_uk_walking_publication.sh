@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+TEST=$(mktemp -d /tmp/ridge-uk-walking.XXXXXX)
+trap 'rm -rf "$TEST"' EXIT HUP INT TERM
+BIN="${RIDGE_UK_WALKING_BINARY:-$TEST/run}"
+xcrun swiftc -swift-version 5 -O -parse-as-library \
+ "$ROOT/ridge v3/Core/Models.swift" "$ROOT/ridge v3/Core/AdaptiveTerrain.swift" \
+ "$ROOT/ridge v3/Core/AdaptiveArea.swift" "$ROOT/ridge v3/Core/CartographyAtlas.swift" \
+ "$ROOT/ridge v3/Core/TileGrid.swift" "$ROOT/ridge v3/Core/TerrainBudget.swift" \
+ "$ROOT/ridge v3/Core/PackStore.swift" "$ROOT/ridge v3/Core/AdaptivePackStore.swift" \
+ "$ROOT/ridge v3/Core/RouteEngine.swift" \
+ "$ROOT/ridge v3/World/WorldPreview.swift" "$ROOT/ridge v3/World/WorldSource.swift" \
+ "$ROOT/ridge v3/World/WorldSectionPack.swift" "$ROOT/ridge v3/World/WorldOfflineCoverage.swift" \
+ "$ROOT/ridge v3/World/WorldCartography.swift" "$ROOT/ridge v3/World/WorldCatalog.swift" \
+ "$ROOT/ridge v3/World/WorldRegionPacks.swift" "$ROOT/ridge v3/World/WorldRegionArchive.swift" \
+ "$ROOT/ridge v3/World/WorldGeometry.swift" "$ROOT/ridge v3/World/WorldLandscape.swift" \
+ "$ROOT/ridge v3/World/WorldCameraTransition.swift" "$ROOT/ridge v3/Core/TerrainNavigation.swift" \
+ "$ROOT/Tests/UKWalkingPublicationTests.swift" -o "$BIN"
+if [ "$#" -gt 0 ]; then "$BIN" "$@"; fi

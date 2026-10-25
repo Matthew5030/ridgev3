@@ -23,8 +23,10 @@ def assets(manifest, region):
             seen.add(value['sha256'])
             yield value
 
-def build(root, region):
+def build(root, region, *, output_folder=None, expected_pack=None):
     folder = root / Path(region['path']).parent
+    write_folder = Path(output_folder) if output_folder is not None else folder
+    write_folder.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / region['path']).read_bytes())
     items = list(assets(manifest, region))
     if not 1 <= len(items) <= 1024 or manifest['id'] != region['id']:
@@ -41,8 +43,8 @@ def build(root, region):
                     digest.update(chunk)
                 if digest.hexdigest() == previous['pack']['sha256']:
                     return previous['pack']
-    payload = folder / '.section-pack-payload.tmp'
-    temporary = folder / '.section-pack.tmp'
+    payload = write_folder / '.section-pack-payload.tmp'
+    temporary = write_folder / '.section-pack.tmp'
     try:
         entries = []
         with payload.open('wb') as output:
@@ -70,9 +72,17 @@ def build(root, region):
             while chunk := source.read(1024*1024):
                 output.write(chunk); digest.update(chunk)
         pack = dict(file='section-' + digest.hexdigest() + '.ridgepack', byteCount=temporary.stat().st_size, sha256=digest.hexdigest())
+        if expected_pack is not None and pack != expected_pack:
+            raise ValueError('Reconstructed pack differs from catalog: ' + region['id'])
         if pack['byteCount'] > 256*1024*1024:
             raise ValueError('Oversized section pack')
-        temporary.replace(folder / pack['file'])
+        target = write_folder / pack['file']
+        temporary.replace(target)
+        if write_folder.resolve() != folder.resolve():
+            link = folder / (pack['file'] + '.external-link')
+            link.unlink(missing_ok=True)
+            link.symlink_to(target.resolve())
+            link.replace(folder / pack['file'])
         atomic(receipt, raw(dict(fingerprint=fingerprint, pack=pack)))
         return pack
     finally:

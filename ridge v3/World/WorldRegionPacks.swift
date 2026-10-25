@@ -137,7 +137,19 @@ struct WorldRegionPack: Identifiable, Sendable {
         case unknown, unavailable, incomplete, complete
         var canDownload:Bool { self == .complete || self == .incomplete }
     }
-    static let unavailableMessage="Detailed terrain is not available in this region yet. You can still browse the overview."
+    static let unavailableMessage="Terrain is not available in this region yet. You can still browse the overview."
+    func standardTerrain(in catalog:WorldCatalog?)->[GeoBounds] {
+        let bounds=displaySources(in:catalog ?? WorldCatalog(schemaVersion:1,revision:"unknown",sources:[])).flatMap { $0.standardTerrain ?? [] }
+        return WorldOfflineCoverage.displayBounds(bounds.filter { b in mapShapes?.contains { $0.overlapsLand(b) } ?? true })
+    }
+    func terrainQualityText(in catalog:WorldCatalog?)->String {
+        guard let catalog else { return "Terrain coverage not checked" }
+        let sources=displaySources(in:catalog),total=sources.reduce(0) { $0+$1.tileCount },standard=sources.reduce(0) { $0+($1.standardTileCount ?? 0) }
+        guard total>0 else { return "Terrain not available" }
+        if standard==0 { return "Detailed LiDAR terrain" }
+        if standard==total { return "Standard terrain · 30 m source" }
+        return "LiDAR + standard terrain"
+    }
     /// Missing rectangles are only a drawing mask. Clip them to mapShapes at
     /// render time so coastlines and water holes retain their exact footprint.
     func missingTerrain(in catalog:WorldCatalog?)->[GeoBounds] {
@@ -236,6 +248,33 @@ struct WorldRegionDownloadPlan: Sendable {
     }
 }
 
+/// A short window of actual transferred bytes. Reused and resumed bytes are
+/// excluded by the download callbacks; an idle connection settles to zero.
+struct WorldDownloadRate {
+    private var samples:[(date:Date,bytes:Int64)] = []
+    private var lastTransfer:Date?
+    init(startedAt:Date? = nil) {
+        if let startedAt { samples=[(startedAt,0)] }
+    }
+    mutating func record(_ bytes:Int64,at date:Date = Date()) {
+        guard bytes>=0 else { return }
+        if let last=samples.last {
+            guard date>=last.date else { return }
+            if bytes<last.bytes { samples=[(date,bytes)];lastTransfer=nil;return }
+            if bytes>last.bytes { lastTransfer=date }
+        }
+        samples.append((date,bytes))
+        while samples.count>2 && samples[1].date<date.addingTimeInterval(-4) { samples.removeFirst() }
+    }
+    func bytesPerSecond(at date:Date = Date())->Double? {
+        guard let lastTransfer,let first=samples.first,let last=samples.last else { return nil }
+        if date.timeIntervalSince(lastTransfer)>3 { return 0 }
+        let seconds=date.timeIntervalSince(first.date)
+        guard seconds>0 else { return nil }
+        return max(0,Double(last.bytes-first.bytes)/seconds)
+    }
+}
+
 /// Animate only the current section (at most 256 tiles). Previous sections
 /// become merged static fills, preserving holes without retaining every tile.
 struct WorldRegionTileProgress: Sendable {
@@ -272,7 +311,8 @@ actor WorldRegionTileReporter {
             let own=Set([tile.map.sha256,tile.mesh.sha256]+[tile.background?.sha256].compactMap { $0 })
             let required=own.union([source.overview.sha256,source.graph.sha256])
             if required.isSubset(of:verified) { done.insert(tile.mesh.bounds) }
-            else if !own.isDisjoint(with:active) || own.isSubset(of:verified) { loading.insert(tile.mesh.bounds) }
+            else if !own.isDisjoint(with:active) || own.isSubset(of:verified)
+                        || active.contains(source.overview.sha256) || active.contains(source.graph.sha256) { loading.insert(tile.mesh.bounds) }
         }
         // Coalesce very fast cached/local transfers; always deliver the first
         // and final states, including a fully reused section with no transfers.
@@ -287,7 +327,7 @@ actor WorldRegionDownloadStore {
     init(cacheURL:URL? = nil) { cache=WorldOfflineCoverage.cache(cacheURL) }
     private func open(_ region:WorldCatalog.Region,root:URL) async throws -> (WorldSourceStore,WorldSource) {
         let files=WorldSourceStore(cacheURL:cache)
-        let source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true,recoverCoverage:false)
+        let source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,recoverCoverage:false,stageForDownload:true)
         guard source.id==region.id,source.bounds==region.bounds,source.tiles.count==region.tileCount else {
             throw RidgeError.message("The map does not match its catalogue.")
         }
@@ -380,6 +420,8 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
     let available:[GeoBounds]
     let terrainAvailability:WorldRegionPack.TerrainAvailability
     let missingTerrain:[GeoBounds]
+    let standardTerrain:[GeoBounds]
+    let terrainQualityText:String
     var isBlocked:Bool { terrainAvailability == .unavailable }
     private(set) var labelPoint:GeoPoint
     private(set) var labelFontScale:Double=0
@@ -453,6 +495,8 @@ struct WorldRegionMapOverlay: Identifiable, Sendable {
         self.pack=pack
         terrainAvailability=pack.terrainAvailability(in:catalog)
         missingTerrain=pack.missingTerrain(in:catalog)
+        standardTerrain=pack.standardTerrain(in:catalog)
+        terrainQualityText=pack.terrainQualityText(in:catalog)
         let cells=pack.cells.map(\.bounds)
         fills=WorldOfflineCoverage.displayBounds(cells)
         edges=WorldOfflineCoverage.outline(cells)

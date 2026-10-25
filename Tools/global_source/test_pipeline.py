@@ -44,6 +44,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(separate['nodes']),4)
         self.assertFalse(any(n['coordinate']==dict(longitude=1,latitude=1) for n in separate['nodes']))
 
+    def test_routing_retains_road_class(self):
+        b=dict(minLongitude=0,maxLongitude=2,minLatitude=0,maxLatitude=2)
+        f=feature([[0,1],[1,1]],[10,11]);f['kind']='majorRoad'
+        for highway in ['primary','secondary','trunk']:
+            f['route']['highway']=highway
+            g=routing([f],b,FlatSurface())
+            self.assertEqual(g['edges'][0]['kind'],highway)
+        del f['route']['highway']
+        self.assertEqual(routing([f],b,FlatSurface())['edges'][0]['kind'],'majorRoad')
+
     def test_boundary_connection_and_direction(self):
         a=dict(minLongitude=0,maxLongitude=1,minLatitude=0,maxLatitude=1)
         b=dict(a,minLongitude=1,maxLongitude=2)
@@ -112,6 +122,24 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(route['route']['nodes'],[1,5,7])
             self.assertEqual(route['properties']['access'],'private')
 
+    def test_osm_road_access_and_classes(self):
+        from osm_index import make_index,query,INDEX_REVISION
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            ways=[('primary',''),('trunk',''),('motorway',''),('residential','<tag k="access" v="customers"/>'),('primary','<tag k="foot" v="no"/>')]
+            xml='<osm version="0.6"><node id="1" lon="0" lat="0"/><node id="2" lon="1" lat="1"/>'
+            for ident,(kind,tags) in enumerate(ways,10):
+                xml+=f'<way id="{ident}"><nd ref="1"/><nd ref="2"/><tag k="highway" v="{kind}"/>{tags}</way>'
+            (root/'map.osm').write_text(xml+'</osm>')
+            record=make_index(root/'map.osm',root/'map.sqlite',reserve_gib=0)
+            self.assertEqual(record['indexRevision'],INDEX_REVISION)
+            features={f['id']:f for f in query(root/'map.sqlite',dict(minLongitude=0,maxLongitude=1,minLatitude=0,maxLatitude=1))}
+            for ident,kind in [(10,'primary'),(11,'trunk')]:
+                self.assertEqual(features[f'osm:way:{ident}']['route']['highway'],kind)
+            self.assertNotIn('route',features['osm:way:12'])
+            self.assertEqual(features['osm:way:13']['properties']['access'],'private')
+            self.assertEqual(features['osm:way:14']['properties']['access'],'no')
+
     def test_adjacent_surface_samples(self):
         # Small synthetic COGs verify alignment without network or external drive.
         import rasterio
@@ -128,5 +156,9 @@ class PipelineTests(unittest.TestCase):
                 sa=Surface(a,tmp);sb=Surface(b,tmp)
             lat=np.linspace(46.02,46.09,50)
             np.testing.assert_allclose(sa.sample(a['maxLongitude'],lat),sb.sample(b['minLongitude'],lat),atol=.001)
+            receipt=path.with_suffix('.provenance.json')
+            record=json.loads(receipt.read_bytes());record['sha256']='0'*64;receipt.write_text(json.dumps(record))
+            with patch('terrain.download',return_value=path),self.assertRaisesRegex(ValueError,'Cached DEM differs'):
+                Surface(a,tmp)
 
 if __name__=='__main__':unittest.main()

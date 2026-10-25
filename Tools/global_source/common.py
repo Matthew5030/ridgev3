@@ -36,8 +36,19 @@ class DiskReserveError(OSError):
 
 
 def reserve(root, gib=40, additional=0):
-    if shutil.disk_usage(root).free < gib*GIB + additional:
-        raise DiskReserveError('Free-space reserve reached; completed packs are preserved')
+    announced=False
+    build_root=os.environ.get('RIDGE_BUILD_WORK_ROOT')
+    space_target=os.environ.get('RIDGE_BUILD_SPACE_TARGET') if build_root and Path(root).resolve()==Path(build_root).resolve() else None
+    target=Path(space_target) if space_target else root
+    def insufficient():
+        return shutil.disk_usage(target).free < gib*GIB + additional or (space_target and shutil.disk_usage(root).free < 1.5*GIB)
+    while insufficient():
+        if os.environ.get('RIDGE_RESERVE_WAIT')!='1':
+            raise DiskReserveError('Free-space reserve reached; completed packs are preserved')
+        if not announced:
+            print(json.dumps(dict(event='waiting-for-storage',reserveGiB=gib)),flush=True)
+            announced=True
+        time.sleep(5)
 
 
 def download(url, path, reserve_gib=40, maximum=4*GIB):

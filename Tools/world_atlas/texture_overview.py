@@ -125,6 +125,7 @@ class Textures:
         self.base_index = json.loads((base/'index.json').read_bytes())
         self.identity = dict(renderer=sha(Path(__file__).read_bytes()), context=self.context.identity,
                              base=sha((base/'index.json').read_bytes()), side=SIDE, supersampling=AA)
+        self.identity.update(getattr(self,'extra_identity',{}))
         prior = output/'inputs.json'
         if prior.exists() and json.loads(prior.read_bytes()) != self.identity:
             raise ValueError('Inputs changed; choose a new output revision')
@@ -208,7 +209,7 @@ class Textures:
         d,data,map_sha=read_map(self.archives,path)
         image=self.render(x,y,data)
         pages={}
-        for z in (12,11,10):
+        for z in range(getattr(self,'reference_zoom',12),9,-1):
             factor=2**(z-10)
             reduced=image.resize((256*factor,256*factor),Image.Resampling.LANCZOS)
             for dy in range(factor):
@@ -236,7 +237,7 @@ class Textures:
         inventory=set(self.base_index['tiles'])
         for r in records: inventory.update(r['pages'])
         index=dict(self.base_index)
-        index.update(maxZoom=12,tiles=sorted(inventory),semanticSections=[r['id'] for r in records],
+        index.update(maxZoom=getattr(self,'reference_zoom',12),tiles=sorted(inventory),semanticSections=[r['id'] for r in records],
                      semanticSectionCount=len(records),textureInputs=self.identity,
                      quality='OSM cartography over coarse UK elevation; detailed LiDAR coverage is separate')
         index['sources']=list(index.get('sources',[]))+[dict(name='OpenStreetMap contributors',license='ODbL 1.0',url='https://www.openstreetmap.org/copyright')]

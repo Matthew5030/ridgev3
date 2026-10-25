@@ -512,7 +512,7 @@ struct TerrainHelpView: View {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Map help").font(RidgeTheme.pageTitle)
                 helpRow("hand.draw", "Map controls", gestureStyle.guide)
-                helpRow("point.topleft.down.to.point.bottomright.curvepath", "Planning a route", "Tap Plan a route, then place points on mapped paths. Routes follow the downloaded walking network.")
+                helpRow("point.topleft.down.to.point.bottomright.curvepath", "Planning a route", "Tap Plan a route, then place points on the map. In Follow paths, points snap to the nearest eligible path or road in the downloaded walking network.")
                 helpRow("square.dashed", "Detailed and overview terrain", "Expand area is always available on the 3D map. Tap distant terrain or move beyond your detailed area to see the coverage explanation, then expand around that location. Availability and size are checked before saving. You can keep sketching beyond detailed coverage; overview lines are manual connections, not followed paths.")
                 Divider()
                 Text("Map legend").font(.headline)

@@ -1,7 +1,8 @@
 import SwiftUI
 import ImageIO
 
-/// Low-cost overhead imagery only; detailed terrain previews are drawn above it.
+/// The preinstalled 2D base map. Independent of the catalogue, network and saved
+/// terrain; its captures share the 3D renderer's cartography and lighting.
 struct WorldAtlasLayer: View {
     let center: CGPoint
     let scale: CGFloat
@@ -71,6 +72,7 @@ private actor WorldAtlasImages {
     private var attempted = false
     private var cache: [WorldAtlasPage: CGImage] = [:]
     private var recency: [WorldAtlasPage] = []
+    private var lastStatusWrite=Date.distantPast
     func images(viewport: WorldAtlasViewport, coarseOnly: Bool = false) -> [WorldAtlasImage] {
         if !attempted {
             attempted = true
@@ -96,6 +98,16 @@ private actor WorldAtlasImages {
                 recency.removeAll { $0 == page }; recency.append(page)
                 while recency.count > 96 { cache.removeValue(forKey: recency.removeFirst()) }
             }
+        }
+        let status:[String:Any]=["renderer":index.renderer ?? "legacy-atlas","capturedSections":index.capturedSections,"maximumZoom":index.maxZoom,
+                                 "requestedPages":requested.count,"displayedPages":result.count,"ready":!result.isEmpty && result.count==requested.count,
+                                 "bundledOnlyVerification":ProcessInfo.processInfo.arguments.contains("--verify-preinstalled-atlas"),
+                                 "pages":result.map { $0.page.key },"updatedAt":Date().timeIntervalSince1970]
+        if Date().timeIntervalSince(lastStatusWrite)>0.5,let data=try? JSONSerialization.data(withJSONObject:status) {
+            lastStatusWrite=Date()
+            let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("WorldCache")
+            try? FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+            try? data.write(to:directory.appendingPathComponent("bundled-atlas-status.json"),options:.atomic)
         }
         return result
     }

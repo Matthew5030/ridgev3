@@ -77,6 +77,7 @@ actor PackStore {
         Bundle.main.url(forResource: "RidgeData", withExtension: "bundle")
         ?? Bundle.main.url(forResource: "RidgeData", withExtension: "bundle", subdirectory: "Resources")
     }
+    func sourceEntriesForStorage() throws -> [PackEntry] { try sourceEntries().filter { $0.remoteSource != nil } }
 
     func catalogue() throws -> [PackEntry] {
         try Task.checkCancellation()
@@ -459,6 +460,11 @@ actor PackStore {
         guard Self.safeName(id) else { throw RidgeError.message("Invalid area identifier.") }
         let url = root.appendingPathComponent(id)
         if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
+    }
+    func removeAllSavedAreas() throws {
+        guard fm.fileExists(atPath:root.path) else { return }
+        // Include abandoned preparation folders, which have no catalog entry.
+        for file in try fm.contentsOfDirectory(at:root,includingPropertiesForKeys:nil) { try fm.removeItem(at:file) }
     }
 
     // Static manifests and asset files only. There is no rendering or route service.

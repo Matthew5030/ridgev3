@@ -416,6 +416,12 @@ Textures and routing data are not included or downsampled by this process.
 
 ### Source coverage is a required input
 
+The English border acquisition correction is documented in
+[`../world_source/ENGLISH-BORDER-REPAIR.md`](../world_source/ENGLISH-BORDER-REPAIR.md).
+It recovers missing English candidates selected incorrectly by the retained
+Welsh-first acquisition rectangle, using native-child survey footprints and the
+original sampler. It keeps the original prepared collection unchanged.
+
 An audit of the older EA-derived prepared files found constant −0.3 m chunks
 outside the official England survey coverage, including hills in Scotland.
 Prepared `available` flags are therefore insufficient. `download_ea_coverage.py`

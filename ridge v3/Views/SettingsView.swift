@@ -2,8 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var store: AppStore
+    @Environment(WorldModel.self) private var world
+    @State private var showDownloadedMaps = false
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
+    @State private var worldSavedAreaCount = 0
+    @State private var storageRefresh = 0
     @State private var storageError: String?
     @State private var sourceError: String?
     @State private var connectionCheckID: UUID?
@@ -17,11 +21,12 @@ struct SettingsView: View {
     private var sourceHasChanges: Bool {
         selectedMapMode != mapMode || (selectedMapMode == "local" && worldAddressDraft.trimmingCharacters(in: .whitespacesAndNewlines) != localMapServer)
     }
-    private var savedCount: Int { store.entries.filter(\.installed).count }
+    private var savedCount: Int { store.entries.filter(\.installed).count+worldSavedAreaCount }
     private var sources: [SourceCredit] {
         let naturalEarth = SourceCredit(name: "Natural Earth", attribution: "World atlas coastlines, lakes, rivers and geographic regions from Natural Earth.", license: "Public domain", url: "https://www.naturalearthdata.com/about/terms-of-use/")
         let overview = SourceCredit(name: "Overview elevation · Mapzen Terrain Tiles", attribution: "Overview elevation bands derived from Mapzen Terrain Tiles. Europe: produced using Copernicus data and information funded by the European Union — EU-DEM layers. United Kingdom: © Environment Agency copyright and/or database right 2015. All rights reserved. Global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey. Global ETOPO1 terrain data: DOC/NOAA/NESDIS/NCEI, U.S. Department of Commerce. Smoothed and converted to elevation bands for the overview; not used for route elevations.", license: "Open source data; source-specific terms", url: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
-        return Array(Set(store.entries.flatMap { $0.manifest.sources } + [naturalEarth, overview])).sorted { $0.name < $1.name }
+        let sentinel = SourceCredit(name: "Copernicus Sentinel-2", attribution: "Contains modified Copernicus Sentinel data 2025. Satellite-guided illustrative ground colours where available.", license: "Copernicus Sentinel data terms", url: "https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2")
+        return Array(Set(store.entries.flatMap { $0.manifest.sources } + [naturalEarth, overview, sentinel])).sorted { $0.name < $1.name }
     }
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0" }
 
@@ -87,6 +92,7 @@ struct SettingsView: View {
                 .overlay(alignment: .bottom) { Divider() }
             }
             .onChange(of: selectedMapMode) { _, _ in resetConnectionCheck() }
+            .sheet(isPresented:$showDownloadedMaps,onDismiss:{ storageRefresh+=1 }) { WorldDownloadedMapsView(store:store,world:world) }
             .onChange(of: worldAddressDraft) { _, _ in resetConnectionCheck() }
             .task(id: connectionCheckID) {
                 guard connectionCheckID != nil else { return }
@@ -108,13 +114,17 @@ struct SettingsView: View {
                     serverAddress = remote.deletingLastPathComponent().absoluteString
                 }
             }
-            .task(id: store.entries.filter(\.installed).map(\.id).joined(separator: ",")) {
+            .task(id: "\(world.offlineCoverageRevision)|\(storageRefresh)|"+store.entries.filter(\.installed).map(\.id).joined(separator: ",")) {
                 var total: Int64 = 0
                 do {
                     for entry in store.entries where entry.installed {
                         if let manifest = try await store.packs.installedManifest(id: entry.id) { total += manifest.totalBytes }
                     }
+                    let maps=try await world.downloadedMapsSummary()
+                    let sources=try await store.packs.downloadedSourceStorage()
+                    worldSavedAreaCount=maps.areas.count+sources.count;total+=maps.bytes+sources.reduce(0) { $0+$1.bytes }
                     savedAssetBytes = total
+                    storageError=nil
                 } catch { storageError = "Saved area sizes could not be read." }
             }
     }
@@ -177,6 +187,10 @@ struct SettingsView: View {
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Storage").font(RidgeTheme.sectionTitle)
+            Button { showDownloadedMaps=true } label: {
+                Label("Downloaded maps",systemImage:"externaldrive").font(.headline)
+                    .frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,10)
+            }.buttonStyle(.plain)
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("\(savedCount)").font(.system(size: 30, weight: .medium, design: .default))

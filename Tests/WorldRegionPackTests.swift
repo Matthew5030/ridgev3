@@ -29,6 +29,16 @@ actor RegionTransferAudit {
     @MainActor static func main() async throws {
         var checks=0
         func check(_ value:Bool,_ reason:String) throws { guard value else { throw RidgeError.message(reason) };checks+=1 }
+        let rateStart=Date(timeIntervalSinceReferenceDate:1000)
+        var rate=WorldDownloadRate(startedAt:rateStart)
+        try check(rate.bytesPerSecond(at:rateStart)==nil,"No download speed is invented before bytes arrive")
+        rate.record(1_000_000,at:rateStart.addingTimeInterval(1))
+        try check(rate.bytesPerSecond(at:rateStart.addingTimeInterval(1))==1_000_000,"Speed uses transferred bytes and elapsed time")
+        rate.record(1_000_000,at:rateStart.addingTimeInterval(2))
+        try check(rate.bytesPerSecond(at:rateStart.addingTimeInterval(2))==500_000,"Verification callbacks do not count as more transferred bytes")
+        try check(rate.bytesPerSecond(at:rateStart.addingTimeInterval(5))==0,"Idle downloads stop reporting the last burst speed")
+        rate.record(0,at:rateStart.addingTimeInterval(6))
+        try check(rate.bytesPerSecond(at:rateStart.addingTimeInterval(6))==nil,"A new transfer baseline discards the previous attempt")
         func wait(_ active:()->Bool) async throws {
             let deadline=Date().addingTimeInterval(120)
             while active() && Date()<deadline { try await Task.sleep(nanoseconds:10_000_000) }
@@ -47,6 +57,44 @@ actor RegionTransferAudit {
         let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_TEST_SERVER"] ?? "http://127.0.0.1:8787")
         let cache=FileManager.default.temporaryDirectory.appendingPathComponent("ridge-region-test-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:cache) }
+        // Removing one geographic save must not delete a physical archive
+        // still needed by a neighbouring save, or touch routes outside cache.
+        let removalCache=cache.appendingPathComponent("removal/WorldCache")
+        try FileManager.default.createDirectory(at:WorldSectionPack.directory(removalCache),withIntermediateDirectories:true)
+        let aBounds=GeoBounds(minLatitude:50,minLongitude:0,maxLatitude:51,maxLongitude:1)
+        let bBounds=GeoBounds(minLatitude:50,minLongitude:1,maxLatitude:51,maxLongitude:2)
+        let sharedHash=String(repeating:"a",count:64),onlyAHash=String(repeating:"b",count:64),partialHash=String(repeating:"c",count:64)
+        let sharedFile=WorldSectionPack.directory(removalCache).appendingPathComponent(sharedHash+".ridgepack")
+        let aFile=removalCache.appendingPathComponent(onlyAHash)
+        let partialFile=WorldSectionPack.directory(removalCache).appendingPathComponent(partialHash+".partial")
+        try Data([1,2,3,4]).write(to:sharedFile);try Data([5,6]).write(to:aFile);try Data([7]).write(to:partialFile)
+        try JSONEncoder().encode(Set([sharedHash,onlyAHash,partialHash])).write(to:removalCache.appendingPathComponent("pins.json"))
+        let sharedAsset=WorldOfflineCoverage.Asset(hash:sharedHash,bytes:4,packed:true)
+        try WorldOfflineCoverage.record([.init(bounds:aBounds,assets:[sharedAsset,.init(hash:onlyAHash,bytes:2)])],at:removalCache)
+        try WorldOfflineCoverage.record([.init(bounds:bBounds,assets:[sharedAsset])],at:removalCache,identifier:"world-b")
+        let removalArea=WorldRegionPack(id:"area-a",name:"A",subtitle:"",landmark:"",cells:[.init(id:"world-a",bounds:aBounds)])
+        let removalCatalog=WorldCatalog(schemaVersion:1,revision:"remove",sources:[.init(id:"world-a",path:"sources/world-a/world.json",bounds:aBounds,tileCount:1,pack:.init(file:"section-"+partialHash+".ridgepack",byteCount:100,sha256:partialHash))])
+        let routeFile=removalCache.deletingLastPathComponent().appendingPathComponent("routes.json")
+        try Data("saved route".utf8).write(to:routeFile)
+        try check(WorldOfflineCoverage.savedBounds(at:removalCache).count==2,"Removal fixture begins with two valid geographic saves")
+        try WorldOfflineCoverage.removeDownloads(in:removalArea,catalog:removalCatalog,at:removalCache)
+        try check(WorldOfflineCoverage.savedBounds(at:removalCache)==[bBounds],"Removing one area immediately removes only its offline admission")
+        try check(FileManager.default.fileExists(atPath:sharedFile.path),"A shared regional pack remains available to the other area")
+        try check(!FileManager.default.fileExists(atPath:aFile.path) && !FileManager.default.fileExists(atPath:partialFile.path),"Area removal frees exclusive files and its interrupted pack")
+        let afterPins=try JSONDecoder().decode(Set<String>.self,from:Data(contentsOf:removalCache.appendingPathComponent("pins.json")))
+        try check(afterPins==[sharedHash],"Removing an area releases only its exclusive reservations")
+        try check(FileManager.default.fileExists(atPath:removalCache.appendingPathComponent("coverage-managed").path),"Shared files cannot migrate deleted coverage back into saved maps")
+        try WorldOfflineCoverage.removeDownloads(in:nil,catalog:removalCatalog,at:removalCache)
+        try check(WorldOfflineCoverage.savedBounds(at:removalCache).isEmpty && !FileManager.default.fileExists(atPath:sharedFile.path),"Remove all clears completed maps, shared containers and metadata")
+        try check(try Data(contentsOf:routeFile)==Data("saved route".utf8),"Map removal preserves route files outside the map cache")
+        let corruptReceipt=removalCache.appendingPathComponent("offline-coverage.json")
+        try Data("invalid metadata".utf8).write(to:corruptReceipt);try Data([9]).write(to:aFile)
+        do {
+            try WorldOfflineCoverage.removeDownloads(in:removalArea,catalog:removalCatalog,at:removalCache)
+            throw RidgeError.message("Corrupt coverage was silently erased")
+        } catch is DecodingError {
+            try check(FileManager.default.fileExists(atPath:aFile.path),"Unreadable coverage fails safely before removing potentially shared data")
+        }
         let published=try await WorldCatalogStore(cacheURL:cache).open(root:root)
         // Keep the loose-file migration/repair regression independently covered.
         let catalog=WorldCatalog(schemaVersion:published.schemaVersion,revision:published.revision,sources:published.sources.map { var source=$0;source.pack=nil;return source })
@@ -142,9 +190,15 @@ actor RegionTransferAudit {
         })
         try check(Set(cells)==expectedCells,"Subdivision retains all source sections, including unpublished areas")
         try check(Set(packs.map(\.id)).count==packs.count,"Every coastal block has a stable unique ID")
-        try check(packs.filter { ["area-fermanagh-sperrins","area-antrim-derry","area-mournes-down"].contains($0.id) }.allSatisfy { $0.sources(in:catalog).isEmpty },"Unpublished Northern Ireland is explicitly unavailable")
+        let hasStandard=catalog.sources.contains { ($0.standardTileCount ?? 0)>0 }
+        let northernIreland=packs.filter { ["area-fermanagh-sperrins","area-antrim-derry","area-mournes-down"].contains($0.id) }
+        try check(northernIreland.allSatisfy { hasStandard ? !$0.sources(in:catalog).isEmpty : $0.sources(in:catalog).isEmpty },"Northern Ireland reflects the published rollout")
         let northern=packs.filter { $0.bounds.center.latitude>56 && !$0.sources(in:catalog).isEmpty }
-        try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Partial Scotland coverage is distinguishable from a full region")
+        if hasStandard {
+            try check(northern.contains { !$0.standardTerrain(in:catalog).isEmpty },"Scotland exposes the published standard terrain mask")
+        } else {
+            try check(northern.contains { $0.coveredCells(in:catalog).count<$0.cells.count },"Legacy partial Scotland coverage is distinguishable from a full region")
+        }
         let completeSources=catalog.sources.filter { $0.tileCount==256 }
         let regions=[completeSources[0],completeSources.last!]
         let fixture=WorldRegionPack(id:"fixture",name:"Test region",subtitle:"",landmark:"",cells:regions.map { .init(id:$0.id,bounds:$0.bounds) })
@@ -164,7 +218,7 @@ actor RegionTransferAudit {
         print("Catalogue-only complete region offer: \(offerSeconds) s, \(quick!.parts.count) sections, upper estimate \(quick!.bytes) bytes")
         let store=WorldRegionDownloadStore(cacheURL:cache)
         let cairngorms=wholeParks.first { $0.id=="park-cairngorms" }!
-        try check(cairngorms.terrainAvailability(in:catalog) == .incomplete,"Real Cairngorms is incomplete")
+        if !hasStandard { try check(cairngorms.terrainAvailability(in:catalog) == .incomplete,"Legacy Cairngorms is incomplete") }
         try check(WorldRegionDownloadPlan.estimate(pack:cairngorms,catalog:catalog,root:root) != nil,"Cairngorms can download its available terrain")
         let missingCell=WorldRegionPack.Cell(id:"world-missing",bounds:GeoBounds(minLatitude:40,minLongitude:0,maxLatitude:41,maxLongitude:1))
         let incomplete=WorldRegionPack(id:"incomplete",name:"Incomplete",subtitle:"",landmark:"",cells:fixture.cells+[missingCell])
@@ -185,6 +239,13 @@ actor RegionTransferAudit {
         let coastal=WorldRegionPack(id:"coast",name:"Coast",subtitle:"",landmark:"",cells:[.init(id:coastalSource.id,bounds:coastalSource.bounds)],mapShapes:[coast])
         func coastalCatalog()->WorldCatalog { WorldCatalog(schemaVersion:1,revision:"coast",sources:[coastalSource]) }
         try check(coastal.terrainAvailability(in:coastalCatalog()) == .complete,"Sparse coastal source with only ocean gaps remains downloadable")
+        coastalSource.standardTerrain=[land];coastalSource.standardTileCount=128
+        try check(coastal.terrainAvailability(in:coastalCatalog()) == .complete,"Standard terrain is downloadable coverage")
+        try check(coastal.terrainQualityText(in:coastalCatalog())=="Standard terrain · 30 m source","Standard terrain is not labelled LiDAR")
+        try check(coastal.standardTerrain(in:coastalCatalog())==[land],"Standard terrain has a separate map mask")
+        coastalSource.standardTileCount=64
+        try check(coastal.terrainQualityText(in:coastalCatalog())=="LiDAR + standard terrain","Mixed terrain preserves the quality distinction")
+        coastalSource.standardTerrain=nil;coastalSource.standardTileCount=nil
         coastalSource.missingTerrain=[land]
         try check(coastal.terrainAvailability(in:coastalCatalog()) == .unavailable,"A source with only offshore tiles does not make land downloadable")
         coastalSource.missingTerrain=[.init(minLatitude:0.2,minLongitude:0.2,maxLatitude:0.4,maxLongitude:0.4),sea]
@@ -199,7 +260,9 @@ actor RegionTransferAudit {
         try check(blocked.missingTerrain.contains { $0.contains(missingCell.bounds.center) },"Absent section is included in the red mask")
         try check(!blocked.missingTerrain.contains { $0.contains(regions[0].bounds.center) },"Available section stays out of the red mask")
         let cairngormGaps=cairngorms.missingTerrain(in:catalog)
-        try check(cairngormGaps.contains { $0.contains(.init(latitude:57.1167,longitude:-3.6446)) },"Actual missing Cairn Gorm summit is red")
+        let cairnGorm=GeoPoint(latitude:57.1167,longitude:-3.6446)
+        try check(cairngormGaps.contains { $0.contains(cairnGorm) } == !hasStandard,"Cairn Gorm becomes available after standard terrain publication")
+        if hasStandard { try check(cairngorms.standardTerrain(in:catalog).contains { $0.contains(cairnGorm) },"Cairn Gorm keeps the standard-quality mask") }
         let eryriGaps=allEryri.missingTerrain(in:catalog)
         try check(!eryriGaps.contains { $0.contains(.init(latitude:53.0685,longitude:-4.0763)) },"Available Yr Wyddfa terrain is not red")
         do {
@@ -276,6 +339,11 @@ actor RegionTransferAudit {
         try check(custom.bytes==0 && custom.readyBounds.count==custom.bounds.count,"Custom areas reuse the regional save")
         let files=WorldSourceStore(cacheURL:cache,allowsNetwork:false)
         let source=try await files.manifest(address:root.appendingPathComponent(regions[0].path).absoluteString,routing:regions[0].routing,preferCached:true)
+        let sharedActivity=RegionTransferAudit()
+        let sharedReporter=WorldRegionTileReporter(source:source,savedFills:[],savedTileCount:0,report: { await sharedActivity.recordTiles($0) })
+        await sharedReporter.update(verified:[],active:[source.overview.sha256])
+        let sharedSawActive=await sharedActivity.sawActive,sharedCompleted=await sharedActivity.completedTiles
+        try check(sharedSawActive && sharedCompleted.isEmpty,"Shared map data animates the downloading section without claiming tiles are saved")
         let tile=source.tiles[0]
         _=try await files.prepare(tile,request:.init(id:tile.id,pixels:32,fine:false),sourceBounds:source.bounds)
         try check(true,"Regional vector files render through the cache-only terrain path")
@@ -288,7 +356,16 @@ actor RegionTransferAudit {
         try check(model.regionComplete && model.downloadedBytes==Int64(tile.mesh.byteCount),"Fast download verifies saved bytes and repairs only the corrupt asset")
         let streamingCache=cache.appendingPathComponent("streaming-proof")
         let streamingStore=WorldRegionDownloadStore(cacheURL:streamingCache)
-        let streamed=WorldRegionDownloadPlan.estimate(pack:fixture,catalog:catalog,root:root)!
+        // Simulate a legacy loose-file catalogue using its actual loose sizes.
+        // Current publications can advertise compressed pack sizes, which are
+        // not upper bounds on JSON transferred after removing pack descriptors.
+        let looseSources=catalog.sources.map { source in
+            var source=source
+            if let part=plan.parts.first(where:{ $0.region.id==source.id }) { source.downloadBytes=part.missingBytes }
+            return source
+        }
+        let looseCatalog=WorldCatalog(schemaVersion:catalog.schemaVersion,revision:catalog.revision,sources:looseSources)
+        let streamed=WorldRegionDownloadPlan.estimate(pack:fixture,catalog:looseCatalog,root:root)!
         let lastAddress=root.appendingPathComponent(streamed.parts.last!.region.path).absoluteString
         let lastIndex=streamingCache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(lastAddress.utf8))+".index")
         let audit=RegionTransferAudit()
@@ -317,6 +394,47 @@ actor RegionTransferAudit {
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==plan.tileCount,"Pausing preserves completed receipts")
         model.cancelDownload()
         try check(model.downloadRegion==nil && model.regionPlan==nil && !model.regionComplete,"Switching to custom clears regional selection")
-        print("PASS \(checks) region partition, storage, overlap, offline rendering, repair, pause and model checks; \(plan.tileCount) tiles, \(plan.bytes) bytes")
+        // Updating imagery must read the new index, but keep the previous
+        // offline index until the entire replacement section has been saved.
+        let refreshRegion=catalog.sources.filter { $0.tileCount>1 }.min { $0.tileCount<$1.tileCount }!
+        let refreshCache=cache.appendingPathComponent("refresh")
+        let refreshAddress=root.appendingPathComponent(refreshRegion.path).absoluteString
+        let refreshIndex=refreshCache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(refreshAddress.utf8))+".index")
+        let refreshFiles=WorldSourceStore(cacheURL:refreshCache)
+        let freshSource=try await refreshFiles.manifest(address:refreshAddress,recoverCoverage:false)
+        var oldManifest=try JSONSerialization.jsonObject(with:Data(contentsOf:refreshIndex)) as! [String:Any]
+        oldManifest["revision"]="before-imagery-refresh"
+        var oldTiles=oldManifest["tiles"] as! [[String:Any]]
+        var oldMap=oldTiles[0]["map"] as! [String:Any]
+        oldMap["sha256"]=String(repeating:"a",count:64);oldTiles[0]["map"]=oldMap;oldManifest["tiles"]=oldTiles
+        let oldIndex=try JSONSerialization.data(withJSONObject:oldManifest)
+        try oldIndex.write(to:refreshIndex,options:.atomic)
+        let staged=try await refreshFiles.manifest(address:refreshAddress,recoverCoverage:false,stageForDownload:true)
+        try check(staged.revision==freshSource.revision && staged.tiles[0].map.sha256==freshSource.tiles[0].map.sha256,"Refresh bypasses a valid but stale offline manifest")
+        try check(try Data(contentsOf:refreshIndex)==oldIndex,"Fetching replacement metadata preserves the offline manifest")
+        try await refreshFiles.pin([staged.tiles[0]],source:staged)
+        try check(try Data(contentsOf:refreshIndex)==oldIndex,"A partial section never commits the replacement index")
+        let refreshPack=WorldRegionPack(id:"refresh",name:"Refresh",subtitle:"",landmark:"",cells:[.init(id:refreshRegion.id,bounds:refreshRegion.bounds)])
+        let refreshStore=WorldRegionDownloadStore(cacheURL:refreshCache)
+        let refreshPlan=try await refreshStore.plan(pack:refreshPack,catalog:catalog,root:root)
+        try check(try Data(contentsOf:refreshIndex)==oldIndex,"Planning a region refresh preserves existing offline metadata")
+        try await refreshStore.download(refreshPlan,progress:{ _,_ in })
+        let savedSource=try JSONDecoder().decode(WorldSource.self,from:Data(contentsOf:refreshIndex))
+        try check(savedSource.revision==freshSource.revision && savedSource.tiles[0].map.sha256==freshSource.tiles[0].map.sha256,"Successful full-section refresh commits the new index")
+        let offlineRefresh=WorldSourceStore(cacheURL:refreshCache,allowsNetwork:false)
+        let refreshed=try await offlineRefresh.manifest(address:refreshAddress)
+        _=try await offlineRefresh.prepare(refreshed.tiles[0],request:.init(id:refreshed.tiles[0].id,pixels:64,fine:true),sourceBounds:refreshed.bounds)
+        try check(refreshed.revision==freshSource.revision,"Refreshed terrain and imagery render with networking disabled")
+        do {
+            _=try await offlineRefresh.manifest(address:refreshAddress,stageForDownload:true)
+            throw RidgeError.message("Offline refresh incorrectly succeeded")
+        } catch {
+            try check(error.localizedDescription=="This map index is missing. Download the area again while connected.","An unavailable refresh cannot claim that stale imagery is current")
+        }
+        try check(try JSONDecoder().decode(WorldSource.self,from:Data(contentsOf:refreshIndex)).revision==freshSource.revision,"Failed refresh retains the saved offline version")
+        let removalSucceeded=await model.removeDownloadedMaps(in:fixture)
+        try check(removalSucceeded && !model.isRemovingDownloads && !model.in3D && !model.isSavingOffline && model.regionPlan?.pack.id==fixture.id,"Removal leaves no active transfer or scene, and offers the selected area again")
+        try check(!model.hasCoverage(regions[0].bounds.center) && model.offlineBounds.isEmpty,"The map model refreshes saved coverage immediately after removal")
+        print("PASS \(checks) region partition, storage, overlap, offline rendering, repair, pause, refresh and model checks; \(plan.tileCount) tiles, \(plan.bytes) bytes")
     }
 }

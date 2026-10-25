@@ -70,21 +70,25 @@ def routing(features,b,surface):
                 nodes[ident]=node;made.append(ident)
             if made[0]==made[1]:continue
             if route['reverse']:made.reverse()
-            key=(*made,route['bidirectional'],f['properties']['access'],f['kind'])
+            # Keep the raw road class for routing; the map style merges motorways
+            # and ordinary A-roads into majorRoad. Older indexes fall back safely.
+            kind=route.get('highway') or f['kind']
+            key=(*made,route['bidirectional'],f['properties']['access'],kind)
             if key in seen:continue
             seen.add(key)
-            edges.append(dict(zip(('from','to'),made),distance=distance(*ends),bidirectional=route['bidirectional'],access=f['properties']['access'],kind=f['kind']))
+            edges.append(dict(zip(('from','to'),made),distance=distance(*ends),bidirectional=route['bidirectional'],access=f['properties']['access'],kind=kind))
     return dict(nodes=list(nodes.values()),edges=edges)
 
 
-def build(source_id,b,region_name,index,output,dem_cache,binaries,workers=4,reserve_gib=40):
+def build(source_id,b,region_name,index,output,dem_cache,binaries,workers=4,reserve_gib=40,osm_input=None):
     output=Path(output);final=output/'sources'/source_id
     if (final/'world.json').exists():return validate(final,binaries)
     stage=output/'.work'/source_id;stage.mkdir(parents=True,exist_ok=True)
     reserve(output,reserve_gib)
-    source_sha=json.loads(Path(index).with_suffix('.json').read_bytes())['sourceSHA256']
+    source_sha=(osm_input['sourceSHA256'] if osm_input is not None else
+                json.loads(Path(index).with_suffix('.json').read_bytes())['sourceSHA256'])
     surface=Surface(b,dem_cache,reserve_gib)
-    osm=query(index,b)
+    osm=osm_input['features'] if osm_input is not None else query(index,b)
     width=distance([b['minLongitude'],(b['minLatitude']+b['maxLatitude'])/2],[b['maxLongitude'],(b['minLatitude']+b['maxLatitude'])/2])
     depth=distance([b['minLongitude'],b['minLatitude']],[b['minLongitude'],b['maxLatitude']])
     def project(x,y,z=None):return (np.asarray(x)-b['minLongitude'])/(b['maxLongitude']-b['minLongitude'])*width,(b['maxLatitude']-np.asarray(y))/(b['maxLatitude']-b['minLatitude'])*depth
@@ -100,7 +104,7 @@ def build(source_id,b,region_name,index,output,dem_cache,binaries,workers=4,rese
     def asset(name,data):
         atomic(stage/name,data)
         return dict(file=name,byteCount=len(data),sha256=hashlib.sha256(data).hexdigest())
-    graph=routing(osm,b,surface)
+    graph=routing(osm_input['routingFeatures'] if osm_input is not None else osm,b,surface)
     if len(graph['nodes'])>250000 or len(graph['edges'])>750000:raise ValueError('Routing exceeds app limits')
     graph_asset=asset('paths.json',rawjson(graph))
     overview=surface.grid(b,257).round(1)
@@ -154,7 +158,7 @@ def build(source_id,b,region_name,index,output,dem_cache,binaries,workers=4,rese
         atomic(checkpoint,rawjson(dict(signature=signature,tile=result)))
         return result
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:tiles=list(pool.map(tile,grids))
-    sources=[dict(name='Copernicus DEM GLO-30',attribution='Produced using Copernicus WorldDEM-30. © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.',license='Copernicus DEM Free & Open licence',url='https://registry.opendata.aws/copernicus-dem/'),dict(name='OpenStreetMap',attribution='© OpenStreetMap contributors; regional extract by Geofabrik',license='ODbL 1.0',url='https://www.openstreetmap.org/copyright')]
+    sources=[dict(name='Copernicus DEM GLO-30',attribution='Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.',license='Copernicus DEM Free & Open licence',url='https://registry.opendata.aws/copernicus-dem/'),dict(name='OpenStreetMap',attribution='© OpenStreetMap contributors'+('' if osm_input is not None else '; regional extract by Geofabrik'),license='ODbL 1.0',url='https://www.openstreetmap.org/copyright')]
     manifest=dict(schemaVersion=1,id=source_id,name=region_name,revision=REVISION,bounds=b,columns=4,rows=4,overview=overview_asset,graph=graph_asset,tiles=tiles,places=places,sources=sources,backgroundToleranceMetres=2,
         terrainSource=dict(kind='DSM',nominalSpacingMetres=30,verticalDatum='EGM2008',meshToleranceMetres=.5,quantisationMetres=.1,interpolation='bilinear; codec grid does not add source detail'),
         provenance=dict(osmSHA256=source_sha,elevation=surface.provenance),contourIntervalMetres=20)

@@ -321,6 +321,11 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
             entries = try await packs.catalogue()
             atlas = try await packs.atlas()
             routes = try await routeStore.load()
+            if routes.contains(where:{ RouteEngine.isTileRouteName($0.name) }) {
+                // An optional title repair must not hide a readable library if
+                // its file cannot currently be rewritten.
+                if let repaired=try? await routeStore.repairTileNames(places:atlas?.places ?? []) { routes=repaired }
+            }
             loaded = true
             let issues = await packs.issues()
             if !issues.isEmpty { errorMessage = issues.joined(separator: "\n") }
@@ -650,10 +655,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
         guard !isRouting, let terrain = activeTerrain else { return }
         planningMode = .paths
         routeSaved = false
-        activeRoute = RidgeRoute(name: "\(terrain.manifest.name) route", regionID: terrain.manifest.id)
+        activeRoute = RidgeRoute(name: "New route", regionID: terrain.manifest.id)
         undoStack = []; redoStack = []; editing = true; movingWaypoint = nil; insertingWaypoint = nil
         if planningMode == .paths {
-            toast(viewingSurroundings ? "Expand this area to follow mapped paths here." : (terrain.graph?.edges.isEmpty == false ? "Tap a mapped path to place your start." : "This selection has no walking paths. Expand the area to find walking paths."))
+            toast(viewingSurroundings ? "Expand this area to follow mapped paths here." : (terrain.graph?.edges.isEmpty == false ? "Tap the map to snap your start to the nearest path or road." : "This selection has no walking paths. Expand the area to find walking paths."))
         } else { toast(viewingSurroundings ? "Tap the terrain to start a route sketch." : "Tap the terrain to place your start.") }
     }
 
@@ -705,6 +710,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
                 guard activeTerrain?.manifest.id == terrain.manifest.id, activeRoute?.id == route.id else { return }
                 if let segment = result.1 { updated.segments.append(segment) }
                 updated.waypoints.append(RouteWaypoint(point: result.0))
+                if route.waypoints.isEmpty && route.name == "New route" {
+                    updated.name=RouteEngine.suggestedRouteName(start:result.0.coordinate,
+                        places:terrain.manifest.places+(atlas?.places ?? []),areaName:terrain.manifest.name)
+                }
                 selectedPoint = result.0.coordinate
                 if await commit(updated, previous: route), result.1?.mode == "overview" || !terrain.manifest.bounds.contains(coordinate) {
                     toast("Overview terrain: sketch saved. Add detail to inspect it closely; this line is not following paths.")
@@ -905,17 +914,19 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
             catch { errorMessage = error.localizedDescription }
         }
     }
-    func openRoute(_ route: RidgeRoute) {
+    func openRoute(_ route: RidgeRoute, savedWorldBounds:[GeoBounds] = []) {
         guard !isRouting else { return }
         let current = routes.first { $0.id == route.id } ?? route
-        if let worldTerrain, !current.points.isEmpty, current.points.allSatisfy({ worldTerrain.manifest.bounds.contains($0.coordinate) }) {
-            isWorldBrowsing = true; activeTerrain = worldTerrain; activeRoute = current; editing = false
-            undoStack = []; redoStack = []; tab = .explore; worldRouteFocus = current.points.first?.coordinate
+        if let point=RouteEngine.offlineCoverage(for:current,in:savedWorldBounds).openingPoint {
+            isWorldBrowsing=true;activeRoute=current;editing=false
+            activeTerrain=worldTerrain.flatMap { $0.manifest.bounds.contains(point) ? $0 : nil }
+            undoStack=[];redoStack=[];selectedPoint=nil;movingWaypoint=nil;insertingWaypoint=nil
+            pendingRoute=nil;errorMessage=nil;worldRouteFocus=point;tab = .explore
             return
         }
         guard let entry = containingEntry(for: current) else {
             pendingRoute = current
-            errorMessage = "Import a terrain area covering this route before opening it. The GPX remains available to export."
+            errorMessage = "Download a map covering this route in Explore to open it in 3D. Your route remains saved and available to export."
             return
         }
         isRouting = true
@@ -1033,6 +1044,12 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
                 await refresh(); toast("Area removed. Your saved routes are kept.")
             } catch { errorMessage = error.localizedDescription }
         }
+    }
+    func removeAllDownloadedAreas() async throws {
+        if !isWorldBrowsing { closeTerrain() }
+        try await packs.removeAllSavedAreas()
+        for source in try await packs.downloadedSourceStorage() { try await packs.removeDownloadedSource(source.entry) }
+        await refresh()
     }
 
     func toast(_ message: String) {

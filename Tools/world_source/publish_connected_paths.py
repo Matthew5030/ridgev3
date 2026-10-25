@@ -3,8 +3,30 @@
 Restore original graph edges crossing the smaller world-source boundaries.
 Only exact shared parent-boundary endpoints on the same OSM feature are joined.
 """
-import argparse, hashlib, json, math, re, zipfile
+import argparse, hashlib, json, math, re, zipfile, sys
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'global_source'))
+from osm_semantics import MapFeatureTransformer
+
+ROUTING_FILE = 'paths-connected-v2.json'
+
+def walking_edges(graph, semantic):
+    """Recover road and access evidence before the cartographic class loses it."""
+    features={f['id']:f for f in semantic['features']}
+    classify=MapFeatureTransformer();result=[]
+    for original in graph['edges']:
+        feature=features.get(original['sourceFeatureID'])
+        if feature is None:raise ValueError('Missing source evidence for routing edge')
+        tags=feature['source']['tags'];highway=tags.get('highway')
+        if highway in {'motorway','motorway_link','construction','proposed','raceway'} or tags.get('area')=='yes':continue
+        if tags.get('motorroad')=='yes' and tags.get('foot') not in {'yes','designated','official','permissive'}:continue
+        edge=dict(original)
+        edge['pathType']=highway or original['pathType']
+        edge['access']=classify.classify_access(tags)
+        # Preserve the original oriented topology and direction restrictions.
+        result.append(edge)
+    return result
+
 
 def raw(v): return json.dumps(v,separators=(',',':'),allow_nan=False).encode()
 def atomic(p,b):
@@ -30,7 +52,7 @@ def main():
         parent=s['id'].split('-c')[0][6:]
         if not a.parent or parent in a.parent:groups.setdefault(parent,[]).append(s)
     for parent,sources in sorted(groups.items()):
-        if all(s.get('routing') and (a.world/'sources'/s['id']/s['routing']['file']).is_file() for s in sources):continue
+        if all(s.get('routing',{}).get('file')==ROUTING_FILE and (a.world/'sources'/s['id']/ROUTING_FILE).is_file() for s in sources):continue
         m=re.fullmatch(r'z10-x(\d+)-y(\d+)',parent);x,y=m.groups();folder=a.archives/'tiles'/'10'/x/y
         desc=json.loads((folder/'descriptor.json').read_bytes());archive=folder/Path(desc['archiveURL']).name
         payload=archive.read_bytes()
@@ -40,14 +62,19 @@ def main():
             item=next(f for f in manifest['files'] if f['path']=='routing/graph.json')
             if hashlib.sha256(data).hexdigest()!=item['sha256']:raise ValueError('Graph checksum mismatch')
             graph=json.loads(data)
+            semantic_data=z.read('map-data.ridgemap')
+            semantic_item=next(f for f in manifest['files'] if f['path']=='map-data.ridgemap')
+            if hashlib.sha256(semantic_data).hexdigest()!=semantic_item['sha256']:raise ValueError('Map evidence checksum mismatch')
+            semantic=json.loads(semantic_data)
         nodes,ids=connect(graph,desc['bounds'],parent)
+        prepared_edges=walking_edges(graph,semantic)
         for s in sources:
             selected={k for k,n in nodes.items() if inside(s['bounds'],n)}
-            edges=[e for e in graph['edges'] if e['from'] in selected or e['to'] in selected]
+            edges=[e for e in prepared_edges if e['from'] in selected or e['to'] in selected]
             used={e[k] for e in edges for k in ['from','to']}
             result=dict(nodes=[dict(id=ids[k],coordinate=dict(latitude=nodes[k]['latitude'],longitude=nodes[k]['longitude']),elevation=nodes[k]['elevationMeters']) for k in sorted(used)],edges=[dict(from_=ids[e['from']],to=ids[e['to']],distance=e['distanceMeters'],bidirectional=e['bidirectional'],access=e['access'],kind=e['pathType']) for e in edges])
             for e in result['edges']:e['from']=e.pop('from_')
-            data=raw(result);file='paths-connected-v1.json';out=a.world/'sources'/s['id']/file
+            data=raw(result);file=ROUTING_FILE;out=a.world/'sources'/s['id']/file
             if out.exists() and out.read_bytes()!=data:raise ValueError('Refusing to overwrite published sidecar')
             if not out.exists():atomic(out,data)
             s['routing']=dict(file=file,byteCount=len(data),sha256=hashlib.sha256(data).hexdigest())

@@ -34,7 +34,7 @@ import simd
         try check(motion.update([finger(1,115,103),finger(2,300,103)]) == .rebase,"Adding a distant second finger cannot jump the camera")
         _=motion.update([finger(1,95,103),finger(2,320,103)])
         try check(motion.intent == .transform,"Pinch takes over an existing pan")
-        if case let .zoom(_,_,scale)=motion.update([finger(2,330,103),finger(1,85,103)]) {
+        if case let .zoom(_,_,scale,_)=motion.update([finger(2,330,103),finger(1,85,103)]) {
             try check(abs(scale-245.0/225.0)<0.000001,"Touch enumeration order cannot affect incremental pinch scale")
         } else { try check(false,"Pinch should continue") }
         try check(motion.update([finger(2,330,103)]) == .rebase,"Lifting either finger rebases without a midpoint jump")
@@ -52,13 +52,31 @@ import simd
         _=motion.update([finger(1,101,120),finger(2,301,120)])
         try check(motion.update([finger(1,104,130),finger(2,304,130)]) == .angle(0,10),"Vertical drag tilts without accidental heading wobble")
         try check(motion.update([finger(1,80,130),finger(2,328,130)]) == .rebase && motion.intent == .transform,"A clear pinch can escape an initial tilt classification without a jump")
-        if case let .zoom(_,_,scale)=motion.update([finger(1,70,130),finger(2,338,130)]) {
+        if case let .zoom(_,_,scale,_)=motion.update([finger(1,70,130),finger(2,338,130)]) {
             try check(abs(scale-268.0/248.0)<0.000001,"Pinch takeover does not replay earlier span changes")
         } else { try check(false,"Expected zoom after tilt-to-pinch handoff") }
         motion=WorldGestureMotion()
         _=motion.update([finger(1,100,100),finger(2,300,100)])
         _=motion.update([finger(1,120,101),finger(2,320,101)])
         try check(motion.update([finger(1,130,104),finger(2,330,104)]) == .angle(10,0),"Horizontal drag turns without accidental tilt")
+        // Direction changes within a single drag must not remain axis-locked.
+        try check(motion.update([finger(1,130,124),finger(2,330,124)]) == .angle(0,20),"A turn can become a tilt without lifting")
+        try check(motion.update([finger(1,140,134),finger(2,340,134)]) == .angle(10,10),"Diagonal dragging can turn and tilt together")
+        // A twist must carry its incremental rotation into the camera.
+        motion=WorldGestureMotion()
+        _=motion.update([finger(1,100,200),finger(2,300,200)])
+        _=motion.update([finger(1,101,190),finger(2,299,210)])
+        if case let .zoom(_,_,scale,rotation)=motion.update([finger(1,102,180),finger(2,298,220)]) {
+            try check(rotation>0.09 && rotation<0.11,"Twisting reports the signed incremental heading change")
+            try check(scale>1 && scale<1.02,"Twisting preserves its small independent scale change")
+        } else { try check(false,"Twist continues as a camera transform") }
+        motion=WorldGestureMotion();motion.rotateWithOneFinger=true
+        _=motion.update([finger(1,100,100)])
+        _=motion.update([finger(1,110,100)])
+        try check(motion.update([finger(1,120,110)]) == .angle(10,10),"Settings can swap one-finger movement for turning")
+        _=motion.update([finger(1,120,110),finger(2,320,110)])
+        _=motion.update([finger(1,120,130),finger(2,320,130)])
+        try check(motion.update([finger(1,120,140),finger(2,320,140)]) == .pan(CGPoint(x:220,y:130),CGPoint(x:220,y:140)),"Swapped two-finger movement pans the map")
         _=motion.update([])
         try check(!motion.recognized && motion.intent == .undecided,"Lifting all fingers clears gesture intent")
         // Check the real camera orientation over a full turn and the usable tilt

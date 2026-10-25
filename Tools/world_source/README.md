@@ -76,7 +76,8 @@ routes, profiles and GPX support remain part of the core journey.
 `ridge v3/Resources/WorldData.bundle` contains a roughly 8 × 8 km Snowdon/Glyderau
 test region: 256 fine adaptive terrain chunks, 256 adaptive background chunks,
 256 compressed semantic vector files, an 8 m height-query overview, places,
-and the existing walking graph. Total: 35,268,614 bytes.
+and the existing walking graph. The satellite-guided ground colours add about
+1.9 MB to the original 35.3 MB source; see [GROUND-COLOUR.md](GROUND-COLOUR.md).
 It works without the external drive or a server. This is not all of Eryri or the UK.
 
 Terrain is recomputed from the retained original 1 m height field using the
@@ -521,3 +522,39 @@ Yr Wyddfa to Llanberis and zoomed out: the former cut-off at Llanberis is filled
 with terrain and map detail. Physical-device sustained frame rate and memory
 pressure are still to be checked; the Mac test process peaked around 1.4 GiB
 while preparing a new landscape alongside the existing scene and detail.
+
+
+## Walking road classes and snapping — 24 October 2026
+
+The route engine now snaps to the closest eligible edge in the loaded network
+without a default distance cutoff. An explicit maximum can still be supplied by
+callers. Coordinates outside the loaded area still require more downloaded
+coverage. Snapping moves the waypoint onto the network and never adds an
+unmapped straight connector.
+
+Ordinary roads accept missing access tags. Explicit restrictions still exclude
+them, and motorways remain excluded. Old `majorRoad` edges combine motorways
+with A-roads, so those ambiguous edges remain excluded until their routing data
+is refreshed. New global indexes retain the original highway class (index
+revision 2). Their map styling remains unchanged.
+
+`publish_connected_paths.py` now creates immutable `paths-connected-v2.json`
+sidecars, recovering the original highway and pedestrian access evidence from
+the checksum-verified semantic archive. A-road junctions can then connect the
+walking network. Motorways, prohibited pedestrian access and motor-only roads
+are excluded. Existing junction identities, edge directions and grade separation
+remain unchanged. Missing source evidence aborts the conversion. The local
+server accepts both sidecar versions.
+
+The command shown above upgrades all selected parents. Run it against a staging
+copy first, then rebuild section and region archives with the updated catalogue
+before rolling out the refreshed data. Published v1 assets stay immutable.
+Already saved areas need the new routing assets; authored route geometry is not
+silently recalculated. This change does not itself publish or install a new map
+library or app build.
+
+`Tests/Fixtures/a-road-crossing.json` retains an actual Snowdon road connection
+and its source graph checksum. The route suite checks it in both directions and
+reproduces the failure when road edges are excluded. Run `bash
+Tools/test_routes.sh`; pass a full Snowdon horseshoe fixture directory as the
+first argument for the optional summit-to-Crib-Goch terrain integration test.
