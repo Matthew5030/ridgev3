@@ -6,7 +6,6 @@ struct WorldRegionDownloadCard: View {
     @Bindable var world:WorldModel
     let pack:WorldRegionPack
     var saved:WorldRegionMapOverlay? = nil
-    let explore:() -> Void
     var selectWholePark:(() -> Void)? = nil
     var retryConnection:(() -> Void)? = nil
     @State private var confirmRemoval = false
@@ -52,8 +51,7 @@ struct WorldRegionDownloadCard: View {
                         .font(.subheadline)
                 } else if world.regionComplete {
                     Label(partialCoverage ? "Available terrain saved" : "Maps saved",systemImage:"checkmark.circle.fill").font(.headline)
-                    Text("Choose a place to explore. Ridge only prepares the terrain around you.").font(.subheadline)
-                    if saved?.savedTileCount ?? 0 == 0 { Button("Explore in 3D") { explore() }.buttonStyle(.borderedProminent).foregroundStyle(.white) }
+                    Text("Zoom in to explore your saved terrain.").font(.subheadline)
                 } else if world.checkingDownload {
                     ProgressView(value:Double(world.regionChecked),total:Double(max(1,world.regionTotal)))
                     Text("Checking saved maps · \(world.regionChecked) of \(world.regionTotal) sections").font(.subheadline.monospacedDigit())
@@ -101,21 +99,11 @@ struct WorldRegionDownloadCard: View {
                         Button("Check remaining download") { world.offerRegionDownload(pack) }.buttonStyle(.bordered)
                     }
                 }
-                if let saved,saved.savedTileCount>0,!world.isSavingOffline {
-                    if saved.downloadState == .saved {
-                        Button("Explore in 3D",systemImage:"mountain.2") { explore() }
-                            .buttonStyle(.borderedProminent).foregroundStyle(.white).controlSize(.large)
-                    } else {
-                        Button("Explore saved part",systemImage:"mountain.2") { explore() }
-                            .buttonStyle(.bordered).controlSize(.large)
-                        Text("The rest of the region is still downloading or paused.").font(.caption).foregroundStyle(RidgeTheme.muted)
-                    }
-                }
                 if let selectWholePark,!world.isSavingOffline,!world.checkingDownload {
                     Button("Select whole park",systemImage:"map",action:selectWholePark).font(.subheadline)
                 }
                 if !pack.standardTerrain(in:world.catalog).isEmpty {
-                    Text("Blue areas use standard terrain from 30 m elevation data. LiDAR detail is retained wherever available.")
+                    Text("Includes standard terrain where LiDAR detail isn’t available.")
                         .font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
                 if saved?.savedTileCount ?? 0 > 0 {

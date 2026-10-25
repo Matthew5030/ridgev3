@@ -37,6 +37,48 @@ actor PackEvents {
         let reopened=WorldSourceStore(cacheURL:cache,allowsNetwork:false)
         let offline=try await reopened.manifest(address:address,routing:region.routing,preferCached:true)
         _=try await reopened.contents(of:offline)
+        // A newer catalogue must not invalidate an already installed pack.
+        let newer=WorldMapAsset(file:"paths-connected-future.json",byteCount:12345,sha256:String(repeating:"e",count:64))
+        let olderPack=WorldSourceStore(cacheURL:cache,allowsNetwork:false)
+        let advanced=try await olderPack.manifest(address:address,routing:newer,preferCached:true,recoverCoverage:false)
+        let (retainedAsset,retainedGraph)=try await olderPack.routingGraph(advanced)
+        try check(retainedAsset.sha256==region.routing?.sha256 && !retainedGraph.nodes.isEmpty,"A saved packed graph survives a catalogue-only routing update")
+
+        // Reproduce the phone's legacy loose-file save with the real retained
+        // connected-v1 graph and a catalogue requesting connected-v2.
+        let legacyCache=cache.appendingPathComponent("legacy-routing")
+        let legacyRegion=catalog.sources.first { $0.id=="world-z10-x500-y333-c16-r00" }!
+        let legacyAddress=root.appendingPathComponent(legacyRegion.path)
+        let legacyMetadata=WorldSourceStore(cacheURL:legacyCache)
+        let legacySource=try await legacyMetadata.manifest(address:legacyAddress.absoluteString,routing:legacyRegion.routing,recoverCoverage:false)
+        let (oldData,response)=try await URLSession.shared.data(from:legacyAddress.deletingLastPathComponent().appendingPathComponent("paths-connected-v1.json"))
+        try check((response as? HTTPURLResponse)?.statusCode==200,"Real retained v1 graph fixture is available")
+        let oldHash=AdaptiveTerrainCodec.hash(oldData)
+        try oldData.write(to:legacyCache.appendingPathComponent(oldHash))
+        _=try WorldSourceStore.reserve([oldHash],cache:legacyCache)
+        try WorldOfflineCoverage.record([.init(bounds:legacySource.tiles[0].mesh.bounds,assets:[.init(hash:oldHash,bytes:oldData.count)])],at:legacyCache,identifier:legacySource.id)
+        let legacy=WorldSourceStore(cacheURL:legacyCache,allowsNetwork:false)
+        let requested=try await legacy.manifest(address:legacyAddress.absoluteString,routing:legacyRegion.routing,recoverCoverage:false)
+        let (oldAsset,oldGraph)=try await legacy.routingGraph(requested)
+        try check(oldAsset.sha256==oldHash && !oldGraph.nodes.isEmpty,"Pinned loose v1 routes reopen offline when only v2 catalogue metadata changed")
+        let (newData,_)=try await URLSession.shared.data(from:legacyAddress.deletingLastPathComponent().appendingPathComponent(legacyRegion.routing!.file))
+        let newGraph=try JSONDecoder().decode(WalkingGraph.self,from:newData)
+        let dummyOverview=WorldOverview(width:2,height:2,heights:[0,0,0,0])
+        let joined=try WorldLandscapeStore.joinGraphs([
+            .init(source:legacySource,overview:dummyOverview,graph:oldGraph,files:legacy,connected:true),
+            .init(source:legacySource,overview:dummyOverview,graph:newGraph,files:legacy,connected:true)])
+        let junctions=Set((oldGraph.nodes+newGraph.nodes).filter { legacySource.bounds.contains($0.coordinate) }.map(\.id))
+        try check(joined.nodes.count==junctions.count,"Real v1/v2 sidecars join without conflicting or duplicated global junctions")
+        var corruptGraph=oldData;corruptGraph[0] ^= 1
+        try corruptGraph.write(to:legacyCache.appendingPathComponent(oldHash))
+        do {
+            _=try await legacy.routingGraph(requested)
+            throw RidgeError.message("Accepted corrupted saved routing")
+        } catch { try check(error.localizedDescription != "Accepted corrupted saved routing","Legacy recovery still verifies saved graph hashes") }
+        try oldData.write(to:legacyCache.appendingPathComponent(oldHash))
+        try newData.write(to:legacyCache.appendingPathComponent(legacyRegion.routing!.sha256))
+        let (currentAsset,_)=try await legacy.routingGraph(requested)
+        try check(currentAsset.sha256==legacyRegion.routing?.sha256,"The current graph takes priority as soon as it is available locally")
         for tile in offline.tiles.prefix(2) {
             let result=try await reopened.prepare(tile,request:.init(id:tile.id,pixels:32,fine:true),sourceBounds:offline.bounds)
             try check(result.mesh != nil,"Offline fine terrain and vectors are read directly from the pack")

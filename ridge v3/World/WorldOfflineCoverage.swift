@@ -31,6 +31,20 @@ enum WorldOfflineCoverage {
         }
         return Array(result.values)
     }
+    /// Shared loose assets in an admitted source identify its saved graph even
+    /// when an older download did not persist the catalogue's routing override.
+    static func sharedAssets(source:WorldSource,at cache:URL)->[Asset] {
+        lock.lock();defer { lock.unlock() }
+        let file=cache.appendingPathComponent("offline-regions").appendingPathComponent(AdaptiveTerrainCodec.hash(Data(source.id.utf8))+".json")
+        let local=receipts(in:file)
+        let saved=(local.isEmpty ? receipts(in:cache.appendingPathComponent("offline-coverage.json")) : local)
+            .filter { source.bounds.contains($0.bounds.center) }
+        guard let first=saved.first,
+              let data=try? Data(contentsOf:cache.appendingPathComponent("pins.json")),
+              let pins=try? JSONDecoder().decode(Set<String>.self,from:data) else { return [] }
+        let common=saved.dropFirst().reduce(Set(first.assets)) { $0.intersection($1.assets) }
+        return common.filter { $0.packed != true && pins.contains($0.hash) }.sorted { $0.hash<$1.hash }
+    }
     static func record(_ additions: [Receipt], at cache: URL, identifier: String? = nil) throws {
         guard !additions.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }

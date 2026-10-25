@@ -1,9 +1,10 @@
 """Local fault-injection proxy for resumable pack transfer integration tests."""
 import http.server
+import os
 import sys
 import time
 import urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -12,7 +13,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         request = urlsplit(self.path)
-        with urllib.request.urlopen('http://127.0.0.1:8787' + request.path) as response:
+        upstream = urlsplit(os.environ.get('RIDGE_TEST_SERVER', 'http://127.0.0.1:8787'))
+        with urllib.request.urlopen(urlunsplit((upstream.scheme, upstream.netloc, request.path, '', ''))) as response:
             data = response.read()
         start = int(self.headers.get('Range', 'bytes=0-').split('=')[1].split('-')[0])
         if request.query == 'ignore-range':
