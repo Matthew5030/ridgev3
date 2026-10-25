@@ -53,7 +53,13 @@ struct WorldFlightArrival {
     }
     func sample(elapsed:Double,in outputFrame:GeoBounds? = nil)->WorldRouteTourCamera.Pose {
         let t=min(1,max(0,(elapsed-hold)/diveDuration)),weight=t*t*t*(10+t*(-15+6*t))
-        var eye=SIMD3<Float>(p+t*(c1+t*(c2+t*(c3+t*(c4+t*c5)))))
+        var position:SIMD3<Double>=c5
+        position=c4+position*t
+        position=c3+position*t
+        position=c2+position*t
+        position=c1+position*t
+        position=p+position*t
+        var eye=SIMD3<Float>(position)
         let rotation=simd_slerp(openingOrientation,finishOrientation,Float(weight))
         var look=eye+rotation.act(SIMD3<Float>(0,0,-80))
         let up=rotation.act(SIMD3<Float>(0,1,0))
