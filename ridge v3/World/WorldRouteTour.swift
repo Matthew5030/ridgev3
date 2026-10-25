@@ -115,7 +115,7 @@ struct WorldRouteTourPath {
     static let speedRange = 10.0...600.0
     var speed = 150.0
     static let flightClearance = 15.0
-    static let fieldOfView = 68.0
+    nonisolated static let fieldOfView = 68.0
     static let fpvCornerLift = 90.0
     static let preparedSpeed = 25.0
     var clearance:Double { Self.flightClearance }
@@ -160,4 +160,3 @@ struct WorldRouteTourPath {
         if progress >= 1 { isPlaying=false }
     }
 }
-

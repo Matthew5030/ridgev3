@@ -19,7 +19,8 @@ final class WorldCameraRig {
         guard !touring else { return }
         let forward = -SIMD3(camera.simdWorldTransform.columns.2.x,camera.simdWorldTransform.columns.2.y,camera.simdWorldTransform.columns.2.z)
         heldPose=Pose(eye:camera.simdWorldPosition,look:camera.simdWorldPosition+forward*80,
-                      fieldOfView:Double(camera.camera?.fieldOfView ?? 43),near:camera.camera?.zNear ?? 2)
+                      fieldOfView:Double(camera.camera?.fieldOfView ?? 43),near:camera.camera?.zNear ?? 2,
+                      up:SIMD3(camera.simdWorldTransform.columns.1.x,camera.simdWorldTransform.columns.1.y,camera.simdWorldTransform.columns.1.z))
         touring=true
     }
     func endTour() { touring=false;heldPose=nil }

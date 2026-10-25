@@ -20,6 +20,9 @@ struct WorldExploreView: View {
     @State private var export: GPXDocument?
     @State private var exporting = false
     @State private var showRoutePanel = false
+    @State private var routeDetailsSection = WorldRouteDetailsSection.waypoints
+    @State private var showPreviewElevation = false
+    @State private var showMapKey = false
     @State private var elevationSamples: [RouteProfileSample] = []
     @State private var containerSize=CGSize(width:768,height:1024)
     @State private var exploring = false
@@ -54,10 +57,11 @@ struct WorldExploreView: View {
         let areas=parkMaps+regionMaps
         return Array(areas.filter { $0.pack.name.localizedCaseInsensitiveContains(query) }.prefix(3))
     }
-    var body: some View {
+    private var mapWithLifecycle: some View {
         mapContent
         .onGeometryChange(for:CGSize.self) { $0.size } action: { containerSize=$0 }
         .foregroundStyle(RidgeTheme.ink).tint(RidgeTheme.forest)
+        .preference(key: WorldPreviewPresentedKey.self, value: tour.isPresented)
         .overlay {
             if world.isRemovingDownloads {
                 ZStack {
@@ -121,8 +125,13 @@ struct WorldExploreView: View {
         .onChange(of:world.isSavingOffline) { _, _ in updateIdleTimer() }
         .onChange(of:tour.isPlaying) { _, _ in updateIdleTimer() }
         .onChange(of:store.activeRoute) { _, _ in updateElevationProfile();if tour.isPresented { tour.close() } }
-        .onChange(of:store.activeRoute?.id) { _, value in if value != nil { showRoutePanel=true } }
-        .onChange(of:store.editing) { _, value in if value && store.movingWaypoint == nil && store.insertingWaypoint == nil { showRoutePanel=true } }
+        .onChange(of:store.activeRoute?.id) { _, value in showRoutePanel = value != nil && dockedRoutePanel; routeDetailsSection = .waypoints }
+        .onChange(of:store.editing) { _, value in if value && dockedRoutePanel && store.movingWaypoint == nil && store.insertingWaypoint == nil { showRoutePanel=true } }
+        .onChange(of:tour.isPresented) { _, presented in
+            showPreviewElevation=false
+            if presented { query="";searchFocused=false;showCameraHelp=false;showRoutePanel=false }
+            else if dockedRoutePanel { showRoutePanel=store.activeRoute != nil }
+        }
         .onChange(of:world.in3D) { _, value in if !value { tour.close() } }
         .onChange(of:phase) { _, value in
             guard !verifyingPreinstalledAtlas else { return }
@@ -146,6 +155,9 @@ struct WorldExploreView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for:UIApplication.didReceiveMemoryWarningNotification)) { _ in world.memoryWarning() }
         .onChange(of:store.worldRouteFocus) { _, _ in openPendingRoute() }
+    }
+    var body: some View {
+        mapWithLifecycle
         .fileExporter(isPresented:$exporting,document:export,contentType:.ridgeGPX,defaultFilename:store.activeRoute?.name ?? "Route") { result in if case .failure(let e)=result { store.errorMessage=e.localizedDescription } }
         .confirmationDialog("Waypoint",isPresented:Binding(get:{editWaypoint != nil},set:{if !$0 {editWaypoint=nil}})) {
             if let waypoint=editWaypoint {
@@ -158,10 +170,16 @@ struct WorldExploreView: View {
             Button("Save") { if let route=store.activeRoute {store.renameRoute(route,to:routeName)} }
             Button("Cancel",role:.cancel) {}
         }
+        .sheet(isPresented: Binding(get: { !dockedRoutePanel && showRoutePanel && !tour.isPresented }, set: { showRoutePanel=$0 })) {
+            routePanel
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
     }
-    private var dockedRoutePanel: Bool { containerSize.width>=760 }
+    private var dockedRoutePanel: Bool { UIDevice.current.userInterfaceIdiom == .pad && containerSize.width>=760 }
     private var routePanelWidth:CGFloat { dockedRoutePanel ? min(360,max(310,containerSize.width*0.30)) : min(340,max(260,mapSize.width-56)) }
-    private var routePanelVisible:Bool { world.in3D && store.activeRoute != nil && (dockedRoutePanel || showRoutePanel) && !tour.isEntering && (!world.in3D || terrainEntryID == nil) }
+    private var routePanelVisible:Bool { world.in3D && store.activeRoute != nil && dockedRoutePanel && showRoutePanel && !tour.isPresented && terrainEntryID == nil }
     private var overheadViewport:GeoBounds? {
         guard !world.in3D,let bounds=visibleBounds,bounds.depthMeters<WorldCameraTransition.overheadSpanLimit,
               world.canEnterTerrain(at:bounds.center) else { return nil }
@@ -202,6 +220,7 @@ struct WorldExploreView: View {
             VStack(spacing: 10) {
                 HStack(spacing: 10) {
                     if world.in3D { control("map", "Show UK map") { atlasRequest=UUID() } }
+                    else if !dockedRoutePanel { control("map", "Map key and download regions") { showMapKey.toggle() } }
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundStyle(RidgeTheme.muted)
                         TextField("Find a place", text: $query).autocorrectionDisabled().focused($searchFocused)
@@ -209,7 +228,7 @@ struct WorldExploreView: View {
                     }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
                     control("slider.horizontal.3", "Settings") { store.showSettings = true }
                 }
-                if !world.in3D { regionMapBar }
+                if !world.in3D && (dockedRoutePanel || showMapKey) { regionMapBar }
                 if !query.isEmpty {
                     VStack(alignment:.leading,spacing:0) {
                         ForEach(regionCandidates) { area in Button { selectRegion(area.pack) } label: {
@@ -229,21 +248,31 @@ struct WorldExploreView: View {
                 }
                 HStack(alignment:.top) {
                     if world.in3D {
-                        VStack(alignment:.leading,spacing:4) {
+                        if dockedRoutePanel || showCameraHelp { VStack(alignment:.leading,spacing:4) {
                             Text("Terrain").font(.subheadline.weight(.semibold))
                             Button { showCameraHelp.toggle() } label: { Label("Controls",systemImage:"hand.draw").font(.caption) }
                             if showCameraHelp {
                                 Text((TerrainGestureStyle(rawValue:gestureStyle) ?? .moveWithOneFinger).shortGuide)
                                     .font(.caption).fixedSize(horizontal:false,vertical:true).frame(maxWidth:220)
                             }
-                        }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
+                        }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
                         Spacer()
                         VStack(spacing:8) {
+                            if dockedRoutePanel {
                             control("plus", "Zoom in") { store.camera = TerrainCameraCommand(action:.zoomIn) }
                             control("minus", "Zoom out") { store.camera = TerrainCameraCommand(action:.zoomOut) }
+                            }
                             control("location.north", "Face north") { store.camera = TerrainCameraCommand(action:.north) }
+                            if dockedRoutePanel {
                             control("square.3.layers.3d.top.filled", "Look straight down") { store.camera = TerrainCameraCommand(action:.overhead) }
+                            }
                             Menu {
+                                if !dockedRoutePanel {
+                                    Button("Zoom in",systemImage:"plus") { store.camera = TerrainCameraCommand(action:.zoomIn) }
+                                    Button("Zoom out",systemImage:"minus") { store.camera = TerrainCameraCommand(action:.zoomOut) }
+                                    Button("Look straight down",systemImage:"square.3.layers.3d.top.filled") { store.camera = TerrainCameraCommand(action:.overhead) }
+                                    Button("Camera controls",systemImage:"hand.draw") { showCameraHelp.toggle() }
+                                }
                                 Button("Import GPX",systemImage:"square.and.arrow.down") { store.showGPXImporter = true }
                                 Button("Downloaded maps",systemImage:"map") { atlasRequest=UUID() }
                             } label: { Image(systemName:"ellipsis").frame(width:42,height:42).background(.regularMaterial,in:Circle()) }
@@ -275,10 +304,10 @@ struct WorldExploreView: View {
                     HStack { Text(message).font(.caption);Spacer();Button("OK") { world.offlineMessage=nil } }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
                 }
                 if let notice = store.notice { Text(notice).font(.subheadline).padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:10)) }
-                if world.in3D && store.activeRoute != nil && !dockedRoutePanel && !showRoutePanel { compactRouteLauncher }
                 Text("© OpenStreetMap contributors · Welsh Government OGL v3 · Natural Earth · Mapzen · Copernicus Sentinel 2025")
                     .font(.system(size:9)).foregroundStyle(RidgeTheme.muted).padding(3).background(.regularMaterial,in:Capsule())
-            }.padding(16).padding(.leading,routePanelVisible && dockedRoutePanel ? routePanelWidth+8 : 0).padding(.bottom,world.in3D ? routeBottomHeight : 0).opacity(tour.isEntering || (world.in3D && terrainEntryID != nil) ? 0 : 1).allowsHitTesting(!tour.isEntering && (!world.in3D || terrainEntryID == nil))
+            }.padding(16).padding(.leading,routePanelVisible ? routePanelWidth+8 : 0).padding(.bottom,world.in3D ? routeBottomHeight : 0).opacity(tour.isPresented || (world.in3D && terrainEntryID != nil) ? 0 : 1).allowsHitTesting(!tour.isPresented && (!world.in3D || terrainEntryID == nil))
+                .animation(.easeInOut(duration:reduceMotion ? 0 : 0.2),value:tour.isPresented)
         }
         .onGeometryChange(for:CGSize.self) { $0.size } action: { mapSize=$0 }
         .onChange(of:overheadViewport == nil && !world.in3D) { _,absent in if absent { overheadSurfaceReady=false;overheadRenderedBounds=[] } }
@@ -290,12 +319,17 @@ struct WorldExploreView: View {
                     .clipShape(RoundedRectangle(cornerRadius:14))
                     .shadow(color:.black.opacity(0.16),radius:12,y:4)
                     .padding(.leading,8).padding(.top,76)
+                    .transition(.move(edge:.leading).combined(with:.opacity))
             }
         }
+        .animation(.easeInOut(duration:reduceMotion ? 0 : 0.25),value:routePanelVisible)
         .overlay(alignment:.bottom) {
-            if world.in3D,!tour.isEntering,terrainEntryID == nil {
+            if world.in3D,terrainEntryID == nil {
                 routeBottomBar
                     .onGeometryChange(for:CGFloat.self) { $0.size.height } action: { routeBottomHeight=$0 }
+                    .opacity(tour.isEntering ? 0 : 1)
+                    .allowsHitTesting(!tour.isEntering)
+                    .animation(.easeInOut(duration:reduceMotion ? 0 : 0.25),value:tour.isEntering)
             }
         }
         .overlay {
@@ -303,6 +337,7 @@ struct WorldExploreView: View {
                 WorldFlightEntryView(tour:tour).transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration:reduceMotion ? 0 : 0.2),value:tour.isEntering)
     }
     private func atlasEntryScale(at date:Date)->CGFloat {
         guard world.in3D,let start=terrainEntryStartedAt,!reduceMotion else { return 1 }
@@ -313,14 +348,28 @@ struct WorldExploreView: View {
         if let route=store.activeRoute {
             VStack(spacing:0) {
                 Divider()
-                if elevationSamples.count>1 {
+                if tour.isPresented {
+                if showPreviewElevation, elevationSamples.count>1 {
                     WorldRouteElevationStrip(samples:elevationSamples,
                         selectedDistance:store.selectedPoint.flatMap { WorldRouteProfile.distance(nearest:$0,in:elevationSamples) },tour:tour,onScrub:scrubRoute)
                     Divider()
                 }
+                WorldRoutePlaybackBar(tour:tour,showsElevation:$showPreviewElevation,hasElevation:elevationSamples.count>1)
+                } else if !dockedRoutePanel {
+                    WorldRouteActionBar(route:route,editing:store.editing,busy:store.isRouting,pathsReady:world.routeTerrain != nil,
+                        canUndo:!store.undoStack.isEmpty,details:{ showRoutePanel=true },onAction:routePanelAction)
+                } else {
+                HStack {
+                    Button { withAnimation(.easeInOut(duration:0.2)) { showRoutePanel.toggle() } } label: {
+                        Label(showRoutePanel ? "Hide details" : "Route details",systemImage:"sidebar.left")
+                    }
+                    Spacer()
+                    Button("Preview",systemImage:"play.fill") { previewRoute() }.disabled(store.isRouting || route.points.count<2)
+                }.font(.subheadline.weight(.semibold)).padding(.horizontal,16).frame(minHeight:44)
                 WorldRouteToolbar(route:route,editing:store.editing,busy:store.isRouting,pathsReady:world.routeTerrain != nil,
                     canUndo:!store.undoStack.isEmpty,canRedo:!store.redoStack.isEmpty,
                     selectedWaypoint:route.waypoints.first { $0.point.coordinate == store.selectedPoint }?.id,onAction:routePanelAction)
+                }
             }.background(.regularMaterial)
         } else {
             WorldRoutePlanPrompt(pathsReady:world.routeTerrain != nil,busy:store.isRouting,
@@ -456,22 +505,9 @@ struct WorldExploreView: View {
         return WorldRouteEditorPanel(route:route,editing:store.editing,busy:store.isRouting,pathsReady:world.routeTerrain != nil,
             canUndo:!store.undoStack.isEmpty,canRedo:!store.redoStack.isEmpty,selectedWaypoint:selected,movingWaypoint:moving,
             inserting:store.insertingWaypoint != nil,summary:summary,tour:tour,
-            dismiss:dockedRoutePanel ? nil : { showRoutePanel=false },onAction:routePanelAction)
-    }
-    private var compactRouteLauncher: some View {
-        HStack(spacing:12) {
-            Button { showRoutePanel=true } label: {
-                Label(tour.isPresented ? "Preview controls" : store.activeRoute == nil ? "Plan a route" : "Route · \(store.activeRoute?.waypoints.count ?? 0) points",systemImage:"sidebar.left")
-                    .font(.subheadline.weight(.semibold)).frame(minHeight:44)
-            }
-            Spacer(minLength:0)
-            if tour.isPresented {
-                Button { tour.togglePlayback() } label: { Image(systemName:tour.isPlaying ? "pause.fill" : "play.fill").frame(width:44,height:44) }
-                    .accessibilityLabel(tour.isPlaying ? "Pause preview" : "Play preview")
-            } else if (store.activeRoute?.points.count ?? 0)>1 {
-                Button("Preview",systemImage:"play.fill") { previewRoute() }.disabled(store.isRouting).frame(minHeight:44)
-            }
-        }.padding(.horizontal,14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:14))
+            dismiss:{ showRoutePanel=false },onAction:routePanelAction,section:$routeDetailsSection,
+            elevationSamples:elevationSamples,selectedDistance:store.selectedPoint.flatMap { WorldRouteProfile.distance(nearest:$0,in:elevationSamples) },
+            onScrub:scrubRoute,compact:!dockedRoutePanel)
     }
     private func previewRoute(from waypoint: UUID? = nil) {
         guard !store.isRouting,let route=store.activeRoute else { return }
@@ -488,9 +524,9 @@ struct WorldExploreView: View {
         if case .preview(let waypoint)=action { previewRoute(from:waypoint);return }
         tour.close()
         switch action {
-        case .start: store.startRoute();showRoutePanel=true
-        case .finish: store.finishRoute()
-        case .edit: store.editing=true
+        case .start: store.startRoute();showRoutePanel=dockedRoutePanel
+        case .finish: store.finishRoute();if !dockedRoutePanel { showRoutePanel=false }
+        case .edit: store.editing=true;if !dockedRoutePanel { showRoutePanel=false }
         case .undo: store.undo()
         case .redo: store.redo()
         case .rename: routeName=store.activeRoute?.name ?? "";renaming=true
@@ -500,7 +536,7 @@ struct WorldExploreView: View {
                 catch { store.errorMessage=error.localizedDescription }
             }
         case .reverse: store.reverseRoute()
-        case .fitRoute: store.camera=TerrainCameraCommand(action:.fitRoute)
+        case .fitRoute: store.camera=TerrainCameraCommand(action:.fitRoute);if !dockedRoutePanel { showRoutePanel=false }
         case .closeLoop:
             // closeLoop appends through the same path as a map tap.
             let wasEditing=store.editing;store.editing=true;store.closeLoop();store.editing=wasEditing
@@ -512,6 +548,7 @@ struct WorldExploreView: View {
             case .select:
                 store.selectedPoint=route.waypoints[index].point.coordinate
                 store.camera=TerrainCameraCommand(action:.focus(route.waypoints[index].point.coordinate))
+                if !dockedRoutePanel { showRoutePanel=false }
             case .move:
                 store.editing=true;store.insertingWaypoint=nil;store.movingWaypoint=index
                 store.selectedPoint=route.waypoints[index].point.coordinate

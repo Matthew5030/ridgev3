@@ -6,6 +6,7 @@ struct WorldRouteElevationStrip: View {
     var selectedDistance: Double?
     @Bindable var tour: WorldRouteTour
     var onScrub: (Double) -> Void
+    var chartHeight: CGFloat = 44
     @State private var scrubbing=false
     @State private var resumeAfterScrub=false
     private var length: Double { samples.last?.distance ?? 0 }
@@ -63,7 +64,7 @@ struct WorldRouteElevationStrip: View {
                     if resumeAfterScrub && tour.isPresented { tour.isPlaying=tour.progress<1 }
                     resumeAfterScrub=false
                 })
-            }.frame(height:44)
+            }.frame(height:chartHeight)
         }.padding(.horizontal,16).padding(.vertical,8).background(RidgeTheme.paper)
             .accessibilityElement(children:.ignore).accessibilityLabel("Route elevation and position")
             .accessibilityValue("\(Int(fraction*100)) percent" + (position?.elevation.map { ", \(Int($0)) metres elevation" } ?? ", elevation unavailable"))

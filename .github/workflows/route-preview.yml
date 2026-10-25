@@ -1,0 +1,31 @@
+name: Route preview checks
+
+on:
+  pull_request:
+    paths:
+      - 'ridge v3/**'
+      - 'Tests/**'
+      - 'Tools/test_world_*.sh'
+      - '.github/workflows/route-preview.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: route-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  camera-and-playback:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Route playback and scrubbing
+        run: sh Tools/test_world_route_tour.sh
+      - name: Entry continuity and flight handoff
+        run: sh Tools/test_world_flight_arrival.sh
+      - name: Camera ownership and free look
+        run: sh Tools/test_world_cinematic_camera.sh
