@@ -130,9 +130,22 @@ import simd
             let reference=straight.sample(time:Double(tick)/60)
             let sample=glide.advance(reference:reference,yaw:tick<500 ? 3 : -3,pitch:tick<500 ? 1 : -1,speedScale:speed/25,seconds:1/60,frame:frame,reduceMotion:true)
             let offset=sample.pose.eye-reference.pose.eye
-            try check(simd_length(SIMD2(offset.x,offset.z))<=80.01 && offset.y>=(-0.01),"Changing speed or steering direction cannot overshoot the corridor")
+            try check(simd_length(SIMD2(offset.x,offset.z))<=80.01 && offset.y>=(-10.01) && sample.heightAboveGround>=4.99,"Changing speed or steering direction cannot overshoot the corridor")
             try check(sample.pose.bank==0,"Reduce Motion keeps a level horizon while steering")
             last=sample
+        }
+        for clearance in [5.0,8,15,100] {
+            var descending=WorldFlightGlide()
+            let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:flat,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:clearance)
+            var sample=plan.sample(time:0)
+            for tick in 1...600 {
+                let reference=plan.sample(time:Double(tick)/60)
+                sample=descending.advance(reference:reference,yaw:0,pitch:-0.6,speedScale:1,seconds:1/60,frame:frame,reduceMotion:false,clearance:clearance)
+                try check(sample.heightAboveGround>=4.99,"Downward steering retains the minimum prepared clearance")
+            }
+            if clearance>5 {
+                try check(sample.pose.eye.y<plan.sample(time:10).pose.eye.y-0.1 && sample.pose.look.y<sample.pose.eye.y,"A downward drag descends along the viewing direction")
+            }
         }
         let rebased=GeoBounds(minLatitude:52.98,minLongitude:-4.03,maxLatitude:53.03,maxLongitude:-3.97)
         let converted=WorldFlightPlan.converted(last,from:frame,to:rebased)

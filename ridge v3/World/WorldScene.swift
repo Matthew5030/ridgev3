@@ -694,7 +694,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             // Rendering notifications and streaming must never advance flight.
             let scale=elapsed>0 ? (nextTime-flightTime)/elapsed : 0
             let sample=glide.advance(reference:reference,yaw:cinematicLook.yaw,pitch:cinematicLook.pitch,
-                speedScale:scale,seconds:elapsed,frame:plan.frame,reduceMotion:plan.reduceMotion)
+                speedScale:scale,seconds:elapsed,frame:plan.frame,reduceMotion:plan.reduceMotion,clearance:plan.clearance)
             let next=sample.routeDistance,point=sample.pose.focus
             if !hasTourCoverage(point) || !hasTourCoverage(path.sample(at:next).coordinate) {
                 tour.message="Preview paused at the edge of your downloaded map. Download this area to continue."
