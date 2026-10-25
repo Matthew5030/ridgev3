@@ -4,6 +4,8 @@ Selecting a region checks the local section indexes and asset receipts before of
 
 Returning to Ridge rechecks a paused selection's remaining bytes without starting a transfer. The card explicitly says “Download paused”, with a single “Resume download” action. Resume performs any outstanding check and continues the transfer; cancelling that check prevents a delayed restart. The displayed reduction from a fresh download includes both reused file bytes and skipped transport metadata.
 
+Remaining bytes and the download action precede the optional terrain explanation. An incomplete region's exploration action says “Explore saved part” and uses secondary styling; it does not imply the entire region is ready. Completed regions retain the primary “Explore in 3D” action.
+
 The current Eryri selection has 73 published sections containing 16,199 available tiles. Its section packs total 1,111,456,185 bytes, which exceeds the original region archive limit of 1 GiB. Raising that limit in the catalogue would break older installed clients. Instead, `regionArchiveGroups` adds a list of independently resumable archives that each retain the existing validated format. Older clients ignore this additive field and continue using section packs.
 
 The published Eryri group contains two files, 799,165,914 and 320,763,293 bytes. The 1,119,929,207-byte wire total includes the compressed manifests. Section pack payloads, terrain detail and hashes are unchanged. The renderer reads nested section ranges directly, without extracting another copy of the region.
