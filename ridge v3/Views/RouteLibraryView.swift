@@ -6,15 +6,19 @@ struct RouteLibraryView: View {
     @State private var query = ""
     @State private var favouritesOnly = false
     @AppStorage("ridge.favouriteRoutes") private var favouriteData = Data()
+    @AppStorage("ridge.routeLibrary.order") private var orderValue = RouteLibraryOrder.recent.rawValue
+    @State private var distances: [UUID: Double] = [:]
+    @State private var briefRoute: RidgeRoute?
+    private var order: RouteLibraryOrder { RouteLibraryOrder(rawValue: orderValue) ?? .recent }
+    private var routesRevision: String { store.routes.map { "\($0.id)|\($0.modifiedAt.timeIntervalSince1970)" }.joined(separator: ";") }
     private var favouriteIDs: Set<UUID> { Set((try? JSONDecoder().decode([UUID].self, from: favouriteData)) ?? []) }
     private var visibleRoutes: [RidgeRoute] {
-        store.routes.filter { route in
+        let filtered = store.routes.filter { route in
             (!favouritesOnly || favouriteIDs.contains(route.id)) &&
             (query.isEmpty || route.name.localizedCaseInsensitiveContains(query) || route.notes.localizedCaseInsensitiveContains(query))
-        }.sorted { a, b in
-            if favouriteIDs.contains(a.id) != favouriteIDs.contains(b.id) { return favouriteIDs.contains(a.id) }
-            return a.modifiedAt > b.modifiedAt
         }
+        let sorted = order.sorted(filtered, distances: distances)
+        return order == .recent ? sorted.sorted { favouriteIDs.contains($0.id) && !favouriteIDs.contains($1.id) } : sorted
     }
     private func toggleFavourite(_ id: UUID) {
         var ids = favouriteIDs
@@ -41,6 +45,15 @@ struct RouteLibraryView: View {
                     HStack {
                         Text("\(visibleRoutes.count) \(visibleRoutes.count == 1 ? "route" : "routes")").font(.subheadline).foregroundStyle(RidgeTheme.muted)
                         Spacer()
+                        Menu {
+                            Picker("Sort routes", selection: $orderValue) {
+                                ForEach(RouteLibraryOrder.allCases) { item in
+                                    Text(item.title).tag(item.rawValue)
+                                        .disabled((item == .shortest || item == .longest) && !store.routes.allSatisfy { distances[$0.id] != nil })
+                                }
+                            }
+                        } label: { Label("Sort", systemImage: "arrow.up.arrow.down").frame(minHeight: 44) }
+                            .accessibilityLabel("Sort routes").accessibilityValue(order.title)
                         Button { favouritesOnly.toggle() } label: {
                             Label("Favourites", systemImage: favouritesOnly ? "star.fill" : "star")
                                 .font(.subheadline).padding(.horizontal, 12).frame(minHeight: 44)
@@ -60,6 +73,7 @@ struct RouteLibraryView: View {
                                                  worldMap:WorldRouteMapContext(catalog:world.catalog,root:world.libraryRoot,savedBounds:world.offlineBounds,coverageRevision:world.offlineCoverageRevision))
                             }.buttonStyle(.plain)
                                 .contextMenu {
+                                    Button("Before you go", systemImage: "figure.walk") { briefRoute = route }
                                     Button("Open in 3D", systemImage: "mountain.2") { store.openRoute(route,savedWorldBounds:world.offlineBounds) }.disabled(store.isRouting)
                                     Button(favouriteIDs.contains(route.id) ? "Remove favourite" : "Add to favourites", systemImage: favouriteIDs.contains(route.id) ? "star.fill" : "star") { toggleFavourite(route.id) }
                                     Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
@@ -69,6 +83,7 @@ struct RouteLibraryView: View {
                                 }
                                 .overlay(alignment: .bottomTrailing) {
                                     Menu {
+                                        Button("Before you go", systemImage: "figure.walk") { briefRoute = route }
                                         Button(favouriteIDs.contains(route.id) ? "Remove favourite" : "Add to favourites", systemImage: favouriteIDs.contains(route.id) ? "star.fill" : "star") { toggleFavourite(route.id) }
                                     Button("Export GPX", systemImage: "square.and.arrow.up") { export(route) }
                                         Button("Rename", systemImage: "pencil") { renameTarget = route; renameText = route.name }.disabled(store.isRouting)
@@ -90,6 +105,16 @@ struct RouteLibraryView: View {
                 }
             }.padding(24).frame(maxWidth: 1280).frame(maxWidth: .infinity)
         }.background(RidgeTheme.paper).foregroundStyle(RidgeTheme.ink)
+            .task(id: routesRevision) {
+                let routes = store.routes
+                let result = await Task.detached(priority: .utility) {
+                    Dictionary(uniqueKeysWithValues: routes.map { ($0.id, RouteEngine.statistics(for: $0).distanceMeters) })
+                }.value
+                if !Task.isCancelled { distances = result }
+            }
+            .sheet(item: $briefRoute) { route in
+                RouteBriefSheet(store: store, route: route, savedBounds: world.offlineBounds, coverageRevision: world.offlineCoverageRevision)
+            }
             .alert("Rename route", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
                 TextField("Route name", text: $renameText)
                 Button("Cancel", role: .cancel) { renameTarget = nil }
@@ -159,6 +184,7 @@ private struct LibraryRouteCard: View {
     var savedWorldBounds:[GeoBounds]
     var coverageRevision:Int
     var worldMap:WorldRouteMapContext
+    @AppStorage private var tripPlanData: Data
     @State private var worldCoverage:RouteOfflineCoverage?
     private var terrainReady:Bool { entry?.installed == true || worldCoverage?.isComplete == true }
     private var availabilityText:String {
@@ -167,6 +193,13 @@ private struct LibraryRouteCard: View {
         return worldCoverage == nil ? "Checking saved maps…" : "Map needed for 3D"
     }
     @State private var summary: RouteStatistics?
+
+    init(route: RidgeRoute, entry: PackEntry?, packs: PackStore, favourite: Bool,
+         savedWorldBounds: [GeoBounds], coverageRevision: Int, worldMap: WorldRouteMapContext) {
+        self.route = route; self.entry = entry; self.packs = packs; self.favourite = favourite
+        self.savedWorldBounds = savedWorldBounds; self.coverageRevision = coverageRevision; self.worldMap = worldMap
+        _tripPlanData = AppStorage(wrappedValue: Data(), RouteTripPlan.storageKey(for: route.id))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -190,7 +223,7 @@ private struct LibraryRouteCard: View {
                     Spacer(minLength: 8)
                     metric("Ascent est.", value: summary.hasElevation ? "\(Int(summary.ascentMeters.rounded()))" : "—", suffix: summary.hasElevation ? "m" : "")
                     Spacer(minLength: 8)
-                    metric("Time est.", value: duration(summary.estimatedMinutes), suffix: "")
+                    metric("Time est.", value: RouteTripPlan.duration((RouteTripPlan.decode(tripPlanData) ?? .init()).totalMinutes(for: summary)), suffix: "")
                 }
             } else { ProgressView().tint(RidgeTheme.forest).frame(maxWidth: .infinity, minHeight: 66) }
             Rectangle().fill(RidgeTheme.line.opacity(0.7)).frame(height: 1)
@@ -222,8 +255,4 @@ private struct LibraryRouteCard: View {
         }
     }
 
-    private func duration(_ minutes: Double) -> String {
-        let value = max(0, Int(minutes.rounded()))
-        return value >= 60 ? "\(value / 60)h \(value % 60)m" : "\(value)m"
-    }
 }

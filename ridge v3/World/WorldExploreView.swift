@@ -43,6 +43,7 @@ struct WorldExploreView: View {
     @State private var editWaypoint: RouteWaypoint?
     @State private var renaming = false
     @State private var routeName = ""
+    @State private var tripRoute: RidgeRoute?
     @State private var tour = WorldRouteTour()
     @State private var showCameraHelp = false
     @AppStorage(TerrainGestureStyle.defaultsKey) private var gestureStyle = TerrainGestureStyle.moveWithOneFinger.rawValue
@@ -507,6 +508,9 @@ struct WorldExploreView: View {
             dismiss:{ showRoutePanel=false },onAction:routePanelAction,section:$routeDetailsSection,
             elevationSamples:elevationSamples,selectedDistance:store.selectedPoint.flatMap { WorldRouteProfile.distance(nearest:$0,in:elevationSamples) },
             onScrub:scrubRoute,compact:!dockedRoutePanel)
+            .sheet(item:$tripRoute) { route in
+                RouteBriefSheet(store:store,route:route,savedBounds:world.offlineBounds,coverageRevision:world.offlineCoverageRevision)
+            }
     }
     private func previewRoute(from waypoint: UUID? = nil) {
         guard !store.isRouting,let route=store.activeRoute else { return }
@@ -523,6 +527,7 @@ struct WorldExploreView: View {
         if case .preview(let waypoint)=action { previewRoute(from:waypoint);return }
         tour.close()
         switch action {
+        case .brief: tripRoute=store.activeRoute
         case .start: store.startRoute();showRoutePanel=dockedRoutePanel
         case .finish: store.finishRoute();if !dockedRoutePanel { showRoutePanel=false }
         case .edit: store.editing=true;if !dockedRoutePanel { showRoutePanel=false }

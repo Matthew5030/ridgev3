@@ -22,7 +22,7 @@ struct WorldRouteActionBar: View {
                     Image(systemName: "chevron.up").font(.caption.weight(.semibold))
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityHint("Open waypoints and elevation")
+            }.buttonStyle(.plain).accessibilityHint("Open waypoints, elevation and walking plans")
             if editing {
                 Button { onAction(.undo) } label: {
                     Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44)

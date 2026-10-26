@@ -9,7 +9,7 @@ enum WorldRouteDetailsSection: String, CaseIterable, Identifiable {
 /// Actions resolve waypoint IDs against the current route in the host.
 struct WorldRouteEditorPanel: View {
     enum Action {
-        case start, finish, edit, undo, redo, rename, export, reverse, closeLoop, fitRoute, library, cancelPlacement
+        case start, finish, edit, undo, redo, rename, export, reverse, closeLoop, fitRoute, library, cancelPlacement, brief
         case preview(UUID?), select(UUID), move(UUID), delete(UUID), insertAfter(UUID)
     }
     var route: RidgeRoute?
@@ -90,6 +90,7 @@ struct WorldRouteEditorPanel: View {
     }
     private var routeOptions: some View {
         Menu {
+            Button("Before you go",systemImage:"figure.walk") { onAction(.brief) }
             Button("Rename route",systemImage:"pencil") { onAction(.rename) }
             Button("Start another route",systemImage:"plus") { onAction(.start) }.disabled(!pathsReady)
             Button("Saved routes",systemImage:"folder") { onAction(.library) }
@@ -195,6 +196,9 @@ struct WorldRouteEditorPanel: View {
                     Label("Preview route",systemImage:"play.fill").frame(maxWidth:.infinity)
                 }.buttonStyle(RidgeButtonStyle()).disabled(!previewAvailable)
                 if !previewAvailable && !busy { Text("Add two different points to preview your route.").font(.caption).foregroundStyle(RidgeTheme.muted) }
+                Button { onAction(.brief) } label: {
+                    Label("Before you go",systemImage:"figure.walk").frame(maxWidth:.infinity)
+                }.buttonStyle(RidgeButtonStyle(secondary:true)).disabled(busy)
             }
             if !editing {
                 HStack(spacing:12) {
