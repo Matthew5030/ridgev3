@@ -7,6 +7,8 @@ struct WorldPreviewPresentedKey: PreferenceKey {
 }
 
 struct ContentView: View {
+    var initialOpenURL: URL? = nil
+    @State private var handledInitialURL = false
     @State private var store = AppStore()
     @State private var world = WorldModel()
     @State private var previewPresented = false
@@ -28,9 +30,15 @@ struct ContentView: View {
         }
         .tint(RidgeTheme.forest).preferredColorScheme(.light)
         .onPreferenceChange(WorldPreviewPresentedKey.self) { previewPresented=$0 }
-        .task { await store.bootstrap() }
+        .task {
+            await store.bootstrap()
+            if !handledInitialURL, let initialOpenURL {
+                handledInitialURL = true
+                open(initialOpenURL)
+            }
+        }
         .onChange(of: scenePhase) { _, phase in if phase != .active { store.savePlanningSession() } }
-        .onOpenURL { url in if url.pathExtension.lowercased() == "gpx" { store.importGPX(url) } else { store.importPack(url) } }
+        .onOpenURL { open($0) }
         .sheet(item: $store.pendingPack, onDismiss: { store.dismissPendingPack() }) { entry in AreaDetailView(store: store, entry: entry).presentationDragIndicator(.visible) }
         .sheet(isPresented: $store.showDownloadSheet) { DownloadLinkView(store: store).presentationDetents([.medium]).presentationDragIndicator(.visible) }
         .sheet(isPresented: $store.showSettings) { SettingsView(store: store).presentationDragIndicator(.visible) }
@@ -62,6 +70,11 @@ struct ContentView: View {
                     .padding(.horizontal, 20).padding(.top, 70).allowsHitTesting(false)
             }
         }.environment(world)
+    }
+
+    private func open(_ url: URL) {
+        if url.pathExtension.lowercased() == "gpx" { store.importGPX(url) }
+        else { store.importPack(url) }
     }
 
     private var tabBar: some View {
