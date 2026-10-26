@@ -109,7 +109,7 @@ struct WorldFlightCorridor {
         if elongatedReturn && drone {
             // A direct outbound line, one local hairpin, then a direct exit.
             // No oval or sideways sweep along the full length of the route.
-            let side=SIMD2(-axis.y,axis.x),r=min(28,reach*0.2),run=reach-r
+            let side=SIMD2(-axis.y,axis.x),r=min(180,reach*0.2),run=reach-r
             let peakRoute=path.distances[peak]
             line(axis*run-side*r,peakRoute*run/reach)
             let count=max(24,Int(ceil(.pi*r)))
@@ -157,7 +157,7 @@ struct WorldFlightCorridor {
                 if drone && dot < -0.65 {
                     let axis=simd_normalize(a-b),cross=a.x*b.y-a.y*b.x
                     let side=SIMD2(-axis.y,axis.x)*(cross < -0.0001 ? -1.0 : 1.0)
-                    let r=min(28,min(before,after)*0.24),center=corner-axis*r
+                    let r=min(180,min(before,after)*0.4),center=corner-axis*r
                     let start=path.distances[index]-r*(path.distances[index]-path.distances[indices[j-1]])/before
                     let end=path.distances[index]+r*(path.distances[indices[j+1]]-path.distances[index])/after
                     line(center-side*r,start)
@@ -170,7 +170,10 @@ struct WorldFlightCorridor {
                     }
                     continue
                 }
-                let radius=min(drone ? 50 : (tolerance < 100 ? tolerance*1.8 : (dot < -0.65 ? 320 : 240)),min(before,after)*0.44)
+                // Anticipate the angle across both neighbouring legs. Sharper
+                // bends start earlier; adjoining bends share the fairing below.
+                let anticipation=drone ? max(80,240*sqrt(max(0,(1-dot)/2))) : (tolerance < 100 ? tolerance*1.8 : (dot < -0.65 ? 320 : 240))
+                let radius=min(anticipation,min(before,after)*0.44)
                 let start=path.distances[index]-radius*(path.distances[index]-path.distances[indices[j-1]])/before
                 let end=path.distances[index]+radius*(path.distances[indices[j+1]]-path.distances[index])/after
                 let entry=corner-a*radius,exit=corner+b*radius
@@ -202,7 +205,7 @@ struct WorldFlightCorridor {
             let a=raw[cursor],b=raw[cursor+1],t=(distance-a.flight)/max(0.00001,b.flight-a.flight)
             uniform.append(Knot(position:a.position+(b.position-a.position)*t,route:a.route+(b.route-a.route)*t,flight:distance))
         }
-        let smoothing=drone ? 6 : (tolerance>100 ? min(60,tolerance*0.2) : min(15,tolerance*0.5))
+        let smoothing=drone ? 60 : (tolerance>100 ? min(60,tolerance*0.2) : min(15,tolerance*0.5))
         let radius=max(1,Int(min(smoothing,total/30)/(total/Double(count))))
         var fitted=uniform.map(\.position)
         for _ in 0..<4 {

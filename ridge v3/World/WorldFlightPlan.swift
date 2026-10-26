@@ -175,6 +175,26 @@ struct WorldFlightPlan {
              (c1+t*(c2*2+t*c3*3))*inverseDuration,
              (c2*2+t*c3*6)*inverseDuration*inverseDuration)
         }
+        /// Integrate the prepared cubic in space. Five-point Gaussian
+        /// quadrature is accurate over these short, densely sampled segments.
+        func arcLength(to t:Double)->Double {
+            let half=t*0.5
+            func speed(_ x:Double)->Double {
+                let u=half*(1+x)
+                return simd_length(c1+u*(c2*2+u*c3*3))
+            }
+            return half*(0.5688888888888889*speed(0)
+                + 0.4786286704993665*(speed(-0.5384693101056831)+speed(0.5384693101056831))
+                + 0.2369268850561891*(speed(-0.9061798459386640)+speed(0.9061798459386640)))
+        }
+        func parameter(at length:Double,total:Double)->Double {
+            var t=min(1,max(0,length/max(0.000000001,total)))
+            for _ in 0..<4 {
+                let derivative=simd_length(c1+t*(c2*2+t*c3*3))
+                t=min(1,max(0,t-(arcLength(to:t)-length)/max(0.000000001,derivative)))
+            }
+            return t
+        }
     }
     let frame:GeoBounds
     let cruiseSpeed:Double
@@ -188,6 +208,8 @@ struct WorldFlightPlan {
     private var keys:[Key]
     private var segments:[Segment]
     private var lookSegments:[Segment]=[]
+    private var arcLengths:[Double]=[]
+    private var arcSpeed=0.0
     var duration:Double { keys.last?.time ?? 0 }
     var count:Int { keys.count }
 
@@ -343,6 +365,20 @@ struct WorldFlightPlan {
             }
         }
         if movementAligned {
+            if drone && !reduceMotion && turnLimits == nil && !hasSpeedTransition {
+                // Fly the complete spatial curve at one arc-length pace.
+                // Corners shape the route, never a local throttle command.
+                keys=result;segments=(0..<(result.count-1)).map { Segment(result[$0],result[$0+1]) }
+                arcLengths=[0]
+                for segment in segments { arcLengths.append(arcLengths.last!+segment.arcLength(to:1)) }
+                let scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed
+                // Very short routes use one slower pace for the entire shot,
+                // so a metre-scale loop still has a watchable eight-second run.
+                let maximum=min(cruiseSpeed*scale,arcLengths.last!/8)
+                arcSpeed=Self.constantFlightPace(segments:segments,arcLengths:arcLengths,maximum:maximum,response:bankResponseAcceleration)/scale
+                for i in keys.indices { keys[i].time=arcLengths[i]/max(0.000000001,arcSpeed) }
+                return
+            }
             // One trajectory supplies position, velocity, pitch and bank. Pace
             // must change to fit that trajectory, rather than faking a gentle
             // bank while crossing a hairpin at the straight-line cruise speed.
@@ -388,6 +424,37 @@ struct WorldFlightPlan {
             Self.solveMotion(&focus)
             lookSegments=(0..<(focus.count-1)).map { Segment(focus[$0],focus[$0+1]) }
         }
+    }
+    /// Pick one cruise for the whole prepared shot. Geometry determines the
+    /// direction and bank; no corner can issue a brake or acceleration command.
+    private static func constantFlightPace(segments:[Segment],arcLengths:[Double],maximum:Double,response:Double)->Double {
+        var stations:[(distance:Double,lateral:Double,angular:Double,pitch:Double)]=[]
+        for i in segments.indices {
+            for t in [0.0,0.5,1.0] {
+                let m=segments[i].sample(t),squared=max(0.000000000001,simd_length_squared(m.velocity))
+                let direction=m.velocity/sqrt(squared)
+                let curvature=(m.acceleration-m.velocity*(simd_dot(m.velocity,m.acceleration)/squared))/squared
+                let horizontal=max(0.000000001,hypot(direction.x,direction.z))
+                stations.append((arcLengths[i]+segments[i].arcLength(to:t),
+                    (direction.x*curvature.z-direction.z*curvature.x)/horizontal,
+                    simd_length(simd_cross(direction,curvature)),abs(WorldFlightTurn.pitchRate(velocity:direction,acceleration:curvature))))
+            }
+        }
+        func accepts(_ speed:Double)->Bool {
+            var last:(distance:Double,bank:Double)?
+            for s in stations {
+                let bank=atan(-s.lateral*speed*speed/response)
+                if abs(bank)>78 * .pi/180 || s.angular*speed>2.2 || s.pitch*speed>0.6 { return false }
+                if let previous=last,s.distance>previous.distance+0.0000001,
+                   abs(bank-previous.bank)*speed/(s.distance-previous.distance)>2.2 { return false }
+                last=(s.distance,bank)
+            }
+            return true
+        }
+        if accepts(maximum) { return maximum }
+        var low=0.0,high=maximum
+        for _ in 0..<18 { let mid=(low+high)/2;if accepts(mid) { low=mid } else { high=mid } }
+        return max(0.000001,low)
     }
     /// Prepare a coordinated-turn speed envelope in actual playback seconds.
     /// v² κ is lateral acceleration; bank uses the chosen response scale. Curvature change
@@ -704,18 +771,31 @@ struct WorldFlightPlan {
         let dt=result[n-1].time-result[n-2].time
         result[n-1].velocity=(result[n-1].eye-result[n-2].eye)/dt+(result[n-2].acceleration+result[n-1].acceleration*2)*(dt/6)
     }
-    private func bracket(_ value:Double,byTime:Bool)->(Int,Int,Float) {
+    private func bracket(_ value:Double,byTime:Bool)->(Int,Int,Double) {
         let value=min(byTime ? duration : keys.last!.route,max(0,value.isFinite ? value : 0))
         var a=0,b=keys.count-1
         while a+1<b { let m=(a+b)/2;if (byTime ? keys[m].time : keys[m].route)<=value { a=m } else { b=m } }
         let x=byTime ? keys[a].time : keys[a].route,y=byTime ? keys[b].time : keys[b].route
-        return (a,b,Float((value-x)/max(0.000001,y-x)))
+        return (a,b,(value-x)/max(0.000001,y-x))
     }
     func time(at routeDistance:Double)->Double {
-        let (a,b,t)=bracket(routeDistance,byTime:false);return keys[a].time+(keys[b].time-keys[a].time)*Double(t)
+        let (a,b,t)=bracket(routeDistance,byTime:false)
+        if !arcLengths.isEmpty { return keys[a].time+segments[a].arcLength(to:t)/arcSpeed }
+        return keys[a].time+(keys[b].time-keys[a].time)*t
     }
     func sample(time:Double,in outputFrame:GeoBounds? = nil)->Sample {
-        let (a,b,t)=bracket(time,byTime:true),left=keys[a],right=keys[b],motion=segments[a].sample(Double(t))
+        let (a,b,fraction)=bracket(time,byTime:true),left=keys[a],right=keys[b]
+        let t:Double
+        if !arcLengths.isEmpty {
+            let length=arcLengths[b]-arcLengths[a]
+            t=segments[a].parameter(at:length*fraction,total:length)
+        } else { t=fraction }
+        var motion=segments[a].sample(t)
+        if !arcLengths.isEmpty {
+            let squared=max(0.000000000001,simd_length_squared(motion.velocity)),ratio=arcSpeed/sqrt(squared)
+            motion.acceleration=(motion.acceleration-motion.velocity*(simd_dot(motion.velocity,motion.acceleration)/squared))*ratio*ratio
+            motion.velocity *= ratio
+        }
         var eye=SIMD3<Float>(motion.position),velocity=SIMD3<Float>(motion.velocity),acceleration=SIMD3<Float>(motion.acceleration)
         let bank:Float
         if movementAligned {

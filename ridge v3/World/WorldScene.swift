@@ -122,6 +122,8 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     private var pitch: Float = 0.85
     private var navigationGesture: WorldNavigationGesture!
     private var routeOverlays: [String: WorldRouteOverlay.Binding] = [:]
+    private var routeOverlayTask:Task<Void,Never>?
+    private var routeOverlayGeneration=0
     private var routePoints: [RoutePoint] = []
     private var routeSegments: [[RoutePoint]] = []
     private var routeWaypoints: [RouteWaypoint] = []
@@ -504,6 +506,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:notification)
     }
     func cancelCameraNotification() {
+        routeOverlayGeneration+=1;routeOverlayTask?.cancel();routeOverlayTask=nil
         deferredRefresh=nil
         contextMaskGeneration+=1;contextMask?.cancel(); contextMask=nil; contextMaskPending=false
         cameraNotification?.cancel(); cameraNotification = nil
@@ -875,11 +878,23 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         }
     }
     private func updateRouteOverlay() {
+        routeOverlayGeneration+=1;routeOverlayTask?.cancel();routeOverlayTask=nil
         guard let source, let device = device ?? MTLCreateSystemDefaultDevice() else { return }
         if routePoints.isEmpty && routeSegments.isEmpty && routeWaypoints.isEmpty && routeOverlays.isEmpty { return }
         let paths = (routeSegments.isEmpty ? [routePoints] : routeSegments).map { $0.map(\.coordinate) }
-        let tiles = WorldRouteOverlay.build(source:source,paths:paths,waypoints:routeWaypoints.map { $0.point.coordinate })
-        routeOverlays = tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }
+        let waypoints=routeWaypoints.map { $0.point.coordinate },generation=routeOverlayGeneration
+        // Source-window additions used to rebuild every route bucket on the
+        // same main thread that advances the camera. Keep that work off it.
+        routeOverlayTask=Task { [weak self] in
+            let build=Task.detached(priority:.utility) { WorldRouteOverlay.build(source:source,paths:paths,waypoints:waypoints) }
+            let tiles=await withTaskCancellationHandler(operation:{ await build.value },onCancel:{ build.cancel() })
+            guard let self,!Task.isCancelled,self.routeOverlayGeneration==generation,self.scene != nil else { return }
+            self.routeOverlayTask=nil
+            self.routeOverlays=tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }
+            self.applyRouteOverlays()
+        }
+    }
+    private func applyRouteOverlays() {
         SCNTransaction.begin(); SCNTransaction.animationDuration = 0
         for (id,node) in nodes {
             guard let material=node.geometry?.firstMaterial else { continue }

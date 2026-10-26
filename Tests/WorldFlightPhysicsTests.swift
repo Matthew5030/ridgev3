@@ -56,6 +56,7 @@ import simd
                 check(simd_dot(view,velocity)>0.99999,"\(name): full 3D view follows actual velocity, without sideslip")
                 let difference=plan.sample(time:time+0.001*scale).pose.eye-plan.sample(time:time-0.001*scale).pose.eye
                 check(simd_dot(view,simd_normalize(difference))>0.9999,"\(name): visible heading follows measured displacement")
+                check(abs(Double(simd_length(difference))/0.002-sample.speed)<0.5,"\(name): measured camera travel agrees with the constant pace, not just the speed readout")
                 let v=SIMD3<Double>(sample.velocity),a=SIMD3<Double>(sample.acceleration),horizontal=hypot(v.x,v.z)
                 let along=simd_dot(v,a)/max(0.000001,simd_length(v))
                 if tick>1 { maxPaceJerk=max(maxPaceJerk,abs(along-previousAlong)/dt) };previousAlong=along
@@ -117,12 +118,13 @@ import simd
                 }
                 previous=sample
             }
-            check(maxBank<66 * Double.pi/180 && maxLateral<133,"\(name): tighter turns use bounded cinematic banks within the manoeuvre envelope")
-            check(maxRollRate<2.05,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
-            check(maxYawRate<1.99,"\(name): tighter turns retain bounded continuous heading")
-            check(maxAcceleration<31,"\(name): acceleration and braking stay inside the eased pace envelope")
-            check(maxPaceJerk<150,"\(name): pace transitions ease in time instead of producing a throttle jolt")
-            check(maxPitchRate<0.73,"\(name): terrain pitch remains calmer than the fast banked turns")
+            check(maxBank<80 * Double.pi/180 && maxLateral<310,"\(name): continuous flight permits stronger but bounded cinematic banks")
+            check(maxRollRate<2.5,"\(name): the whole-shot pace bounds roll without corner braking or camera lag")
+            check(maxYawRate<2.5,"\(name): turns retain bounded continuous heading")
+            check(maxAcceleration<0.01,"\(name): the flight cannot brake and accelerate between bends")
+            check(maxPaceJerk<0.1,"\(name): constant arc-length pace removes longitudinal throttle jolts")
+            check(maxPitchRate<0.65,"\(name): terrain pitch remains calmer than the fast banked turns")
+            check(maxSpeed/minSpeed<1.00001,"\(name): the complete journey has one pace, including entries, turns and exits")
             check(minSpeed>0.5,"\(name): turn keeps moving forward")
             check(turns==0 || Double(correctTurns)/Double(turns)>0.99,"\(name): bank consistently agrees with the actual turn")
             if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
@@ -134,8 +136,8 @@ import simd
                 if name != "hilly bends" { check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank") }
             }
             if name=="tight return" {
-                check(minSpeed>30 && maxYawRate>1.2,"A local drone hairpin carries forward momentum through a decisive direction reversal")
-                check(turnFinish-turnStart<2.6,"A drone hairpin turns locally rather than making a long aircraft sweep")
+                check(minSpeed>150 && maxYawRate>0.8,"The anticipated hairpin carries cruise speed through its direction reversal")
+                check(turnFinish-turnStart<3.5,"A continuous hairpin completes its main reversal without stalling")
             }
             if name=="bend" {
                 let approach=plan.sample(time:plan.time(at:1000)),exit=plan.sample(time:plan.time(at:2200))
@@ -185,7 +187,7 @@ import simd
                 if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
                 maxBank=max(maxBank,Double(abs(sample.pose.bank)))
             }
-            check(maxRate<2.2 && maxBank<68 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            check(maxRate<2.5 && maxBank<80 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
             print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
         }
         let quiet=try make(fixtures[3].1,quiet:true)
@@ -200,14 +202,15 @@ import simd
         let droneRail=WorldFlightCorridor(path:bendPath,style:.drone),oldRail=WorldFlightCorridor(path:bendPath,tolerance:160,routeCentred:true)
         let corner=bendPath.sample(at:1600).coordinate
         let droneGap=droneRail.sample(routeDistance:1600).point.distance(to:corner),oldGap=oldRail.sample(routeDistance:1600).point.distance(to:corner)
-        check(droneGap<40 && droneGap<oldGap*0.6,"The drone geometry takes a compact corner instead of the old broad arc")
+        check(droneGap<100,"The anticipated corner remains inside a bounded route corridor")
+        let anticipating=droneRail.sample(routeDistance:1400).direction
+        check(abs(atan2(anticipating.x,-anticipating.y))>0.01,"A right-angle turn begins curving well before reaching the walking vertex")
         let returnPath=WorldRouteTourPath(segments:[fixtures[3].1])!,returnRail=WorldFlightCorridor(path:returnPath,style:.drone)
         let direction=returnRail.sample(flightDistance:returnRail.length*0.1).direction
-        for fraction in [0.2,0.3,0.35] {
+        for fraction in [0.15,0.2,0.25] {
             check(simd_dot(direction,returnRail.sample(flightDistance:returnRail.length*fraction).direction)>0.999999,"Outbound leg is a direct line without a long sideways racetrack sweep")
         }
         print("Corner separation: drone \(droneGap)m, previous gliding rail \(oldGap)m")
-        check(droneGap<22,"The new tighter corner passes closer than the previous drone recipe")
         let tiny=try make([point(0,0),point(0,-0.6),point(0,0)])
         var previousDistance=0.0
         for i in 0...200 {
