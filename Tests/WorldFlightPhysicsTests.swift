@@ -262,6 +262,47 @@ import simd
         check(outsideHeight<11,"A cliff outside reachable steering cannot create a false climb")
         check(reachableHeight>159,"A cliff inside the steering corridor still raises the prepared clearance floor")
         print("Cliff clearance: outside steering \(outsideHeight)m; reachable cliff \(reachableHeight)m")
+        // A constant terrain grade needs pitch, not a broad altitude arch.
+        // These are spatial assertions on actual camera samples, independent
+        // of the planner's smoothing/envelope implementation.
+        let gradePath=WorldRouteTourPath(segments:[[point(0,0),point(0,-5000)]])!
+        let gradeRail=WorldFlightCorridor(path:gradePath,style:.drone)
+        let gradeStations=WorldFlightTerrain.distances(length:gradeRail.length)
+        for grade in [-0.5,0.5] {
+            let terrain=WorldFlightTerrain(path:gradePath,corridor:gradeRail,
+                heights:gradeStations.map { Float(1500+$0*grade) })
+            let plan=try WorldFlightPlan(path:gradePath,corridor:gradeRail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+            var maximumHeight=0.0,maximumPitchError=0.0
+            for distance in stride(from:1000.0,through:4000.0,by:25) {
+                let sample=plan.sample(time:plan.time(at:distance))
+                let pitch=atan2(Double(sample.velocity.y),Double(simd_length(SIMD2(sample.velocity.x,sample.velocity.z))))
+                maximumHeight=max(maximumHeight,sample.heightAboveGround)
+                maximumPitchError=max(maximumPitchError,abs(pitch-atan(grade)))
+                check(sample.heightAboveGround>=9.7 && sample.heightAboveGround<14,"Steady uphill/downhill flight stays close without a slope-dependent altitude arch")
+                check(abs(pitch-atan(grade))<0.02,"Steady uphill/downhill view follows terrain grade")
+                check(abs(sample.speed-plan.sample(time:0).speed)<0.0001,"Following a slope retains one prepared pace")
+            }
+            print("Terrain grade \(grade): maximum clearance \(maximumHeight)m, pitch error \(maximumPitchError * 180 / .pi)°")
+        }
+        // Rounded peaks, a narrow hollow and an abrupt reachable ledge must
+        // remain clear between preparation stations, without a hard height cap.
+        let roughHeights=gradeStations.map { d -> Float? in
+            let ridge=240*exp(-pow((d-1800)/160,2)),hollow = -100*exp(-pow((d-2900)/90,2))
+            let ledge=d>3500 && d<3900 ? 100.0 : 0
+            return Float(300+ridge+hollow+ledge+20*sin(d/100))
+        }
+        let roughTerrain=WorldFlightTerrain(path:gradePath,corridor:gradeRail,heights:roughHeights)
+        let roughPlan=try WorldFlightPlan(path:gradePath,corridor:gradeRail,terrain:roughTerrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+        var minimumRoughClearance=Double.infinity,maximumRoughPitchRate=0.0
+        for seconds in stride(from:0.0,through:roughPlan.duration/scale,by:1.0/60) {
+            let sample=roughPlan.sample(time:seconds*scale)
+            minimumRoughClearance=min(minimumRoughClearance,sample.heightAboveGround)
+            maximumRoughPitchRate=max(maximumRoughPitchRate,abs(WorldFlightTurn.pitchRate(velocity:SIMD3<Double>(sample.velocity)*scale,acceleration:SIMD3<Double>(sample.acceleration)*scale*scale)))
+            check(sample.heightAboveGround>=9.7,"Direct terrain following clears summits, hollows and ledges between prepared keys")
+            check(abs(sample.speed-roughPlan.sample(time:0).speed)<0.0001,"Rough terrain cannot introduce local braking")
+        }
+        check(maximumRoughPitchRate<0.65,"Direct terrain following retains bounded continuous pitch")
+        print("Rough terrain: minimum clearance \(minimumRoughClearance)m, maximum pitch rate \(maximumRoughPitchRate)rad/s")
         let sample=straight.sample(time:straight.duration*0.4),output=GeoBounds(minLatitude:52.98,minLongitude:-4.03,maxLatitude:53.04,maxLongitude:-3.97)
         let converted=WorldFlightPlan.converted(sample,from:frame,to:output)
         check(converted.movementAligned && simd_dot(simd_normalize(converted.pose.look-converted.pose.eye),simd_normalize(converted.velocity))>0.99999,"Scene rebasing cannot separate travel from viewing direction")

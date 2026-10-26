@@ -268,27 +268,32 @@ struct WorldFlightPlan {
             if drone { result[result.count-1].fieldOfView=reduceMotion ? WorldRouteTour.fieldOfView : 78 }
             lastTravel=travel;lastSpeed=speed
         }
-        // The drone follows a closer terrain envelope; the older gliding
-        // choreography keeps its broad hill anticipation. Both bridge small
-        // hollows with one prepared, continuous height curve.
-        let verticalRadius=drone ? 400.0 : 1400.0
-        let count=minimumHeights.count,penalty=spacing*spacing/(2*verticalRadius)
-        var support=Array(repeating:0,count:count),boundary=Array(repeating:Double.infinity,count:count+1),k=0
-        boundary[0] = -.infinity
-        for q in 1..<count {
-            var split=0.0
-            while true {
-                let j=support[k]
-                split=(minimumHeights[j]-minimumHeights[q]+penalty*(Double(q*q)-Double(j*j)))/(2*penalty*Double(q-j))
-                if split>boundary[k] || k==0 { break };k-=1
+        let count=minimumHeights.count
+        var heights=minimumHeights
+        if !drone {
+            // Legacy gliding uses a broad obstacle envelope. Its parabolas
+            // also add R*grade²/2 above a straight slope: unsuitable for FPV,
+            // which should pitch into a steady climb at consistent clearance.
+            let penalty=spacing*spacing/(2*1400.0)
+            var support=Array(repeating:0,count:count),boundary=Array(repeating:Double.infinity,count:count+1),k=0
+            boundary[0] = -.infinity
+            for q in 1..<count {
+                var split=0.0
+                while true {
+                    let j=support[k]
+                    split=(minimumHeights[j]-minimumHeights[q]+penalty*(Double(q*q)-Double(j*j)))/(2*penalty*Double(q-j))
+                    if split>boundary[k] || k==0 { break };k-=1
+                }
+                k+=1;support[k]=q;boundary[k]=split;boundary[k+1] = .infinity
             }
-            k+=1;support[k]=q;boundary[k]=split;boundary[k+1] = .infinity
+            k=0
+            for i in heights.indices {
+                while boundary[k+1]<Double(i) { k+=1 }
+                let delta=Double(i-support[k]);heights[i]=minimumHeights[support[k]]-penalty*delta*delta
+            }
         }
-        var heights=minimumHeights;k=0
-        for i in heights.indices {
-            while boundary[k+1]<Double(i) { k+=1 }
-            let delta=Double(i-support[k]);heights[i]=minimumHeights[support[k]]-penalty*delta*delta
-        }
+        // FPV rounds terrain changes directly, preserving the grade of a long
+        // ramp. The C2 correction below restores clearance over each summit.
         // Symmetric filtering removes the envelope's support changes. Double
         // precision matters: rounding heights to Float before solving the motion
         // spline amplifies tiny height errors into acceleration and pitch noise.
