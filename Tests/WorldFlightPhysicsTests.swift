@@ -19,6 +19,7 @@ import simd
             ("bend",[point(0,0),point(0,-1600),point(1800,-1600)]),
             ("tight return",[point(0,0),point(0,-1200),point(0,0)]),
             ("short return",[point(0,0),point(0,-35),point(0,0)]),
+            ("substantial detour",[point(0,0),point(0,-1500),point(140,-1500),point(140,-1700),point(0,-1700),point(0,-3200)]),
             ("nearby bends",[point(0,0),point(0,-1500),point(200,-1500),point(200,-1800),point(500,-1800),point(500,-3500)]),
             ("overlapping returns",[point(0,0),point(0,-350),point(20,-40),point(40,-320),point(10,0)]),
             // Deterministic synthetic junction, not a saved user's GPS track.
@@ -107,6 +108,11 @@ import simd
                 minSpeed=min(minSpeed,sample.speed);maxSpeed=max(maxSpeed,sample.speed)
                 if tick>1 { maxAcceleration=max(maxAcceleration,Double(abs(simd_length(sample.velocity)-simd_length(previous.velocity)))/dt) }
                 check(sample.routeDistance>=previous.routeDistance,"\(name): ordered route progress is retained")
+                if name=="substantial detour" {
+                    let walking=WorldRouteTourPath(segments:[points])!
+                    check(sample.pose.focus.distance(to:walking.sample(at:sample.routeDistance).coordinate)<65,"The FPV camera visits a substantial side detour instead of skipping its entire leg")
+                    check(sample.speed>50,"Preserving a substantial detour retains useful forward flight pace")
+                }
                 if name=="tight return" {
                     let along=(sample.pose.focus.latitude-points[0].coordinate.latitude)*111195
                     check(along<=1200.05,"The rendered flight cannot pass beyond the anchored turnaround")

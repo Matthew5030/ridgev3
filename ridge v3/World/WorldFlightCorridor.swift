@@ -269,6 +269,9 @@ struct WorldFlightCorridor {
         // Choose anchors across the complete journey. Greedy deletion can
         // strand two corners almost on top of one another after a long loop.
         // Every accepted shortcut stays in the tube and retains big reversals.
+        // Price the length and size of the original route cut by a shortcut,
+        // rather than treating every shortcut inside the tube as equivalent.
+        // Tiny digitising bends cost little; sustained detours earn anchors.
         for j in 1..<options.count {
             let end=options[j]
             for i in stride(from:j-1,through:0,by:-1) {
@@ -278,15 +281,19 @@ struct WorldFlightCorridor {
                 if mandatory.contains(where:{ $0>start && $0<end }) { continue }
                 let a=positions[start],delta=positions[end]-a,length=simd_length(delta)
                 guard length>0.000001 else { continue }
-                var valid=true,furthest=0.0
+                var valid=true,furthest=0.0,coverageCost=0.0,previousError=0.0
                 for k in start...end {
                     let projection=simd_dot(original[k]-a,delta)/length
                     let t=min(1,max(0,projection/length))
-                    if simd_distance(original[k],a+delta*t)>160 || projection<furthest-160 { valid=false;break }
+                    let error=simd_distance(original[k],a+delta*t)
+                    if error>160 || projection<furthest-160 { valid=false;break }
+                    let weighted=pow(error/60,4)
+                    if k>start { coverageCost+=(distances[k]-distances[k-1])*(previousError+weighted)/2 }
+                    previousError=weighted
                     furthest=max(furthest,projection)
                 }
                 guard valid else { continue }
-                let score=scores[i]+1+pow(minimumLeg/length,4)+max(0,gap/length-1)*0.5
+                let score=scores[i]+1+pow(minimumLeg/length,4)+max(0,gap/length-1)*0.5+coverageCost/120
                 if score<scores[j] { scores[j]=score;links[j]=i }
             }
         }
