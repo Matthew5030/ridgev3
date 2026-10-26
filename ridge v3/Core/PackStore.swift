@@ -628,7 +628,12 @@ actor PackStore {
         if let graph = m.graphFile {
             guard safeName(graph), validHash(m.graphSHA256 ?? ""), let size = m.graphByteCount, size > 0, size < 40_000_000 else { throw RidgeError.message("The walking network metadata is invalid.") }
         }
-        let files = m.levels.map(\.file) + m.textures.map(\.file) + (m.detailTextures ?? []).map(\.file) + [m.graphFile].compactMap { $0 } + Self.horizonFiles(m).map { $0.0 } + Self.cartographyFiles(m).map { $0.0 }
+        var files:[String] = m.levels.map(\.file)
+        files.append(contentsOf:m.textures.map(\.file))
+        files.append(contentsOf:(m.detailTextures ?? []).map(\.file))
+        if let graph=m.graphFile { files.append(graph) }
+        files.append(contentsOf:Self.horizonFiles(m).map { $0.0 })
+        files.append(contentsOf:Self.cartographyFiles(m).map { $0.0 })
         guard Set(files.map { $0.lowercased() }).count == files.count, !files.contains(where: { $0.lowercased() == "pack.json" }), m.places.allSatisfy({ m.bounds.contains($0.coordinate) && ($0.elevation?.isFinite ?? true) && $0.name.count <= 1000 }) else { throw RidgeError.message("This area contains duplicate or invalid assets.") }
     }
 

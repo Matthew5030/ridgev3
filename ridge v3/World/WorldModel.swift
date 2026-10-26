@@ -102,9 +102,18 @@ import CoreGraphics
     @ObservationIgnored private var policyCenter: GeoPoint?
     @ObservationIgnored private var policyDistance = 0.0
     @ObservationIgnored private var reduceDetailUntil = Date.distantPast
+    @ObservationIgnored private var flightDetailStations:[WorldFlightDetailStation]=[]
+    @ObservationIgnored private var flightDetailIndex:WorldFlightDetailIndex?
+    @ObservationIgnored private var flightDetailTiles=Set<String>()
+    @ObservationIgnored private var flightDetailTask:Task<Void,Never>?
+    @ObservationIgnored private var flightDetailToken=UUID()
+    @ObservationIgnored private var flightDetailDistance=0.0
+    var hasFlightDetail:Bool { !flightDetailStations.isEmpty }
+    var flightUploadPriorities:[String:Int] { Dictionary(uniqueKeysWithValues:wanted.enumerated().map { ($0.element.id,$0.offset) }) }
 
     func configure(mode: String, local: String, preservingSelection: Bool = false) async {
         guard !isRemovingDownloads else { return }
+        clearFlightDetail()
         catalogRefresh?.cancel();catalogRefresh=nil
         let selectedRegion = preservingSelection ? downloadRegion : nil
         cancelRegionLoad(); distantLoad?.cancel(); distantLoad=nil; distantTerrain=nil; generation += 1; let token = generation
@@ -349,19 +358,72 @@ import CoreGraphics
     func setClosePreviewDetail(_ enabled: Bool) {
         guard enabled != closePreviewDetail else { return }
         closePreviewDetail=enabled;policyCenter=nil
+        if !enabled {
+            clearFlightDetail()
+            generation+=1;work?.cancel();work=nil;wanted=[];pending=0;failed=[]
+        }
+    }
+    func setFlightDetail(_ stations:[WorldFlightDetailStation],distance:Double) {
+        clearFlightDetail()
+        flightDetailStations=stations;flightDetailDistance=distance
+        // Stop the browsing queue before its next tile. The route queue starts
+        // while the flight's height/pose maths is still preparing.
+        generation+=1;work?.cancel();work=nil;wanted=[];pending=0;failed=[];policyCenter=nil
+        updateFlightDetail(distance:distance)
+    }
+    private func clearFlightDetail() {
+        flightDetailTask?.cancel();flightDetailTask=nil;flightDetailToken=UUID()
+        flightDetailStations=[];flightDetailIndex=nil;flightDetailTiles=[];flightDetailDistance=0
+    }
+    private func flightDetailFocus(at distance:Double)->GeoPoint? {
+        guard !flightDetailStations.isEmpty else { return nil }
+        var a=0,b=flightDetailStations.count-1
+        while a<b { let m=(a+b)/2;if flightDetailStations[m].distance<distance { a=m+1 } else { b=m } }
+        return flightDetailStations[a].points.first
+    }
+    func updateFlightDetail(distance:Double) {
+        guard hasFlightDetail,let lead=flightDetailFocus(at:distance+1200),let current=flightDetailFocus(at:distance) else { return }
+        let focus=hasCoverage(lead) ? lead : current
+        guard hasCoverage(focus) else { return }
+        flightDetailDistance=distance
+        update(center:focus,distance:1000)
+    }
+    private func refreshFlightDetailIndex() {
+        guard hasFlightDetail,let source else { return }
+        let ids=Set(source.tiles.map(\.id))
+        guard ids != flightDetailTiles else { return }
+        flightDetailTiles=ids;flightDetailTask?.cancel()
+        let token=UUID(),stations=flightDetailStations,tiles=source.tiles
+        flightDetailToken=token
+        flightDetailTask=Task { [weak self] in
+            let build=Task.detached(priority:.userInitiated) { try WorldFlightDetailIndex(stations:stations,tiles:tiles) }
+            do {
+                let index=try await withTaskCancellationHandler(operation:{ try await build.value },onCancel:{ build.cancel() })
+                guard let self,flightDetailToken==token,!Task.isCancelled else { return }
+                flightDetailIndex=index;flightDetailTask=nil;policyCenter=nil
+                updateFlightDetail(distance:flightDetailDistance)
+            } catch { /* Cancellation leaves the existing visible terrain intact. */ }
+        }
     }
     func update(center: GeoPoint, distance: Double,renderingSurface:Bool=false) {
         self.center = center; self.distance = distance
         guard in3D || renderingSurface, let source else { return }
         if navigationDestination == nil { browse(center) }
+        if hasFlightDetail {
+            refreshFlightDetailIndex()
+            // Keep existing textured terrain while the route index is built;
+            // do not start a competing camera-centred detail queue.
+            guard flightDetailIndex != nil else { return }
+        }
         let reducedDetail=Date()<reduceDetailUntil
         let crossedPreviewTile=closePreviewDetail && policyCenter.map { previous in
             source.tiles.first { $0.mesh.bounds.contains(previous) }?.id != source.tiles.first { $0.mesh.bounds.contains(center) }?.id
         } == true
-        if reducedDetail==policyReducedDetail,!crossedPreviewTile, let previous = policyCenter, previous.distance(to: center) < (closePreviewDetail ? 60 : 140), abs(distance / max(1,policyDistance) - 1) < 0.22 { pump(); return }
+        if !hasFlightDetail,reducedDetail==policyReducedDetail,!crossedPreviewTile, let previous = policyCenter, previous.distance(to: center) < (closePreviewDetail ? 60 : 140), abs(distance / max(1,policyDistance) - 1) < 0.22 { pump(); return }
         self.center = center; self.distance = distance
         policyCenter = center; policyDistance = distance;policyReducedDetail=reducedDetail
-        let proposed = WorldWorkingSet.requests(source: source, center: center, distance: distance, previous:wanted,closePreview:closePreviewDetail)
+        let proposed = flightDetailIndex.map { WorldWorkingSet.flightRequests(source:source,priorities:$0.priorities(at:flightDetailDistance),center:center) }
+            ?? WorldWorkingSet.requests(source: source, center: center, distance: distance, previous:wanted,closePreview:closePreviewDetail)
         let next = reducedDetail ? proposed.prefix(12).map { WorldTileRequest(id: $0.id, pixels: 128, fine: false) } : proposed
         guard next != wanted else { return }
         wanted = next; failed = []
@@ -410,7 +472,7 @@ import CoreGraphics
         }
         pump()
     }
-    func suspend() { cancelRegionLoad(); generation += 1; work?.cancel(); work = nil; pending = 0; isLoading = false; changedTileIDs.formUnion(tiles.keys); tiles = [:]; revision += 1 }
+    func suspend() { clearFlightDetail();cancelRegionLoad(); generation += 1; work?.cancel(); work = nil; pending = 0; isLoading = false; changedTileIDs.formUnion(tiles.keys); tiles = [:]; revision += 1 }
     func resume() {
         if catalog != nil, let point = requestedPoint { browse(point) }
         pump()

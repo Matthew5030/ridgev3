@@ -9,9 +9,9 @@ import simd
         func point(_ x:Double,_ z:Double)->RoutePoint { .init(coordinate:.init(latitude:53-z/111195,longitude:-4+x/(111195*cos(53 * .pi/180))),elevation:100) }
         let frame=GeoBounds(minLatitude:52.8,minLongitude:-4.2,maxLatitude:53.2,maxLongitude:-3.8)
         for size in [500.0,8000] { for aspect in [0.5,1.4] { for progress in [0.0,0.5] {
-            let path=WorldRouteTourPath(segments:[[point(0,0),point(0,-size),point(size/3,-size)]])!,rail=WorldFlightCorridor(path:path,tolerance:160)
+            let path=WorldRouteTourPath(segments:[[point(0,0),point(0,-size),point(size/3,-size)]])!,rail=WorldFlightCorridor(path:path,style:.drone)
             let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:WorldFlightTerrain.distances(length:rail.length).map {_ in Float?(100)})
-            let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:15,cornerLift:WorldRouteTour.fpvCornerLift)
+            let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:WorldRouteTour.flightClearance,cornerLift:WorldRouteTour.fpvCornerLift,routeFraming:true,movementAligned:true)
             let start=plan.sample(time:plan.time(at:path.length*progress)),entry=WorldFlightArrival(path:path,flight:start,frame:frame,aspect:aspect)
             let direction=simd_normalize(entry.opening.look-entry.opening.eye)
             try check(direction.y < -0.05 && direction.y > -0.25,"FPV retains its shallow forward entrance")
@@ -48,7 +48,7 @@ import simd
                 let first=joining.sample(elapsed:0)
                 try check(simd_distance(first.eye,eye)<0.001,"Preview begins at the exact browsing camera")
                 try check(simd_dot(simd_normalize(first.look-first.eye),simd_normalize(look-eye))>0.99999,"Preview preserves the initial viewing direction")
-                try check(joining.fieldOfView(elapsed:0)==43 && joining.fieldOfView(elapsed:joining.duration)==WorldRouteTour.fieldOfView,"The lens blends from browsing into FPV")
+                try check(joining.fieldOfView(elapsed:0)==43 && joining.fieldOfView(elapsed:joining.duration)==start.fieldOfView,"The lens blends from browsing into FPV")
                 try check(joining.duration<=4.2,"The entrance has no fixed eight-second intro")
                 camera.simdPosition=eye;WorldCameraOrientation.aim(camera,at:look,up:up)
                 for time in stride(from:0.0,through:joining.duration,by:0.02) {

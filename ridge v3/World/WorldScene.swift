@@ -35,6 +35,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     weak var model: WorldModel?
     weak var tour: WorldRouteTour?
     private var tourLink: CADisplayLink?
+    private nonisolated let flightFrameMonitor=WorldFlightFrameMonitor()
     private var tourSavedPose: TerrainCameraPose?
     private var tourDistance = 0.0
     private let cameraRig=WorldCameraRig()
@@ -44,8 +45,11 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     private var flightArrival:WorldFlightArrival?
     private var flightPlan:WorldFlightPlan?
     private var flightTerrain:WorldFlightTerrain?
+    private var flightDetailStations:[WorldFlightDetailStation]=[]
     private var flightTime=0.0
     private var flightPlayback=WorldFlightPlayback()
+    private var flightGlide=WorldFlightGlide()
+    private var flightSample:WorldFlightPlan.Sample?
     private var flightSession:UUID?
     private var flightPreparation:Task<Void,Never>?
     private var flightPreparationID=UUID()
@@ -118,6 +122,8 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     private var pitch: Float = 0.85
     private var navigationGesture: WorldNavigationGesture!
     private var routeOverlays: [String: WorldRouteOverlay.Binding] = [:]
+    private var routeOverlayTask:Task<Void,Never>?
+    private var routeOverlayGeneration=0
     private var routePoints: [RoutePoint] = []
     private var routeSegments: [[RoutePoint]] = []
     private var routeWaypoints: [RouteWaypoint] = []
@@ -198,7 +204,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             lastCommand=command;lastAtlasRequest=atlasRequest
             applyOverhead(overheadViewport);return
         }
-        delegate=nil
+        delegate=flightFrameMonitor.isEnabled ? self : nil
         if reportedSurface || reportedEntrySurface != nil,let span=model.entrySpan {
             model.entrySpan=nil;beginEntry(span:span)
         }
@@ -302,6 +308,20 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
 
     private func enqueueTerrain(_ ids: [String]) {
         for id in ids where queuedUploads.insert(id).inserted { uploadQueue.append(id) }
+        if let model,model.hasFlightDetail {
+            let priorities=model.flightUploadPriorities
+            let retiring=Set(uploadQueue.filter { id in
+                guard let old=applied[id],let next=model.preparedTile(id)?.request else { return false }
+                return old.pixels>next.pixels || (old.fine && !next.fine)
+            })
+            // LIFO uploads must preserve the route queue's order, even when
+            // background batches finish after the route's prepared pages.
+            uploadQueue.sort { a,b in
+                let x=retiring.contains(a) ? -1 : priorities[a] ?? Int.max
+                let y=retiring.contains(b) ? -1 : priorities[b] ?? Int.max
+                return x == y ? a>b : x>y
+            }
+        }
         guard uploadNotification == nil else { return }
         uploadTerrain()
     }
@@ -406,6 +426,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         offlineBoundaryNode.geometry?.firstMaterial?.setValue(NSValue(scnVector4:SCNVector4(target.x,target.z,visibility,0)),forKey:"ridgeBoundaryFocus")
     }
     nonisolated func renderer(_ renderer:any SCNSceneRenderer,didRenderScene scene:SCNScene,atTime time:TimeInterval) {
+        if flightFrameMonitor.recordRender(at:ProcessInfo.processInfo.systemUptime) { return }
         DispatchQueue.main.async { [weak self] in
             guard let self,self.overheadViewport != nil,let source=self.source else { return }
             // The continuous bundled mesh can hand off immediately. Fine tile
@@ -485,6 +506,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:notification)
     }
     func cancelCameraNotification() {
+        routeOverlayGeneration+=1;routeOverlayTask?.cancel();routeOverlayTask=nil
         deferredRefresh=nil
         contextMaskGeneration+=1;contextMask?.cancel(); contextMask=nil; contextMaskPending=false
         cameraNotification?.cancel(); cameraNotification = nil
@@ -586,8 +608,9 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         if tourSeekRevision != tour.seekRevision {
             tourSeekRevision=tour.seekRevision;tourDistance=tour.progress*path.length
             if flightPlan?.hasSpeedTransition == true { flightPlan=nil }
-            flightArrival=nil;flightArrivalTime=0;flightPlayback.reset(speed:tour.metersPerSecond);cinematicLook.reset();flightTime=flightPlan?.time(at:tourDistance) ?? 0
+            flightArrival=nil;flightArrivalTime=0;flightPlayback.reset(speed:tour.metersPerSecond);cinematicLook.reset();flightGlide.reset();flightSample=nil;flightTime=flightPlan?.time(at:tourDistance) ?? 0
         }
+        if !tour.isPlaying { cinematicLook.reset() }
         model?.setClosePreviewDetail(true)
         prepareFlightPlan()
         // Hold the real browsing pose while preparing. A speculative approach
@@ -601,9 +624,11 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         guard let tour,let path=tour.path,let corridor=tour.corridor,let source,let model else { return }
         if flightSession != tour.sessionID {
             flightPreparation?.cancel();flightPreparation=nil;preparingClearance=nil;preparingSpeed=nil;preparingMotion=nil
-            flightArrival=nil;flightArrivalTime=0;flightPlan=nil;flightTerrain=nil;flightSession=tour.sessionID
+            flightArrival=nil;flightArrivalTime=0;flightPlan=nil;flightTerrain=nil;flightGlide.reset();flightSample=nil;flightSession=tour.sessionID
+            flightDetailStations=[]
             flightPreparationFailed=false
         }
+        if !model.hasFlightDetail,!flightDetailStations.isEmpty { model.setFlightDetail(flightDetailStations,distance:tourDistance) }
         let clearance=min(1000,max(5,tour.clearance))
         let speed=WorldRouteTour.preparedSpeed,motion=UIAccessibility.isReduceMotionEnabled,cornerLift=WorldRouteTour.fpvCornerLift
         if flightPlan?.cruiseSpeed==speed,flightPlan?.reduceMotion==motion,flightPlan?.clearance==clearance { return }
@@ -618,18 +643,40 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             do {
                 let terrain:WorldFlightTerrain
                 if let cached { terrain=cached } else {
+                    let geometry=Task.detached(priority:.userInitiated) {
+                        let step=max(80,path.length/10000)
+                        var distances=Array(stride(from:0.0,to:path.length,by:step));distances.append(path.length)
+                        let detail=distances.map { distance in
+                            let travel=corridor.flightDistance(at:distance)
+                            return WorldFlightDetailStation(distance:distance,points:[path.sample(at:distance).coordinate,
+                                corridor.sample(flightDistance:travel).point,corridor.sample(flightDistance:min(corridor.length,travel+140)).point])
+                        }
+                        return (WorldFlightTerrain.clearancePoints(corridor:corridor),WorldFlightTerrain.focusPoints(path:path,corridor:corridor),detail)
+                    }
+                    let (points,focus,detail)=await withTaskCancellationHandler(operation:{ await geometry.value },onCancel:{ geometry.cancel() })
+                    try Task.checkCancellation()
+                    if let self,self.flightPreparationID==token,self.tour?.sessionID==session {
+                        self.flightDetailStations=detail
+                        model.setFlightDetail(detail,distance:self.tourDistance)
+                    } else { return }
+                    let (allHeights,places)=try await model.prepareFlightElevations(points+focus.map(\.coordinate))
+                    let lanes=Array(allHeights.prefix(points.count)),focusHeights=Array(allHeights.dropFirst(points.count))
                     let stations=WorldFlightTerrain.distances(length:corridor.length)
-                    let points=stations.map { corridor.sample(flightDistance:$0).point }
-                    let (heights,places)=try await model.prepareFlightElevations(points)
-                    terrain=WorldFlightTerrain(path:path,corridor:corridor,heights:heights,places:places)
+                    let heights=stations.indices.map { lanes[$0*5+2] }
+                    let clearanceHeights=stations.indices.map { i in lanes[(i*5)..<(i*5+5)].compactMap { $0 }.max() }
+                    terrain=WorldFlightTerrain(path:path,corridor:corridor,heights:heights,places:places,clearanceHeights:clearanceHeights,focusPoints:focus,focusHeights:focusHeights)
                 }
                 try Task.checkCancellation()
                 let build=Task.detached(priority:.userInitiated) {
-                    try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift)
+                    let plan=try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift,routeFraming:true,movementAligned:true)
+                    let profile=ProcessInfo.processInfo.arguments.contains("--ridge-flight-profile") ? plan.diagnosticProfile(corridor:corridor,terrain:terrain) : nil
+                    return (plan,profile)
                 }
-                let plan=try await withTaskCancellationHandler(operation:{try await build.value},onCancel:{build.cancel()})
+                let (plan,profile)=try await withTaskCancellationHandler(operation:{try await build.value},onCancel:{build.cancel()})
                 guard let self,self.flightPreparationID==token,self.tour?.sessionID==session,self.tour?.isPresented==true,!Task.isCancelled else { return }
+                if let profile { self.flightFrameMonitor.recordPlan(profile) }
                 self.flightTerrain=terrain;self.flightArrival=nil;self.flightPlan=plan;self.flightTime=plan.time(at:self.tourDistance)
+                self.flightGlide.reset();self.flightSample=nil
                 self.flightPreparation=nil;self.preparingClearance=nil;self.preparingSpeed=nil;self.preparingMotion=nil
                 self.tour?.isPreparing=false;self.tour?.message=nil
                 self.applyTourCamera();self.ensureTourFrames()
@@ -643,7 +690,8 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         }
     }
     private func ensureTourFrames() {
-        guard flightPlan != nil,let tour,tour.isPresented,tour.isPlaying || cinematicLook.needsAnimation || (tour.isEntering && tour.isRevealing && tour.progress>=1) else {
+        flightFrameMonitor.setActive(tour?.canAdvance == true)
+        guard flightPlan != nil,let tour,tour.isPresented,tour.isPlaying || (tour.isEntering && tour.isRevealing && tour.progress>=1) else {
             tourLink?.invalidate();tourLink=nil;rendersContinuously=false;return
         }
         guard tourLink == nil else { return }
@@ -652,9 +700,11 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         link.preferredFramesPerSecond=60;tourLink=link;rendersContinuously=true;link.add(to:.main,forMode:.common)
     }
     func stopTour(restore: Bool) {
+        flightFrameMonitor.setActive(false)
         model?.setClosePreviewDetail(false)
         flightPreparation?.cancel();flightPreparation=nil;flightPreparationID=UUID();preparingClearance=nil;preparingSpeed=nil;preparingMotion=nil
-        flightArrival=nil;flightArrivalTime=0;flightPlan=nil;flightTerrain=nil;flightSession=nil;flightPreparationFailed=false;tour?.isPreparing=false
+        flightArrival=nil;flightArrivalTime=0;flightPlan=nil;flightTerrain=nil;flightGlide.reset();flightSample=nil;flightSession=nil;flightPreparationFailed=false;tour?.isPreparing=false
+        flightDetailStations=[]
         tourLink?.invalidate();tourLink=nil;cameraRig.endTour()
         guard let saved=tourSavedPose else { return }
         tourSavedPose=nil;tourBasePose=nil;cinematicLook.reset()
@@ -670,7 +720,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     @objc private func advanceTour(_ link:CADisplayLink) {
         guard let tour,tour.isPresented,let path=tour.path else { syncTour();return }
         let now=link.targetTimestamp
-        let elapsed=max(0,min(0.1,tourLastTime>0 ? now-tourLastTime : link.targetTimestamp-link.timestamp))
+        let elapsed=WorldFlightPlayback.frameSeconds(now:now,previous:tourLastTime,displayInterval:link.targetTimestamp-link.timestamp)
         tourLastTime=now
         if tour.isEntering && tour.isRevealing && (tour.isPlaying || tour.progress>=1),flightPlan != nil {
             // The entry and route clocks never wait for visual detail. The
@@ -678,32 +728,39 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             flightArrivalTime+=elapsed
             if abs(tour.entryElapsed-flightArrivalTime)>=1.0/30 { tour.reportEntry(elapsed:flightArrivalTime) }
         }
-        if tour.canAdvance {
+        cinematicLook.advance(seconds:elapsed)
+        if tour.canAdvance && elapsed>0 {
             guard let plan=flightPlan else { return }
             let clockStep=flightPlayback.advance(seconds:elapsed,requested:tour.metersPerSecond,preparedSpeed:plan.cruiseSpeed)
-            let nextTime=min(plan.duration,flightTime+clockStep),sample=plan.sample(time:nextTime)
+            let nextTime=min(plan.duration,flightTime+clockStep),reference=plan.sample(time:nextTime)
+            var glide=flightGlide
+            // Integrate once per playback frame, in the stable plan frame.
+            // Rendering notifications and streaming must never advance flight.
+            let scale=elapsed>0 ? (nextTime-flightTime)/elapsed : 0
+            let sample=glide.advance(reference:reference,yaw:cinematicLook.yaw,pitch:cinematicLook.pitch,
+                speedScale:scale,seconds:elapsed,frame:plan.frame,reduceMotion:plan.reduceMotion,clearance:plan.clearance)
             let next=sample.routeDistance,point=sample.pose.focus
             if !hasTourCoverage(point) || !hasTourCoverage(path.sample(at:next).coordinate) {
                 tour.message="Preview paused at the edge of your downloaded map. Download this area to continue."
                 tour.pause()
             } else {
-                let previous=plan.sample(time:flightTime)
-                let measured=elapsed>0 ? Double(simd_distance(previous.pose.eye,sample.pose.eye))/elapsed : 0
+                flightGlide=glide;flightSample=sample
+                flightFrameMonitor.recordTick(seconds:elapsed,speed:sample.speed)
                 flightTime=nextTime;tourDistance=next
                 if now-tourLastReport>=0.1 || next>=path.length {
-                    tourLastReport=now;tour.reportSpeed(measured);tour.report(distance:next)
+                    tourLastReport=now;tour.reportSpeed(sample.speed);tour.report(distance:next)
                 }
             }
         }
         applyTourCamera(seconds:elapsed);ensureTourFrames()
     }
     private func tourContactChanged(_ touching: Bool) {
-        guard cameraRig.touring,tour?.isPresented == true,tour?.isEntering == false else { return }
+        guard cameraRig.touring,tour?.isPresented == true,tour?.isPlaying == true,tour?.isEntering == false else { return }
         if touching { cinematicLook.begin() } else { cinematicLook.end() }
         ensureTourFrames()
     }
     private func navigateTour(_ gesture: WorldNavigationGesture) {
-        guard tour?.isEntering == false,gesture.state == .began || gesture.state == .changed else { return }
+        guard tour?.isPlaying == true,tour?.isEntering == false,gesture.state == .began || gesture.state == .changed else { return }
         if !cinematicLook.touching { cinematicLook.begin() }
         switch gesture.step {
         case let .pan(a,b),let .zoom(a,b,_,_): cinematicLook.drag(dx:b.x-a.x,dy:b.y-a.y)
@@ -725,27 +782,26 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         if tourCoverageCells.count>=8 { tourCoverageCells.removeFirst() }
         tourCoverageCells.append(cell);return true
     }
-    private func streamTourTerrain(plan:WorldFlightPlan,now:Double) {
+    private func streamTourTerrain(now:Double) {
         guard now-tourLastTerrainRequest>=0.4,let tour else { return }
         tourLastTerrainRequest=now
-        // Look a second ahead, rather than discovering each page only when
-        // the eye crosses its edge. Coarse terrain remains visible meanwhile.
-        let lead=plan.sample(time:min(plan.duration,flightTime+flightPlayback.speed/plan.cruiseSpeed)).pose.focus
-        let session=tour.sessionID
+        // Move through a pre-indexed route queue, not a camera-velocity guess.
+        // Looking around cannot steal detail from the known journey ahead.
+        let session=tour.sessionID,distance=tourDistance
         DispatchQueue.main.async { [weak self] in
-            guard let self,self.tour?.sessionID==session,self.tour?.isPresented==true,
-                  self.model?.hasCoverage(lead)==true else { return }
-            self.model?.update(center:lead,distance:1000)
+            guard let self,self.tour?.sessionID==session,self.tour?.isPresented==true else { return }
+            self.model?.updateFlightDetail(distance:distance)
         }
     }
     private func applyTourCamera(seconds:Double? = nil) {
         guard cameraRig.touring,let tour,let plan=flightPlan,let source else { return }
-        let prepared=plan.sample(time:flightTime,in:source.frame),point=prepared.pose.focus
+        let moving=flightSample ?? plan.sample(time:flightTime)
+        let prepared=WorldFlightPlan.converted(moving,from:plan.frame,to:source.frame),point=prepared.pose.focus
         if !hasTourCoverage(point) {
             let message="This part of the route needs a downloaded map. Choose a saved section to preview."
             if tour.message != message { tour.message=message };tour.finishEntry();tour.pause()
         } else {
-            streamTourTerrain(plan:plan,now:CACurrentMediaTime())
+            streamTourTerrain(now:CACurrentMediaTime())
             if tour.isEntering && !UIAccessibility.isReduceMotionEnabled {
                 if flightArrival == nil,let path=tour.path {
                     var entry=plan.sample(time:flightTime);entry.velocity *= Float(flightPlayback.speed/plan.cruiseSpeed)
@@ -760,7 +816,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 }
                 let elapsed=flightArrivalTime
                 tourBasePose=flightArrival?.sample(elapsed:elapsed,in:source.frame) ?? prepared.pose
-                if let arrival=flightArrival,elapsed>=arrival.duration { tour.finishEntry();cinematicLook.reset();tourBasePose=prepared.pose }
+                if let arrival=flightArrival,elapsed>=arrival.duration { tour.finishEntry();cinematicLook.reset();flightGlide.reset();flightSample=nil;tourBasePose=prepared.pose }
             } else {
                 tourBasePose=prepared.pose
                 if tour.isEntering && tour.isRevealing { tour.finishEntry() }
@@ -779,15 +835,15 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         guard let pose=tourBasePose else { return }
         let now=CACurrentMediaTime(),step=seconds ?? (tourLookTime>0 ? max(0,min(0.1,now-tourLookTime)) : 0)
         tourLookTime=now
-        let desired=simd_normalize(pose.look-pose.eye)
-        cinematicLook.advance(seconds:step)
-        let direction=tour.isEntering ? desired : cinematicLook.direction(from:desired)
+        let direction=simd_normalize(pose.look-pose.eye)
         target=SIMD3(pose.eye.x,pose.eye.y-10,pose.eye.z);distance=1000
         cameraNode.camera?.zFar=tour.isEntering ? 500000 : 60000
         let atmosphere=WorldAtmosphere.range(cameraDistance:tour.isEntering ? Double(pose.eye.y) : 3000)
         scene?.fogStartDistance=atmosphere.start;scene?.fogEndDistance=atmosphere.end
-        let bank=flightPlayback.roll(toward:pose.bank,seconds:step)
-        let fieldOfView=tour.isEntering ? flightArrival?.fieldOfView(elapsed:flightArrivalTime) ?? WorldRouteTour.fieldOfView : WorldRouteTour.fieldOfView
+        // Prepared flight already limits roll by retiming the actual movement.
+        // Filtering bank again would make the horizon lag behind the turn.
+        let bank=prepared.movementAligned ? pose.bank : flightPlayback.roll(toward:pose.bank,seconds:step)
+        let fieldOfView=tour.isEntering ? flightArrival?.fieldOfView(elapsed:flightArrivalTime) ?? prepared.fieldOfView : prepared.fieldOfView
         cameraRig.fly(on:cameraNode,pose:.init(eye:pose.eye,look:pose.eye+direction*80,fieldOfView:fieldOfView,bank:bank,up:pose.up))
         placeLabels.scale(camera:cameraNode,viewport:bounds.size)
         if now-tourLastLabels>=0.25 {
@@ -825,11 +881,23 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         }
     }
     private func updateRouteOverlay() {
+        routeOverlayGeneration+=1;routeOverlayTask?.cancel();routeOverlayTask=nil
         guard let source, let device = device ?? MTLCreateSystemDefaultDevice() else { return }
         if routePoints.isEmpty && routeSegments.isEmpty && routeWaypoints.isEmpty && routeOverlays.isEmpty { return }
         let paths = (routeSegments.isEmpty ? [routePoints] : routeSegments).map { $0.map(\.coordinate) }
-        let tiles = WorldRouteOverlay.build(source:source,paths:paths,waypoints:routeWaypoints.map { $0.point.coordinate })
-        routeOverlays = tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }
+        let waypoints=routeWaypoints.map { $0.point.coordinate },generation=routeOverlayGeneration
+        // Source-window additions used to rebuild every route bucket on the
+        // same main thread that advances the camera. Keep that work off it.
+        routeOverlayTask=Task { [weak self] in
+            let build=Task.detached(priority:.utility) { WorldRouteOverlay.build(source:source,paths:paths,waypoints:waypoints) }
+            let tiles=await withTaskCancellationHandler(operation:{ await build.value },onCancel:{ build.cancel() })
+            guard let self,!Task.isCancelled,self.routeOverlayGeneration==generation,self.scene != nil else { return }
+            self.routeOverlayTask=nil
+            self.routeOverlays=tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }
+            self.applyRouteOverlays()
+        }
+    }
+    private func applyRouteOverlays() {
         SCNTransaction.begin(); SCNTransaction.animationDuration = 0
         for (id,node) in nodes {
             guard let material=node.geometry?.firstMaterial else { continue }

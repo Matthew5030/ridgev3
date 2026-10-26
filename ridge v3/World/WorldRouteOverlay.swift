@@ -8,7 +8,7 @@ import simd
 enum WorldRouteOverlay {
     static let side = 16
     static let reach: Float = 40 // Shader widths, markers and AA never extend this far.
-    struct Tile {
+    struct Tile:Sendable {
         var origin: SIMD2<Float>
         var extent: SIMD2<Float>
         // Each cell header: segment start/count, waypoint start/count. Following

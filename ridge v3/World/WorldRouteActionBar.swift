@@ -44,13 +44,12 @@ struct WorldRouteActionBar: View {
     }
 }
 
-/// Playback has one scrubber; speed and the elevation plot are opt-in.
+/// Playback keeps one scrubber and an optional elevation plot.
 struct WorldRoutePlaybackBar: View {
     @Bindable var tour: WorldRouteTour
     @Binding var showsElevation: Bool
     var hasElevation: Bool
     @State private var resumeAfterScrubbing = false
-    @State private var showsSpeed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,17 +65,6 @@ struct WorldRoutePlaybackBar: View {
                     if editing { resumeAfterScrubbing = tour.isPlaying; tour.pause() }
                     else if resumeAfterScrubbing { tour.isPlaying = tour.progress < 1; resumeAfterScrubbing = false }
                 }.accessibilityLabel("Route progress").accessibilityValue("\(Int(tour.progress * 100)) percent")
-                Button { showsSpeed = true } label: {
-                    VStack(spacing: 0) {
-                        Text("\(Int(tour.speed))").font(.caption.monospacedDigit().weight(.semibold))
-                        Text("km/h").font(.caption2)
-                    }.frame(minWidth: 44, minHeight: 44)
-                }.accessibilityLabel("Cruise speed, \(Int(tour.speed)) kilometres per hour")
-                    .popover(isPresented: $showsSpeed) {
-                        WorldPreviewSpeedControl(tour: tour).padding(20).frame(idealWidth: 340)
-                            .presentationCompactAdaptation(.sheet)
-                            .presentationDetents([.height(250)]).presentationDragIndicator(.visible)
-                    }
                 if hasElevation {
                     Button { withAnimation(.easeInOut(duration: 0.2)) { showsElevation.toggle() } } label: {
                         Image(systemName: "chart.xyaxis.line").frame(width: 44, height: 44)

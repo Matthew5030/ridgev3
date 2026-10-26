@@ -60,6 +60,7 @@ import simd
         let tour=WorldRouteTour()
         let route=RidgeRoute(name:"Preview test",regionID:"test",segments:[RouteSegment(points:path.points,mode:"track")])
         try check(tour.open(route:route) && tour.isPresented && tour.isPlaying,"Preview opens playing")
+        try check(tour.corridor?.style == .drone,"Production preview opens with the single FPV drone flight recipe")
         try check(tour.isEntering && !tour.canAdvance && !tour.isTerrainReady,"The entry animation holds the route clock while terrain prepares")
         tour.isTerrainReady=true
         try check(!tour.canAdvance,"Terrain readiness alone cannot run the journey behind the intro")
@@ -67,7 +68,7 @@ import simd
         try check(tour.isRevealing && !tour.canAdvance,"The door shot and descent hold route progress until the glide begins")
         tour.finishEntry()
         try check(tour.canAdvance && !tour.isEntering,"Completing the reveal releases forward playback")
-        try check(tour.clearance==15,"The FPV preview retains its low straight-line clearance")
+        try check(tour.clearance==10,"The FPV preview retains its low straight-line clearance")
         tour.speed=10
         try check(abs(tour.metersPerSecond-10.0/3.6)<0.001,"Cruise control is in real km/h")
         tour.speed=60

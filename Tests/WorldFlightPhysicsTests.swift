@@ -1,0 +1,386 @@
+import Foundation
+import SceneKit
+import simd
+
+@main struct WorldFlightPhysicsTests {
+    @MainActor static func main() throws {
+        setbuf(stdout,nil)
+        var checks=0,failures=Set<String>()
+        func check(_ value:Bool,_ message:String) { checks+=1;if !value { failures.insert(message) } }
+        func point(_ x:Double,_ z:Double)->RoutePoint {
+            .init(coordinate:.init(latitude:53-z/111195,longitude:-4+x/(111195*cos(53 * .pi/180))),elevation:100)
+        }
+        let frame=GeoBounds(minLatitude:52.9,minLongitude:-4.1,maxLatitude:53.1,maxLongitude:-3.9)
+        let ripple=stride(from:0.0,through:4000.0,by:8).map { point(12*sin($0/24)+4*sin($0/9),-$0) }
+        let circle=(0...160).map { i in let a=Double(i)*2 * .pi/160;return point(600*sin(a),600*cos(a)) }
+        let fixtures:[(String,[RoutePoint])]=[
+            ("straight",[point(0,0),point(0,-12000)]),
+            ("small corrections",ripple),
+            ("bend",[point(0,0),point(0,-1600),point(1800,-1600)]),
+            ("tight return",[point(0,0),point(0,-1200),point(0,0)]),
+            ("short return",[point(0,0),point(0,-35),point(0,0)]),
+            ("substantial detour",[point(0,0),point(0,-1500),point(140,-1500),point(140,-1700),point(0,-1700),point(0,-3200)]),
+            ("nearby bends",[point(0,0),point(0,-1500),point(200,-1500),point(200,-1800),point(500,-1800),point(500,-3500)]),
+            ("overlapping returns",[point(0,0),point(0,-350),point(20,-40),point(40,-320),point(10,0)]),
+            // Deterministic synthetic junction, not a saved user's GPS track.
+            // Position averaging made a cusp here and reduced the entire
+            // flight to about 3.3 km/h despite two long clear legs.
+            ("close consecutive reversals",[point(0,0),point(0,-2000),point(159,-1923),point(255,-1784),point(-173,-1742),point(72,-1789),point(18,-1738),point(62,-1887),point(213,-2203),point(-272,-1934),point(200,-5000)]),
+            ("heading wrap",circle),
+            ("hilly bends",stride(from:0.0,through:6000.0,by:20).map { point(400*sin($0/500),-$0) })]
+        let scale=(600/3.6)/25.0,dt=1.0/60
+        func make(_ points:[RoutePoint],hilly:Bool=false,quiet:Bool=false,limits:WorldFlightTurn.Limits?=nil) throws -> WorldFlightPlan {
+            let path=WorldRouteTourPath(segments:[points])!,rail=WorldFlightCorridor(path:path,style:.drone)
+            let distances=WorldFlightTerrain.distances(length:rail.length)
+            let heights:[Float?]=distances.map { distance in
+                if hilly { return Float(300+300*sin(distance * Double.pi/6000)) }
+                return Float(100)
+            }
+            let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:heights)
+            return try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:quiet,
+                clearance:10,cornerLift:12,routeFraming:true,movementAligned:true,turnLimits:limits)
+        }
+        for (name,points) in fixtures {
+            let began=Date(),plan=try make(points,hilly:name=="hilly bends"),preparation=Date().timeIntervalSince(began)
+            var glide=WorldFlightGlide(),previous=plan.sample(time:0),lastBank=previous.pose.bank,lastYaw=0.0,lastRate=0.0
+            var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0,maxDerivativeError=0.0
+            var correctTurns=0,turns=0,maxPitchRate=0.0
+            var previousAlong=0.0,maxPaceJerk=0.0
+            var previousBodyBank:Double?,maxBodyBank=0.0,maxBodyRoll=0.0
+            var returnBankSign=0.0
+            var lastPitch=atan2(Double(previous.velocity.y),Double(simd_length(SIMD2(previous.velocity.x,previous.velocity.z))))
+            var turnStart=Double.infinity,turnFinish=Double.infinity
+            var turnMinimum=Double.infinity,turnMaximum=0.0
+            let initialDirection=simd_normalize(SIMD2(previous.velocity.x,previous.velocity.z))
+            let camera=SCNNode();camera.camera=SCNCamera();let rig=WorldCameraRig();rig.beginTour(on:camera)
+            func yaw(_ v:SIMD3<Float>)->Double { atan2(Double(v.x),-Double(v.z)) }
+            lastYaw=yaw(previous.velocity)
+            for tick in 1..<Int(plan.duration/(dt*scale)) {
+                let time=Double(tick)*dt*scale,reference=plan.sample(time:time)
+                let sample=glide.advance(reference:reference,yaw:0,pitch:0,speedScale:scale,seconds:dt,frame:frame,reduceMotion:false,clearance:10)
+                let view=simd_normalize(sample.pose.look-sample.pose.eye),velocity=simd_normalize(sample.velocity)
+                let slip=Double(simd_length(simd_cross(view,velocity)));maxSlip=max(maxSlip,slip)
+                check(simd_dot(view,velocity)>0.99999,"\(name): full 3D view follows actual velocity, without sideslip")
+                let difference=plan.sample(time:time+0.001*scale).pose.eye-plan.sample(time:time-0.001*scale).pose.eye
+                check(simd_dot(view,simd_normalize(difference))>0.9999,"\(name): visible heading follows measured displacement")
+                check(abs(Double(simd_length(difference))/0.002-sample.speed)<0.5,"\(name): measured camera travel agrees with the constant pace, not just the speed readout")
+                let v=SIMD3<Double>(sample.velocity),a=SIMD3<Double>(sample.acceleration),horizontal=hypot(v.x,v.z)
+                let along=simd_dot(v,a)/max(0.000001,simd_length(v))
+                if tick>1 { maxPaceJerk=max(maxPaceJerk,abs(along-previousAlong)/dt) };previousAlong=along
+                let lateral=(v.x*a.z-v.z*a.x)/max(0.00001,horizontal)
+                let bodyBank = -atan(lateral/sample.bankResponseAcceleration)
+                maxBodyBank=max(maxBodyBank,abs(bodyBank))
+                if let previousBodyBank { maxBodyRoll=max(maxBodyRoll,abs(bodyBank-previousBodyBank)/dt) }
+                previousBodyBank=bodyBank
+                let squared=lateral*lateral,softness=WorldFlightTurn.cinematicRollSoftness
+                let cameraLateral=sample.stabilizesRoll ? lateral*squared/(squared+softness*softness) : lateral
+                check(abs(tan(Double(sample.pose.bank))*sample.bankResponseAcceleration+cameraLateral)<0.001,"\(name): camera bank responds to measured turning with the prepared horizon stabilization")
+                let before=plan.sample(time:time-0.001*scale),after=plan.sample(time:time+0.001*scale)
+                let measuredAcceleration=SIMD3<Double>(after.velocity-before.velocity)*(scale/0.002)
+                // Compare the velocity integral over the finite stencil. C2
+                // motion has continuous acceleration but may change jerk at a
+                // knot, so a central difference need not equal its midpoint.
+                var meanAcceleration=SIMD3<Double>.zero
+                for part in 0...8 {
+                    let offset = -0.001+Double(part)*0.00025
+                    let weight=(part==0 || part==8) ? 0.5 : 1.0
+                    meanAcceleration+=SIMD3<Double>(plan.sample(time:time+offset*scale).acceleration)*weight
+                }
+                meanAcceleration*=scale*scale/8
+                let derivativeError=simd_distance(measuredAcceleration,meanAcceleration)
+                maxDerivativeError=max(maxDerivativeError,derivativeError)
+                check(derivativeError<0.03,"\(name): bank uses acceleration measured from travel, with actual playback units")
+                let angle=yaw(sample.velocity),change=atan2(sin(angle-lastYaw),cos(angle-lastYaw))/dt
+                let pitch=atan2(v.y,horizontal)
+                maxPitchRate=max(maxPitchRate,abs(pitch-lastPitch)/dt);lastPitch=pitch
+                let deflection=Double(acos(min(1,max(-1,simd_dot(initialDirection,simd_normalize(SIMD2(sample.velocity.x,sample.velocity.z)))))))
+                if deflection>Double.pi/12 { turnStart=min(turnStart,time/scale) }
+                let finishAngle=(name=="tight return" ? 11.0 : 5.0)*Double.pi/12
+                if deflection>finishAngle { turnFinish=min(turnFinish,time/scale) }
+                let plateauStart=(name=="tight return" ? 4.0 : 2.0)*Double.pi/12
+                let plateauEnd=(name=="tight return" ? 8.0 : 4.0)*Double.pi/12
+                if deflection>plateauStart && deflection<plateauEnd {
+                    turnMinimum=min(turnMinimum,sample.speed);turnMaximum=max(turnMaximum,sample.speed)
+                }
+                lastYaw=angle;maxYawRate=max(maxYawRate,abs(change));variation+=abs(change-lastRate);lastRate=change
+                maxRollRate=max(maxRollRate,Double(abs(sample.pose.bank-lastBank))/dt);lastBank=sample.pose.bank
+                maxBank=max(maxBank,abs(Double(sample.pose.bank)));maxLateral=max(maxLateral,abs(lateral))
+                minSpeed=min(minSpeed,sample.speed);maxSpeed=max(maxSpeed,sample.speed)
+                if tick>1 { maxAcceleration=max(maxAcceleration,Double(abs(simd_length(sample.velocity)-simd_length(previous.velocity)))/dt) }
+                check(sample.routeDistance>=previous.routeDistance,"\(name): ordered route progress is retained")
+                if name=="substantial detour" {
+                    let walking=WorldRouteTourPath(segments:[points])!
+                    check(sample.pose.focus.distance(to:walking.sample(at:sample.routeDistance).coordinate)<65,"The FPV camera visits a substantial side detour instead of skipping its entire leg")
+                    check(sample.speed>50,"Preserving a substantial detour retains useful forward flight pace")
+                }
+                if name=="tight return" {
+                    let along=(sample.pose.focus.latitude-points[0].coordinate.latitude)*111195
+                    check(along<=1200.05,"The rendered flight cannot pass beyond the anchored turnaround")
+                    if sample.routeDistance>1120 && sample.routeDistance<1280,abs(sample.pose.bank)>0.02 {
+                        if returnBankSign==0 { returnBankSign=Double(sample.pose.bank) }
+                        check(Double(sample.pose.bank)*returnBankSign>0,"The camera carries one continuous bank through the return apex")
+                    }
+                }
+                check(sample.heightAboveGround>9.7,"\(name): timing changes retain prepared terrain clearance")
+                check(sample.fieldOfView==78,"\(name): drone uses a fixed immersive lens without automatic pullback")
+                if name != "hilly bends" { check(abs(sample.heightAboveGround-10)<0.1,"\(name): flat-ground drone flight has no artificial corner climb") }
+                if abs(change)>0.02 {
+                    turns+=1;if Double(sample.pose.bank)*change<0 { correctTurns+=1 }
+                }
+                if abs(sample.pose.bank)>0.55 {
+                    check(abs(change)>0.20,"\(name): a pronounced bank produces an immediate, substantial change of travel direction")
+                }
+                rig.fly(on:camera,pose:.init(eye:sample.pose.eye,look:sample.pose.look,fieldOfView:sample.fieldOfView,bank:sample.pose.bank))
+                let column=camera.simdWorldTransform.columns.2,front = -SIMD3(column.x,column.y,column.z)
+                check(simd_dot(front,velocity)>0.99999,"\(name): rendered camera faces the movement, including while banked")
+                let upColumn=camera.simdWorldTransform.columns.1,up=SIMD3(upColumn.x,upColumn.y,upColumn.z)
+                let right=simd_normalize(simd_cross(SIMD3<Float>(0,1,0),-front)),levelUp=simd_cross(-front,right)
+                let renderedBank=atan2(-simd_dot(up,right),simd_dot(up,levelUp))
+                check(abs(renderedBank-sample.pose.bank)<0.0001,"\(name): rendered bank agrees with the trajectory's prepared turn cue")
+                if tick%71==0 {
+                    let again=plan.sample(time:time)
+                    check(again.pose.eye==reference.pose.eye && again.pose.bank==reference.pose.bank && again.pose.look==reference.pose.look,"\(name): scrub/replay uses deterministic prepared motion")
+                    check(abs(plan.time(at:reference.routeDistance)-time)<0.01,"\(name): route scrub retains the new physical timing")
+                }
+                previous=sample
+            }
+            check(maxBank<84 * Double.pi/180 && maxLateral<500,"\(name): anchored turns permit stronger but bounded cinematic banks")
+            check(maxRollRate<3.4,"\(name): the whole-shot pace bounds roll without corner braking or camera lag")
+            check(maxBodyBank<84 * .pi/180 && maxBodyRoll<3.4,"\(name): a stabilized horizon cannot relax the underlying movement envelope")
+            check(maxYawRate<3.3,"\(name): turns retain bounded continuous heading")
+            check(maxAcceleration<0.01,"\(name): the flight cannot brake and accelerate between bends")
+            check(maxPaceJerk<0.1,"\(name): constant arc-length pace removes longitudinal throttle jolts")
+            check(maxPitchRate<0.65,"\(name): terrain pitch remains calmer than the fast banked turns")
+            check(maxSpeed/minSpeed<1.00001,"\(name): the complete journey has one pace, including entries, turns and exits")
+            check(minSpeed>0.5,"\(name): turn keeps moving forward")
+            check(turns==0 || Double(correctTurns)/Double(turns)>0.99,"\(name): bank consistently agrees with the actual turn")
+            if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
+            if name=="small corrections" { check(maxBank<0.01 && variation<0.1,"Discarded path noise cannot flap the camera") }
+            if name=="heading wrap" { check(maxSpeed/minSpeed<1.05,"A continuous winding section holds one pace instead of sprinting between vertices") }
+            if name=="close consecutive reversals" { check(minSpeed>30,"A collapsed local join cannot drag a kilometre-scale journey down to walking pace") }
+            if name=="tight return" || name=="bend" || name=="hilly bends" {
+                let gentle=try make(points,hilly:name=="hilly bends",limits:.gentle)
+                check(plan.duration<gentle.duration*0.4,"\(name): cinematic flight does not stretch the journey into slow motion")
+                if name != "hilly bends" { check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank") }
+            }
+            if name=="tight return" {
+                check(minSpeed>150 && maxYawRate>0.8,"The anticipated hairpin carries cruise speed through its direction reversal")
+                check(turnFinish-turnStart<3.5,"A continuous hairpin completes its main reversal without stalling")
+            }
+            if name=="bend" {
+                let approach=plan.sample(time:plan.time(at:1000)),exit=plan.sample(time:plan.time(at:2200))
+                check(min(approach.speed,exit.speed)*scale>150,"The drone carries cruise into the approach and accelerates promptly out of the turn")
+                check(maxSpeed*3.6>599,"A local turn constraint cannot reduce the cruise speed of a clear straight")
+                check(turnFinish-turnStart<2,"The central part of a right-angle turn stays quick while the course blends continuously")
+            }
+            if name=="bend" || name=="tight return" {
+                check(turnMinimum.isFinite && turnMaximum/turnMinimum<1.02,"\(name): hold one pace through the turn without a mid-corner surge")
+                print("\(name): turn pace \(turnMinimum*3.6)…\(turnMaximum*3.6)km/h")
+            }
+            print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError); pitch rate \(maxPitchRate); turn window \(turnFinish-turnStart)s")
+            print("\(name): peak pace jerk \(maxPaceJerk)m/s³")
+        }
+        let straight=try make([point(0,0),point(0,-12000)])
+        func steer(_ hz:Double)->WorldFlightPlan.Sample {
+            var glide=WorldFlightGlide(),last=straight.sample(time:0),middle=last,maxRoll=0.0,lastBank:Float=0
+            for tick in 1...Int(22*hz) {
+                let seconds=Double(tick)/hz,reference=straight.sample(time:seconds*scale)
+                let yaw:Float=seconds>=1 && seconds<7 ? 0.8 : 0,pitch:Float=seconds>=3 && seconds<8 ? 0.4 : 0
+                let sample=glide.advance(reference:reference,yaw:yaw,pitch:pitch,speedScale:scale,seconds:1/hz,frame:frame,reduceMotion:false,clearance:10)
+                let heading=simd_normalize(sample.pose.look-sample.pose.eye)
+                check(simd_dot(heading,simd_normalize(sample.velocity))>0.99999,"Steering changes both travel and heading together")
+                let movement=(sample.pose.eye-last.pose.eye)*Float(hz)
+                if tick>1 { check(simd_dot(heading,simd_normalize(movement))>0.99998,"Touch steering does not pan separately from actual displacement") }
+                check(simd_length(SIMD2(sample.pose.eye.x-reference.pose.eye.x,sample.pose.eye.z-reference.pose.eye.z))<12.01,"Steering remains within the sampled terrain corridor")
+                maxRoll=max(maxRoll,Double(abs(sample.pose.bank-lastBank))*hz);lastBank=sample.pose.bank
+                if tick==Int(5*hz) { middle=sample }
+                last=sample
+            }
+            check(maxRoll<0.23,"Steering banks continuously, without acceleration steps")
+            glide.reset()
+            let reset=glide.advance(reference:straight.sample(time:0),yaw:0,pitch:0,speedScale:scale,seconds:0,frame:frame,reduceMotion:false)
+            check(reset.pose.eye==straight.sample(time:0).pose.eye && reset.pose.bank==0,"Restart removes steering position, velocity and acceleration history")
+            return middle
+        }
+        let a=steer(30),b=steer(60),c=steer(120)
+        check(simd_distance(a.pose.eye,b.pose.eye)<0.1 && simd_distance(b.pose.eye,c.pose.eye)<0.1,"Manual glide is consistent across display rates")
+        var previousLean=0.0
+        for lateral in [0.0,2,5,10,20,40,100,300] {
+            let bank=WorldFlightTurn.coordinatedBank(velocity:SIMD3<Double>(100,0,0),acceleration:SIMD3<Double>(0,0,lateral),responseAcceleration:64,stabilized:true)
+            let lean=abs(Double(bank))*180 / .pi
+            check(lean>=previousLean,"Horizon stabilization preserves increasing lean for stronger actual turns")
+            check(lateral==0 || Double(bank)*lateral<0,"Horizon stabilization keeps the bank pointing into the measured turn")
+            if lateral<=10 { check(lean<1,"Gentle course corrections keep the visible horizon almost level") }
+            if lateral==20 { check(lean<4,"Small transfer corrections cannot repeatedly tip the camera by double-digit angles") }
+            if lateral==100 { check(lean>50,"A decisive turn retains a pronounced bank") }
+            if lateral==300 { check(lean>75,"Tight high-speed turns retain deep banking") }
+            previousLean=lean
+        }
+        for name in ["tight return","hilly bends"] {
+            let fixture=fixtures.first { $0.0==name }!,plan=try make(fixture.1,hilly:name=="hilly bends")
+            var glide=WorldFlightGlide(),lastBank:Float=0,maxRate=0.0,maxBank=0.0
+            for tick in 1..<Int(plan.duration/(dt*scale)) {
+                let time=Double(tick)*dt*scale,reference=plan.sample(time:time)
+                let command:Float=time<plan.duration*0.2 ? 0 : time<plan.duration*0.6 ? 0.8 : -0.5
+                let sample=glide.advance(reference:reference,yaw:command,pitch:0.3,speedScale:scale,seconds:dt,frame:frame,reduceMotion:false,clearance:10)
+                check(simd_dot(simd_normalize(sample.pose.look-sample.pose.eye),simd_normalize(sample.velocity))>0.99999,"\(name): looking around cannot introduce sideslip in a banked turn")
+                if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
+                maxBank=max(maxBank,Double(abs(sample.pose.bank)))
+            }
+            check(maxRate<3.4 && maxBank<84 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
+        }
+        let quiet=try make(fixtures[3].1,quiet:true)
+        for time in stride(from:0.0,to:quiet.duration,by:0.5) {
+            let sample=quiet.sample(time:time)
+            check(sample.pose.bank==0 && simd_dot(simd_normalize(sample.pose.look-sample.pose.eye),simd_normalize(sample.velocity))>0.99999,"Reduce Motion retains forward movement with a level horizon")
+        }
+        let crossingPath=WorldRouteTourPath(segments:[[point(0,0),point(0,-1200),point(2000,-1200),point(2000,0),point(-1000,0),point(-1000,-201),point(0,-201)]])!
+        let crossingRail=WorldFlightCorridor(path:crossingPath,style:.drone)
+        let crossingStations=WorldFlightTerrain.distances(length:crossingRail.length)
+        var crossingFloors=crossingStations.map { _ in Float?(100) }
+        crossingFloors[crossingFloors.count-1]=250
+        let crossingTerrain=WorldFlightTerrain(path:crossingPath,corridor:crossingRail,heights:crossingStations.map { _ in Float?(100) },clearanceHeights:crossingFloors)
+        check(crossingTerrain.clearanceElevation(at:201)==100,"First crossing uses its own prepared clearance corridor")
+        check(crossingTerrain.clearanceElevation(at:crossingRail.length)==250,"The later perpendicular pass retains its different clearance floor at the same location")
+        let crossingPlan=try WorldFlightPlan(path:crossingPath,corridor:crossingRail,terrain:crossingTerrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+        let firstCrossing=crossingPlan.sample(time:crossingPlan.time(at:201))
+        check(firstCrossing.heightAboveGround<12,"A later crossing's high clearance floor cannot manufacture an altitude bump on the earlier flat leg")
+        print("Crossing clearance: first 100m, final 250m; first-pass camera clearance \(firstCrossing.heightAboveGround)m")
+        let rampTerrain=WorldFlightTerrain(path:crossingPath,corridor:crossingRail,heights:crossingStations.map { Float(100+$0*0.1) })
+        check(abs(rampTerrain.elevation(at:123.25)-112.325)<0.001,"Prepared ground height interpolates continuously along ordered travel")
+        let cliffPath=WorldRouteTourPath(segments:[[point(0,0),point(0,-3000)]])!,cliffRail=WorldFlightCorridor(path:cliffPath,style:.drone)
+        let cliffStations=WorldFlightTerrain.distances(length:cliffRail.length),lanes=WorldFlightTerrain.clearancePoints(corridor:cliffRail)
+        check(abs(lanes[0].distance(to:lanes[4])-WorldFlightGlide.coordinatedLateralLimit*2)<0.01,"Production clearance samples cover the actual steering corridor")
+        func cliffPlan(offset:Double) throws -> WorldFlightPlan {
+            let floors=cliffStations.indices.map { i -> Float? in
+                lanes[(i*5)..<(i*5+5)].map { p -> Float in
+                    let right=(p.longitude-cliffPath.points[0].coordinate.longitude)*111195*cos(53 * .pi/180)
+                    return cliffStations[i]>800 && cliffStations[i]<1600 && right>offset ? 250 : 100
+                }.max()!
+            }
+            let terrain=WorldFlightTerrain(path:cliffPath,corridor:cliffRail,heights:cliffStations.map { _ in Float?(100) },clearanceHeights:floors)
+            return try WorldFlightPlan(path:cliffPath,corridor:cliffRail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+        }
+        let outsideCliff=try cliffPlan(offset:18),reachableCliff=try cliffPlan(offset:10)
+        let outsideHeight=outsideCliff.sample(time:outsideCliff.time(at:1200)).heightAboveGround
+        let reachableHeight=reachableCliff.sample(time:reachableCliff.time(at:1200)).heightAboveGround
+        check(outsideHeight<11,"A cliff outside reachable steering cannot create a false climb")
+        check(reachableHeight>159,"A cliff inside the steering corridor still raises the prepared clearance floor")
+        print("Cliff clearance: outside steering \(outsideHeight)m; reachable cliff \(reachableHeight)m")
+        // A constant terrain grade needs pitch, not a broad altitude arch.
+        // These are spatial assertions on actual camera samples, independent
+        // of the planner's smoothing/envelope implementation.
+        let gradePath=WorldRouteTourPath(segments:[[point(0,0),point(0,-5000)]])!
+        let gradeRail=WorldFlightCorridor(path:gradePath,style:.drone)
+        let gradeStations=WorldFlightTerrain.distances(length:gradeRail.length)
+        for grade in [-0.5,0.5] {
+            let terrain=WorldFlightTerrain(path:gradePath,corridor:gradeRail,
+                heights:gradeStations.map { Float(1500+$0*grade) })
+            let plan=try WorldFlightPlan(path:gradePath,corridor:gradeRail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+            var maximumHeight=0.0,maximumPitchError=0.0
+            for distance in stride(from:1000.0,through:4000.0,by:25) {
+                let sample=plan.sample(time:plan.time(at:distance))
+                let pitch=atan2(Double(sample.velocity.y),Double(simd_length(SIMD2(sample.velocity.x,sample.velocity.z))))
+                maximumHeight=max(maximumHeight,sample.heightAboveGround)
+                maximumPitchError=max(maximumPitchError,abs(pitch-atan(grade)))
+                check(sample.heightAboveGround>=9.7 && sample.heightAboveGround<14,"Steady uphill/downhill flight stays close without a slope-dependent altitude arch")
+                check(abs(pitch-atan(grade))<0.02,"Steady uphill/downhill view follows terrain grade")
+                check(abs(sample.speed-plan.sample(time:0).speed)<0.0001,"Following a slope retains one prepared pace")
+            }
+            print("Terrain grade \(grade): maximum clearance \(maximumHeight)m, pitch error \(maximumPitchError * 180 / .pi)°")
+        }
+        // Rounded peaks, a narrow hollow and an abrupt reachable ledge must
+        // remain clear between preparation stations, without a hard height cap.
+        let roughHeights=gradeStations.map { d -> Float? in
+            let ridge=240*exp(-pow((d-1800)/160,2)),hollow = -100*exp(-pow((d-2900)/90,2))
+            let ledge=d>3500 && d<3900 ? 100.0 : 0
+            return Float(300+ridge+hollow+ledge+20*sin(d/100))
+        }
+        let roughTerrain=WorldFlightTerrain(path:gradePath,corridor:gradeRail,heights:roughHeights)
+        let roughPlan=try WorldFlightPlan(path:gradePath,corridor:gradeRail,terrain:roughTerrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+        var minimumRoughClearance=Double.infinity,maximumRoughPitchRate=0.0
+        for seconds in stride(from:0.0,through:roughPlan.duration/scale,by:1.0/60) {
+            let sample=roughPlan.sample(time:seconds*scale)
+            minimumRoughClearance=min(minimumRoughClearance,sample.heightAboveGround)
+            maximumRoughPitchRate=max(maximumRoughPitchRate,abs(WorldFlightTurn.pitchRate(velocity:SIMD3<Double>(sample.velocity)*scale,acceleration:SIMD3<Double>(sample.acceleration)*scale*scale)))
+            check(sample.heightAboveGround>=9.7,"Direct terrain following clears summits, hollows and ledges between prepared keys")
+            check(abs(sample.speed-roughPlan.sample(time:0).speed)<0.0001,"Rough terrain cannot introduce local braking")
+        }
+        check(maximumRoughPitchRate<0.65,"Direct terrain following retains bounded continuous pitch")
+        print("Rough terrain: minimum clearance \(minimumRoughClearance)m, maximum pitch rate \(maximumRoughPitchRate)rad/s")
+        let sample=straight.sample(time:straight.duration*0.4),output=GeoBounds(minLatitude:52.98,minLongitude:-4.03,maxLatitude:53.04,maxLongitude:-3.97)
+        let converted=WorldFlightPlan.converted(sample,from:frame,to:output)
+        check(converted.movementAligned && simd_dot(simd_normalize(converted.pose.look-converted.pose.eye),simd_normalize(converted.velocity))>0.99999,"Scene rebasing cannot separate travel from viewing direction")
+        let bendPath=WorldRouteTourPath(segments:[fixtures[2].1])!
+        let droneRail=WorldFlightCorridor(path:bendPath,style:.drone),oldRail=WorldFlightCorridor(path:bendPath,tolerance:160,routeCentred:true)
+        let corner=bendPath.sample(at:1600).coordinate
+        let droneGap=droneRail.sample(routeDistance:1600).point.distance(to:corner),oldGap=oldRail.sample(routeDistance:1600).point.distance(to:corner)
+        check(droneGap<100,"The anticipated corner remains inside a bounded route corridor")
+        let anticipating=droneRail.sample(routeDistance:1400).direction
+        check(abs(atan2(anticipating.x,-anticipating.y))>0.01,"A right-angle turn begins curving well before reaching the walking vertex")
+        let sparse=WorldRouteTourPath(segments:[[point(0,0),point(0,-6000),point(6000,-6000)]])!
+        let sparseRail=WorldFlightCorridor(path:sparse,style:.drone)
+        check(sparseRail.sample(routeDistance:6000).point.distance(to:sparse.points[1].coordinate)<100,"Sparse long legs retain their actual turn instead of becoming one diagonal shortcut")
+        let returnPath=WorldRouteTourPath(segments:[fixtures[3].1])!,returnRail=WorldFlightCorridor(path:returnPath,style:.drone)
+        let vertex=returnPath.sample(at:1200).coordinate
+        check(returnRail.sample(routeDistance:1200).point.distance(to:vertex)<0.05,"The turnaround is anchored to its actual walking vertex")
+        for travel in stride(from:0.0,through:returnRail.length,by:1) {
+            let p=returnRail.sample(flightDistance:travel).point
+            let along=(p.latitude-returnPath.points[0].coordinate.latitude)*111195
+            check(along<=1200.05,"A preplanned return cannot overshoot beyond the turnaround point")
+            check(abs((p.longitude-returnPath.points[0].coordinate.longitude)*111195*cos(53 * .pi/180))<110,"The return stays inside its planned turn area without drifting off to the side")
+        }
+        for route in [1500.0,1800,2100] {
+            check(simd_dot(returnRail.sample(routeDistance:route).direction,SIMD2<Double>(0,1))>cos(15 * .pi/180),"After a return, the camera exits aligned with the outbound route leg")
+        }
+        print("Corner separation: drone \(droneGap)m, previous gliding rail \(oldGap)m")
+        let tiny=try make([point(0,0),point(0,-0.6),point(0,0)])
+        var previousDistance=0.0
+        for i in 0...200 {
+            let sample=tiny.sample(time:tiny.duration*Double(i)/200)
+            check(sample.routeDistance>=previousDistance && sample.routeDistance>=0,"A tiny closed route cannot acquire negative or reversed progress")
+            check(sample.velocity.x.isFinite && simd_length(sample.velocity)>0.00001,"A tiny drone hairpin retains a finite forward trajectory")
+            previousDistance=sample.routeDistance
+        }
+        for seed in 1...60 {
+            var state=UInt64(seed)
+            func draw()->Double {
+                state=state &* 6364136223846793005 &+ 1442695040888963407
+                return Double(Int((state>>32)%601)-300)
+            }
+            var points=[point(0,0),point(0,-2000)]
+            for _ in 0..<8 { points.append(point(draw(),-2000+draw())) }
+            points.append(point(200,-5000))
+            let plan=try make(points),pace=plan.sample(time:0).speed*scale
+            check(pace>30,"Synthetic junction \(seed): close reversals cannot collapse the full-flight pace")
+            for fraction in [0.0,0.25,0.5,0.75,1.0] {
+                check(abs(plan.sample(time:plan.duration*fraction).speed*scale-pace)<0.001,"Synthetic junction \(seed): cruise stays constant throughout the prepared shot")
+            }
+        }
+        var delayed=WorldFlightPlayback(),regular=WorldFlightPlayback()
+        delayed.reset(speed:10);regular.reset(speed:10)
+        var now=100.0,elapsed=0.0,travel=0.0
+        for _ in 0..<20 { for dt in [1.0/60,0.22,1.0/30,0.16] {
+            let next=now+dt,frame=WorldFlightPlayback.frameSeconds(now:next,previous:now,displayInterval:1/60)
+            travel+=delayed.advance(seconds:frame,requested:600/3.6,preparedSpeed:25)
+            elapsed+=dt;now=next
+        } }
+        let expected=regular.advance(seconds:elapsed,requested:600/3.6,preparedSpeed:25)
+        check(abs(travel-expected)<0.000001,"Slow rendering frames cannot discard elapsed flight time or lower the actual pace")
+        check(abs(WorldFlightPlayback.frameSeconds(now:200,previous:100,displayInterval:1/60)-1/60)<0.000001,"A long suspension restarts from a fresh display interval without skipping the route")
+        func heldGlide(_ cadence:[Double])->WorldFlightPlan.Sample {
+            var glide=WorldFlightGlide(),time=0.0,index=0,sample=straight.sample(time:0)
+            while time<5 {
+                let dt=min(cadence[index%cadence.count],5-time);time+=dt;index+=1
+                sample=glide.advance(reference:straight.sample(time:time*scale),yaw:0.6,pitch:0.2,speedScale:scale,seconds:dt,frame:frame,reduceMotion:false,clearance:10)
+            }
+            return sample
+        }
+        let normal=heldGlide([1.0/60]),stalled=heldGlide([1.0/60,0.22,1.0/30,0.16])
+        check(simd_distance(normal.pose.eye,stalled.pose.eye)<0.01,"Steering also consumes full slow-frame time without lagging behind the flight clock")
+        print("\(checks) coordinated flight checks, \(failures.count) failures")
+        if !failures.isEmpty { throw NSError(domain:failures.sorted().joined(separator:"; "),code:1) }
+        print("PASS coordinated trajectory, turn-coherent cinematic bank, no sideslip, anticipatory pace, steering and Reduce Motion")
+    }
+}

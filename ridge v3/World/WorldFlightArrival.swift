@@ -40,7 +40,7 @@ struct WorldFlightArrival {
     }
     func fieldOfView(elapsed:Double)->Double {
         let t=min(1,max(0,elapsed/diveDuration)),weight=t*t*t*(10+t*(-15+6*t))
-        return openingFieldOfView+(WorldRouteTour.fieldOfView-openingFieldOfView)*weight
+        return openingFieldOfView+(finish.fieldOfView-openingFieldOfView)*weight
     }
     static func approach(path:WorldRouteTourPath,frame:GeoBounds,velocity:SIMD3<Float>,fallbackAltitude:Double,focus:GeoPoint? = nil)->WorldRouteTourCamera.Pose {
         let point=focus ?? path.points[0].coordinate,uv=frame.uv(point)

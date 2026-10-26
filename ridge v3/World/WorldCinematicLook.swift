@@ -1,8 +1,8 @@
 import Foundation
 import simd
 
-/// User look is an offset from the cinematic heading. It stays still under a
-/// resting finger, then eases back after release without interrupting travel.
+/// A held touch command for the flight controller. Release eases the command
+/// back to neutral; the glide controller turns it into actual camera movement.
 struct WorldCinematicLook {
     private(set) var touching=false
     private(set) var yaw: Float = 0
@@ -13,9 +13,10 @@ struct WorldCinematicLook {
     mutating func end() { touching=false;releaseDelay=0.6 }
     mutating func reset() { self=Self() }
     mutating func drag(dx: Double,dy: Double) {
-        yaw-=Float(dx)*0.0045
-        yaw=atan2(sin(yaw),cos(yaw))
-        pitch=min(1.35,max(-1.35,pitch+Float(dy)*0.0035))
+        // Steering saturates instead of wrapping through 180° and reversing
+        // under a long drag. Reversing the finger responds immediately.
+        yaw=min(0.9,max(-0.9,yaw-Float(dx)*0.0045))
+        pitch=min(0.6,max(-0.6,pitch+Float(dy)*0.0035))
     }
     mutating func advance(seconds: Double) {
         guard !touching else { return }

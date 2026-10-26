@@ -29,3 +29,22 @@ jobs:
         run: sh Tools/test_world_flight_arrival.sh
       - name: Camera ownership and free look
         run: sh Tools/test_world_cinematic_camera.sh
+      - name: Smooth terrain flight and forward steering
+        run: sh Tools/test_world_flight_glide.sh
+      - name: Switchbacks, clearance and responsive speed
+        run: sh Tools/test_world_wingsuit_flight.sh
+      - name: Anticipatory pullback and calm route framing
+        run: sh Tools/test_world_flight_composition.sh
+      - name: Continuous heading and coordinated banked turns
+        run: sh Tools/test_world_flight_turns.sh
+      - name: Movement-aligned FPV and coordinated flight physics
+        run: sh Tools/test_world_flight_physics.sh
+  route-terrain-detail:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Prepare saved terrain along the planned route
+        run: sh Tools/test_world_flight_detail.sh

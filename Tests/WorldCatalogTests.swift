@@ -90,7 +90,23 @@ actor TileProgressAudit {
         try check(source.tiles.allSatisfy { model.preparedTile($0.id) != nil },"Every admitted tile has local cartography")
         try check(model.routeTerrain?.graph?.nodes.allSatisfy { node in plan.bounds.contains { $0.contains(node.coordinate) } } == true,"Walking graph cannot route through undownloaded tiles")
         model.in3D=true
-        let revision=source.revision
+        let previewTiles=Array(source.tiles.prefix(3))
+        let detail=previewTiles.enumerated().map { WorldFlightDetailStation(distance:Double($0.offset)*600,points:[$0.element.mesh.bounds.center]) }
+        model.setClosePreviewDetail(true)
+        model.setFlightDetail(detail,distance:0)
+        try await wait {
+            model.streaming || previewTiles.contains { model.preparedTile($0.id)?.request.fine != true || model.preparedTile($0.id)?.request.pixels != 1024 }
+        }
+        try check(model.hasFlightDetail && previewTiles.allSatisfy { model.preparedTile($0.id)?.geometry != nil },"Route preloading prepares actual saved fine meshes and pages before camera travel")
+        let orders=model.flightUploadPriorities
+        try check(orders[previewTiles[0].id]!<orders[previewTiles[2].id]!,"GPU uploads follow the route's encounter order")
+        model.setFlightDetail(Array(detail.reversed()).enumerated().map { .init(distance:Double($0.offset)*600,points:$0.element.points) },distance:0)
+        model.setClosePreviewDetail(false)
+        try await Task.sleep(nanoseconds:100_000_000)
+        try check(!model.hasFlightDetail,"Closing preview cancels an in-flight index without restoring stale route priority")
+        model.update(center:origin,distance:2000)
+        try await wait { model.streaming }
+        let revision=model.source!.revision
         let outside=GeoPoint(latitude:53.2,longitude:-4.0)
         model.update(center:outside,distance:2000)
         try await Task.sleep(nanoseconds:100_000_000)
