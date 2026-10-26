@@ -358,20 +358,37 @@ struct WorldFlightCorridor {
             let h=simd_distance(from,to)/7
             return [from,from+heading*h,from+heading*(h*2),from+heading*(h*3),to-endHeading*(h*3),to-endHeading*(h*2),to-endHeading*h,to]
         }
+        func derivative(_ points:[Point])->[Point] {
+            let degree=Double(points.count-1)
+            var result:[Point]=[]
+            for i in 1..<points.count {
+                let difference:Point=points[i]-points[i-1]
+                result.append(difference*degree)
+            }
+            return result
+        }
         func transferCost(_ a:Point,_ da:Point,_ b:Point,_ db:Point)->Double {
-            let delta=b-a,length=max(0.000001,simd_length(delta)),direction=delta/length
+            let delta:Point=b-a
+            let length:Double=max(0.000001,simd_length(delta))
+            let direction:Point=delta/length
             let p=simd_dot(direction,da),q=simd_dot(direction,db)
             guard p>0 && q>0 else { return 1e12 }
             let points=controls(a,da,b,db)
-            let first=(1..<points.count).map { (points[$0]-points[$0-1])*7 }
-            let second=(1..<first.count).map { (first[$0]-first[$0-1])*6 }
-            let third=(1..<second.count).map { (second[$0]-second[$0-1])*5 }
+            let first:[Point]=derivative(points)
+            let second:[Point]=derivative(first)
+            let third:[Point]=derivative(second)
             var worst=0.0
             for i in 0...32 {
-                let t=Double(i)/32,v=bezier(first,t),acceleration=bezier(second,t),jerk=bezier(third,t)
-                let squared=max(0.00000001,simd_length_squared(v)),cross=v.x*acceleration.y-v.y*acceleration.x
-                let curvature=cross/pow(squared,1.5)
-                let change=(v.x*jerk.y-v.y*jerk.x)/(squared*squared)-3*cross*simd_dot(v,acceleration)/pow(squared,3)
+                let t:Double=Double(i)/32
+                let v:Point=bezier(first,t),acceleration:Point=bezier(second,t),jerk:Point=bezier(third,t)
+                let squared:Double=max(0.00000001,simd_length_squared(v))
+                let cross:Double=v.x*acceleration.y-v.y*acceleration.x
+                let curvature:Double=cross/pow(squared,1.5)
+                let normalJerk:Double=v.x*jerk.y-v.y*jerk.x
+                let tangentAcceleration:Double=simd_dot(v,acceleration)
+                let firstTerm:Double=normalJerk/(squared*squared)
+                let secondTerm:Double=3*cross*tangentAcceleration/pow(squared,3)
+                let change:Double=firstTerm-secondTerm
                 worst=max(worst,demand(curvature,change))
             }
             return worst+(2-p-q)*0.000001
@@ -413,7 +430,7 @@ struct WorldFlightCorridor {
             let length=simd_distance(from,to)
             guard length>0.0000001 else { return }
             let controls=controls(from,heading,to,endHeading)
-            let derivatives=(1..<controls.count).map { (controls[$0]-controls[$0-1])*7 }
+            let derivatives:[Point]=derivative(controls)
             let count=max(32,Int(ceil(length/1.5)))
             var points=[from],directions=[heading],arc=[0.0]
             for i in 1...count {
