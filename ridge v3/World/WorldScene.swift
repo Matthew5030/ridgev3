@@ -600,6 +600,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             tourCoverageRevision = -1
             tourRenderScale=contentScaleFactor
             contentScaleFactor=min(2,contentScaleFactor)
+            updateRoutePixelScale()
             antialiasingMode = .multisampling2X
             offlineBoundaryNode.isHidden=true
             tourLastHeightReport=0;tourLastLabels=0
@@ -709,7 +710,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         guard let saved=tourSavedPose else { return }
         tourSavedPose=nil;tourBasePose=nil;cinematicLook.reset()
         rendersContinuously=false
-        if let scale=tourRenderScale { contentScaleFactor=scale;tourRenderScale=nil }
+        if let scale=tourRenderScale { contentScaleFactor=scale;tourRenderScale=nil;updateRoutePixelScale() }
         antialiasingMode = .multisampling4X;offlineBoundaryNode.isHidden=false
         cameraNode.camera?.fieldOfView=43;cameraNode.camera?.zNear=2
         if restore,source != nil {
@@ -896,6 +897,14 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             self.routeOverlays=tiles.compactMapValues { WorldRouteOverlay.binding($0,device:device) }
             self.applyRouteOverlays()
         }
+    }
+    private func updateRoutePixelScale() {
+        SCNTransaction.begin();SCNTransaction.animationDuration=0
+        for (id,node) in nodes {
+            guard let material=node.geometry?.firstMaterial else { continue }
+            routeOverlays[id]?.updatePixelScale(on:material,pixelScale:Float(contentScaleFactor))
+        }
+        SCNTransaction.commit()
     }
     private func applyRouteOverlays() {
         SCNTransaction.begin(); SCNTransaction.animationDuration = 0

@@ -48,3 +48,13 @@ jobs:
           lfs: false
       - name: Prepare saved terrain along the planned route
         run: sh Tools/test_world_flight_detail.sh
+
+  route-ink:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Route bins and rendered ink across zoom and display scales
+        run: sh Tools/test_world_route_ink.sh

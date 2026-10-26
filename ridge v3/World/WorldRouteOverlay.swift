@@ -7,7 +7,7 @@ import simd
 /// elevation samples, depth override, or raster route image is needed.
 enum WorldRouteOverlay {
     static let side = 16
-    static let reach: Float = 40 // Shader widths, markers and AA never extend this far.
+    static let reach: Float = 96 // Bound the bins; distant ink fades before its footprint exceeds this.
     struct Tile:Sendable {
         var origin: SIMD2<Float>
         var extent: SIMD2<Float>
@@ -23,6 +23,9 @@ enum WorldRouteOverlay {
             material.shaderModifiers = [.geometry: WorldRouteOverlay.geometryShader, .fragment: WorldRouteOverlay.fragmentShader]
             material.setValue(buffer, forKey:"ridgeRouteRecords")
             material.setValue(NSValue(scnVector4:SCNVector4(originX,originY,tile.extent.x,tile.extent.y)),forKey:"ridgeRouteTile")
+            updatePixelScale(on:material,pixelScale:pixelScale)
+        }
+        func updatePixelScale(on material:SCNMaterial,pixelScale:Float) {
             material.setValue(NSNumber(value:pixelScale),forKey:"ridgeRoutePixelScale")
         }
         private var originX: Float { tile.origin.x }
@@ -116,38 +119,45 @@ enum WorldRouteOverlay {
     float2 rx = dfdx(rp), ry = dfdy(rp);
     int2 cell = clamp(int2(floor(rp / ridgeRouteTile.zw * 16.0)), int2(0), int2(15));
     float4 header = ridgeRouteRecords[cell.y * 16 + cell.x];
+    // Invert the local terrain-to-pixel Jacobian before measuring each
+    // segment. Choosing the nearest segment in metres first makes joins jump
+    // between different screen scales on slopes and at oblique camera angles.
+    float determinant = rx.x*ry.y-rx.y*ry.x;
+    float safeDeterminant = abs(determinant)>1e-8 ? determinant : (determinant<0.0 ? -1e-8 : 1e-8);
+    float2x2 pixels = float2x2(float2(ry.y,-rx.y)/safeDeterminant,float2(-ry.x,rx.x)/safeDeterminant);
     float nearest = 1e20;
-    float2 normal = float2(1.0, 0.0);
     for (int i = 0; i < int(header.y); ++i) {
         float4 line = ridgeRouteRecords[int(header.x) + i];
-        float2 ab = line.zw - line.xy;
-        float t = clamp(dot(rp-line.xy,ab) / max(dot(ab,ab),1e-8),0.0,1.0);
-        float2 delta = rp - (line.xy+t*ab);
-        float d = length(delta);
-        if (d < nearest) {
-            nearest = d;
-            normal = d > 1e-5 ? delta/d : normalize(float2(-ab.y,ab.x));
-        }
+        float2 a = pixels*(line.xy-rp), b = pixels*(line.zw-rp);
+        float2 ab = b-a;
+        float t = clamp(-dot(a,ab)/max(dot(ab,ab),1e-8),0.0,1.0);
+        nearest = min(nearest,length(a+t*ab));
     }
-    float metresPerPixel = max(length(float2(dot(rx,normal),dot(ry,normal))),0.001);
-    float aa = clamp(metresPerPixel*0.8,0.01,2.0);
-    float inner = min(24.0,2.0*ridgeRoutePixelScale*metresPerPixel);
-    float outer = min(32.0,2.8*ridgeRoutePixelScale*metresPerPixel);
-    float edge = 1.0-smoothstep(outer-aa,outer+aa,nearest);
-    float ink = 1.0-smoothstep(inner-aa,inner+aa,nearest);
-    _output.color.rgb = mix(_output.color.rgb,float3(0.98,0.97,0.92),edge);
-    _output.color.rgb = mix(_output.color.rgb,float3(0.85,0.23,0.12),ink);
+    // Widths are display points, feathering is a subpixel coverage ramp.
+    // No metre clamp changes the casing thickness as the camera zooms.
+    float inner = 1.7*ridgeRoutePixelScale;
+    float outer = 2.5*ridgeRoutePixelScale;
+    float aa = 0.75;
+    float footprintScale = sqrt(dot(rx,rx)+dot(ry,ry));
+    float footprint = (outer+aa)*footprintScale;
+    // The Frobenius norm bounds the largest footprint in any direction.
+    // Fade only very distant/grazing fragments before finite bins can clip ink.
+    float visibility = 1.0-smoothstep(86.4,96.0,footprint);
+    float edge = (1.0-smoothstep(outer-aa,outer+aa,nearest))*visibility;
+    float ink = (1.0-smoothstep(inner-aa,inner+aa,nearest))*visibility;
+    float3 casing = float3(0.99,0.98,0.94);
+    float3 orange = float3(0.88,0.30,0.14);
+    _output.color.rgb = mix(_output.color.rgb,casing,edge);
+    _output.color.rgb = mix(_output.color.rgb,orange,ink);
     for (int i = 0; i < int(header.w); ++i) {
-        float2 delta = rp-ridgeRouteRecords[int(header.z)+i].xy;
-        float d=length(delta);
-        float2 n=d>1e-5 ? delta/d : float2(1.0,0.0);
-        float scale=max(length(float2(dot(rx,n),dot(ry,n))),0.001);
-        float radius=min(30.0,5.0*ridgeRoutePixelScale*scale);
-        float soft=clamp(scale*0.8,0.01,2.0);
-        float border=1.0-smoothstep(radius-soft,radius+soft,d);
-        float core=1.0-smoothstep(max(0.0,radius-1.4*ridgeRoutePixelScale*scale)-soft,max(0.0,radius-1.4*ridgeRoutePixelScale*scale)+soft,d);
-        _output.color.rgb=mix(_output.color.rgb,float3(0.98,0.97,0.92),border);
-        _output.color.rgb=mix(_output.color.rgb,float3(0.85,0.23,0.12),core);
+        float2 delta = pixels*(rp-ridgeRouteRecords[int(header.z)+i].xy);
+        float d = length(delta);
+        float radius = 4.5*ridgeRoutePixelScale;
+        float markerVisibility = 1.0-smoothstep(86.4,96.0,(radius+aa)*footprintScale);
+        float border = (1.0-smoothstep(radius-aa,radius+aa,d))*markerVisibility;
+        float core = (1.0-smoothstep(radius-1.2*ridgeRoutePixelScale-aa,radius-1.2*ridgeRoutePixelScale+aa,d))*markerVisibility;
+        _output.color.rgb = mix(_output.color.rgb,casing,border);
+        _output.color.rgb = mix(_output.color.rgb,orange,core);
     }
     """
 }

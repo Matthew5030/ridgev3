@@ -6,6 +6,7 @@ import Metal
 
 @main struct WorldRouteOverlayTests {
     @MainActor static func main() throws {
+        setbuf(stdout,nil)
         let root=URL(fileURLWithPath:CommandLine.arguments[1])
         let source=try JSONDecoder().decode(WorldSource.self,from:Data(contentsOf:root.appendingPathComponent("world.json")))
         var checks=0
@@ -62,7 +63,11 @@ import Metal
         let testTile=source.tiles.first(where:{$0.id=="c08-r08"})!
         let ends=[testTile.mesh.bounds.point(u:0.1,v:0.5),testTile.mesh.bounds.point(u:0.9,v:0.5)]
         let inkTile=WorldRouteOverlay.build(source:source,paths:[ends],waypoints:[])[testTile.id]!
-        let device=MTLCreateSystemDefaultDevice()!
+        guard let device=MTLCreateSystemDefaultDevice() else {
+            print("PASS \(checks) route-bin checks; \(tested) corridor samples")
+            print("SKIP rendered ink checks: this host has no Metal device")
+            return
+        }
         let binding=WorldRouteOverlay.binding(inkTile,device:device)!
         let scene=SCNScene();scene.background.contents=NSColor.black
         let material=SCNMaterial();material.diffuse.contents=NSColor.green;material.lightingModel = .constant;material.isDoubleSided=true
@@ -72,18 +77,60 @@ import Metal
         let geometry=SCNGeometry(sources:[SCNGeometrySource(vertices:p)],elements:[SCNGeometryElement(indices:[Int32(0),2,1,1,2,3],primitiveType:.triangles)])
         geometry.materials=[material];let ground=SCNNode(geometry:geometry);scene.rootNode.addChildNode(ground)
         let center=SIMD3<Float>(o.x+e.x/2,0,o.y+e.y/2)
-        let camera=SCNNode();camera.camera=SCNCamera();camera.camera!.fieldOfView=43;camera.camera!.zNear=1;camera.camera!.zFar=5000;scene.rootNode.addChildNode(camera)
+        let camera=SCNNode();camera.camera=SCNCamera();camera.camera!.fieldOfView=43;camera.camera!.zNear=1;camera.camera!.zFar=50000;scene.rootNode.addChildNode(camera)
         let renderer=SCNRenderer(device:device,options:nil);renderer.scene=scene;renderer.pointOfView=camera
-        func render(_ height:Float)->NSBitmapImageRep {
-            camera.simdPosition=center+SIMD3(0,height,10);WorldCameraOrientation.aim(camera,at:center)
-            return NSBitmapImageRep(data:renderer.snapshot(atTime:0,with:CGSize(width:400,height:400),antialiasingMode:.multisampling4X).tiffRepresentation!)!
+        func render(_ height:Float,scale:Int=1,slant:Float=10)->NSBitmapImageRep {
+            binding.updatePixelScale(on:material,pixelScale:Float(scale))
+            camera.simdPosition=center+SIMD3(0,height,slant);WorldCameraOrientation.aim(camera,at:center)
+            return NSBitmapImageRep(data:renderer.snapshot(atTime:0,with:CGSize(width:400*scale,height:400*scale),antialiasingMode:.multisampling4X).tiffRepresentation!)!
         }
         func colour(_ image:NSBitmapImageRep,_ x:Int,_ y:Int)->NSColor { image.colorAt(x:x,y:y)!.usingColorSpace(.deviceRGB)! }
         func red(_ c:NSColor)->Bool { c.redComponent>0.6 && c.redComponent>c.greenComponent*1.4 && c.redComponent>c.blueComponent*1.4 }
         let near=render(600),far=render(1200)
         let nearWidth=(0..<400).filter {red(colour(near,200,$0))}.count
         let farWidth=(0..<400).filter {red(colour(far,200,$0))}.count
-        try check((3...7).contains(nearWidth) && abs(nearWidth-farWidth)<=1,"Route keeps its pixel width through zoom; shader actually renders")
+        print("Rendered orange pixels: \(nearWidth) near / \(farWidth) far; center \(colour(near,200,200))")
+        if CommandLine.arguments.count>2 {
+            let output=URL(fileURLWithPath:CommandLine.arguments[2]);try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
+            try near.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("debug-near.png"))
+        }
+        try check(nearWidth>0 && farWidth>0,"The real Metal shader renders orange route ink")
+        // Measure integrated orange coverage, not just an integer threshold:
+        // that detects subpixel shrinkage across the old metre-width caps.
+        func inkWidth(_ image:NSBitmapImageRep)->Double {
+            let x=image.pixelsWide/2
+            return (0..<image.pixelsHigh).reduce(0.0) { value,y in
+                let c=colour(image,x,y)
+                return value+max(0,Double(c.redComponent-c.blueComponent))/0.74
+            }
+        }
+        let baselineWidth=inkWidth(near)
+        for height:Float in [300,1200,4000,9000] {
+            let image=render(height),width=inkWidth(image)
+            try check(abs(width-baselineWidth)<0.5,"Orange ink retains subpixel thickness through the full visible zoom range")
+            print("Zoom \(height)m: orange coverage \(width)px")
+        }
+        for scale in [2,3,2,1] {
+            let image=render(1200,scale:scale),width=inkWidth(image)/Double(scale)
+            try check(abs(width-baselineWidth)<0.5,"Changing render scale preserves route thickness in display points on the same material")
+        }
+        for slant:Float in [400,1200,2400] {
+            let width=inkWidth(render(1200,slant:slant))
+            try check(abs(width-baselineWidth)<0.5,"Oblique terrain projection retains screen-space route width")
+        }
+        if CommandLine.arguments.count>2 {
+            let output=URL(fileURLWithPath:CommandLine.arguments[2]);try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
+            for (name,image) in [("near",near),("far",render(9000)),("oblique",render(1200,slant:2400)),("retina",render(1200,scale:3))] {
+                try image.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent(name+".png"))
+            }
+        }
+        let markerTile=WorldRouteOverlay.build(source:source,paths:[],waypoints:[testTile.mesh.bounds.center])[testTile.id]!
+        let markerBinding=WorldRouteOverlay.binding(markerTile,device:device)!
+        markerBinding.apply(to:material,pixelScale:1)
+        let markerNear=inkWidth(render(600)),markerFar=inkWidth(render(4000))
+        try check(abs(markerNear-markerFar)<0.6,"Waypoint rings retain their size through zoom instead of hitting a world-space radius cap")
+        binding.apply(to:material,pixelScale:1)
+        binding.updatePixelScale(on:material,pixelScale:1)
         let obstacle=SCNNode(geometry:SCNBox(width:80,height:80,length:80,chamferRadius:0));obstacle.simdPosition=center+SIMD3(0,40,0)
         let blue=SCNMaterial();blue.diffuse.contents=NSColor.blue;blue.lightingModel = .constant;obstacle.geometry!.materials=[blue];scene.rootNode.addChildNode(obstacle)
         let blocked=colour(render(600),200,200)
