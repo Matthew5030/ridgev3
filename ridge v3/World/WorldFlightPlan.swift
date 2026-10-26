@@ -444,9 +444,9 @@ struct WorldFlightPlan {
             var last:(distance:Double,bank:Double)?
             for s in stations {
                 let bank=atan(-s.lateral*speed*speed/response)
-                if abs(bank)>78 * .pi/180 || s.angular*speed>2.2 || s.pitch*speed>0.6 { return false }
+                if abs(bank)>WorldFlightCorridor.droneBankLimit || s.angular*speed>WorldFlightCorridor.droneAngularLimit || s.pitch*speed>0.6 { return false }
                 if let previous=last,s.distance>previous.distance+0.0000001,
-                   abs(bank-previous.bank)*speed/(s.distance-previous.distance)>2.2 { return false }
+                   abs(bank-previous.bank)*speed/(s.distance-previous.distance)>WorldFlightCorridor.droneRollLimit { return false }
                 last=(s.distance,bank)
             }
             return true

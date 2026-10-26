@@ -45,6 +45,7 @@ import simd
             var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0,maxDerivativeError=0.0
             var correctTurns=0,turns=0,maxPitchRate=0.0
             var previousAlong=0.0,maxPaceJerk=0.0
+            var returnBankSign=0.0
             var lastPitch=atan2(Double(previous.velocity.y),Double(simd_length(SIMD2(previous.velocity.x,previous.velocity.z))))
             var turnStart=Double.infinity,turnFinish=Double.infinity
             var turnMinimum=Double.infinity,turnMaximum=0.0
@@ -99,6 +100,14 @@ import simd
                 minSpeed=min(minSpeed,sample.speed);maxSpeed=max(maxSpeed,sample.speed)
                 if tick>1 { maxAcceleration=max(maxAcceleration,Double(abs(simd_length(sample.velocity)-simd_length(previous.velocity)))/dt) }
                 check(sample.routeDistance>=previous.routeDistance,"\(name): ordered route progress is retained")
+                if name=="tight return" {
+                    let along=(sample.pose.focus.latitude-points[0].coordinate.latitude)*111195
+                    check(along<=1200.05,"The rendered flight cannot pass beyond the anchored turnaround")
+                    if sample.routeDistance>1120 && sample.routeDistance<1280,abs(sample.pose.bank)>0.02 {
+                        if returnBankSign==0 { returnBankSign=Double(sample.pose.bank) }
+                        check(Double(sample.pose.bank)*returnBankSign>0,"The camera carries one continuous bank through the return apex")
+                    }
+                }
                 check(sample.heightAboveGround>9.7,"\(name): timing changes retain prepared terrain clearance")
                 check(sample.fieldOfView==78,"\(name): drone uses a fixed immersive lens without automatic pullback")
                 if name != "hilly bends" { check(abs(sample.heightAboveGround-10)<0.1,"\(name): flat-ground drone flight has no artificial corner climb") }
@@ -122,9 +131,9 @@ import simd
                 }
                 previous=sample
             }
-            check(maxBank<80 * Double.pi/180 && maxLateral<310,"\(name): continuous flight permits stronger but bounded cinematic banks")
-            check(maxRollRate<2.5,"\(name): the whole-shot pace bounds roll without corner braking or camera lag")
-            check(maxYawRate<2.5,"\(name): turns retain bounded continuous heading")
+            check(maxBank<84 * Double.pi/180 && maxLateral<500,"\(name): anchored turns permit stronger but bounded cinematic banks")
+            check(maxRollRate<3.4,"\(name): the whole-shot pace bounds roll without corner braking or camera lag")
+            check(maxYawRate<3.3,"\(name): turns retain bounded continuous heading")
             check(maxAcceleration<0.01,"\(name): the flight cannot brake and accelerate between bends")
             check(maxPaceJerk<0.1,"\(name): constant arc-length pace removes longitudinal throttle jolts")
             check(maxPitchRate<0.65,"\(name): terrain pitch remains calmer than the fast banked turns")
@@ -192,7 +201,7 @@ import simd
                 if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
                 maxBank=max(maxBank,Double(abs(sample.pose.bank)))
             }
-            check(maxRate<2.5 && maxBank<80 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            check(maxRate<3.4 && maxBank<84 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
             print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
         }
         let quiet=try make(fixtures[3].1,quiet:true)
@@ -210,10 +219,20 @@ import simd
         check(droneGap<100,"The anticipated corner remains inside a bounded route corridor")
         let anticipating=droneRail.sample(routeDistance:1400).direction
         check(abs(atan2(anticipating.x,-anticipating.y))>0.01,"A right-angle turn begins curving well before reaching the walking vertex")
+        let sparse=WorldRouteTourPath(segments:[[point(0,0),point(0,-6000),point(6000,-6000)]])!
+        let sparseRail=WorldFlightCorridor(path:sparse,style:.drone)
+        check(sparseRail.sample(routeDistance:6000).point.distance(to:sparse.points[1].coordinate)<100,"Sparse long legs retain their actual turn instead of becoming one diagonal shortcut")
         let returnPath=WorldRouteTourPath(segments:[fixtures[3].1])!,returnRail=WorldFlightCorridor(path:returnPath,style:.drone)
-        let direction=returnRail.sample(flightDistance:returnRail.length*0.1).direction
-        for fraction in [0.15,0.2,0.25] {
-            check(simd_dot(direction,returnRail.sample(flightDistance:returnRail.length*fraction).direction)>0.999999,"Outbound leg is a direct line without a long sideways racetrack sweep")
+        let vertex=returnPath.sample(at:1200).coordinate
+        check(returnRail.sample(routeDistance:1200).point.distance(to:vertex)<0.05,"The turnaround is anchored to its actual walking vertex")
+        for travel in stride(from:0.0,through:returnRail.length,by:1) {
+            let p=returnRail.sample(flightDistance:travel).point
+            let along=(p.latitude-returnPath.points[0].coordinate.latitude)*111195
+            check(along<=1200.05,"A preplanned return cannot overshoot beyond the turnaround point")
+            check(abs((p.longitude-returnPath.points[0].coordinate.longitude)*111195*cos(53 * .pi/180))<110,"The return stays inside its planned turn area without drifting off to the side")
+        }
+        for route in [1500.0,1800,2100] {
+            check(simd_dot(returnRail.sample(routeDistance:route).direction,SIMD2<Double>(0,1))>cos(15 * .pi/180),"After a return, the camera exits aligned with the outbound route leg")
         }
         print("Corner separation: drone \(droneGap)m, previous gliding rail \(oldGap)m")
         let tiny=try make([point(0,0),point(0,-0.6),point(0,0)])
