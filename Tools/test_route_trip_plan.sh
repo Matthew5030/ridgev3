@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+RIDGE_PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+RIDGE_TEST_BUILD=$(mktemp -d "${TMPDIR:-/tmp}/ridge-trip-plan.XXXXXX")
+trap 'rm -rf "$RIDGE_TEST_BUILD"' EXIT HUP INT TERM
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+xcrun swiftc -swift-version 6 -O -parse-as-library \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/Models.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptiveTerrain.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/AdaptiveArea.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/CartographyAtlas.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/TileGrid.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/TerrainBudget.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteEngine.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteTripPlan.swift" \
+  "$RIDGE_PROJECT_ROOT/Tests/RouteTripPlanTests.swift" \
+  -o "$RIDGE_TEST_BUILD/RouteTripPlanTests"
+"$RIDGE_TEST_BUILD/RouteTripPlanTests"

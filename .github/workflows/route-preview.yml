@@ -6,6 +6,7 @@ on:
       - 'ridge v3/**'
       - 'Tests/**'
       - 'Tools/test_world_*.sh'
+      - 'Tools/test_route_trip_plan.sh'
       - '.github/workflows/route-preview.yml'
 
 permissions:
@@ -16,6 +17,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  walk-planning:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Walking estimates, itineraries, checklist persistence and route sorting
+        run: sh Tools/test_route_trip_plan.sh
   camera-and-playback:
     runs-on: macos-15
     timeout-minutes: 15

@@ -879,9 +879,10 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
             for index in redoStack.indices where redoStack[index].id == updated.id { redoStack[index].name = updated.name }
         }
     }
-    func updateNotes(_ text: String) {
+    func updateNotes(_ text: String, for target: RidgeRoute? = nil) {
         guard !isRouting else { toast("Wait for the current route change to finish before saving notes."); return }
-        guard var route = activeRoute else { return }
+        guard let id = target?.id ?? activeRoute?.id,
+              var route = activeRoute?.id == id ? activeRoute : routes.first(where: { $0.id == id }) else { return }
         route.notes = String(text.prefix(20_000)); route.modifiedAt = Date()
         isRouting = true
         Task {
@@ -899,6 +900,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
             defer { isRouting = false }
             do {
                 try await routeStore.delete(id: route.id)
+                UserDefaults.standard.removeObject(forKey: RouteTripPlan.storageKey(for: route.id))
                 routes.removeAll { $0.id == route.id }
                 if activeRoute?.id == route.id { activeRoute = nil; editing = false; undoStack = []; redoStack = []; movingWaypoint = nil; insertingWaypoint = nil }
             }
