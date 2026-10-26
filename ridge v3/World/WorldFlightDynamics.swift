@@ -47,18 +47,20 @@ enum WorldFlightTurn {
         let rollRate:Double
         let acceleration:Double
         let smoothingDistance:Double
-        // A steep coordinated bank lets a tight bend retain momentum. These
-        // are cinematic manoeuvre limits, not an aircraft performance model.
-        static let cinematic=Self(lateralAcceleration:12,yawRate:0.65,rollRate:0.60,acceleration:12,smoothingDistance:12)
-        static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20)
+        let bankResponseAcceleration:Double
+        // Map-scale FPV needs quick, local manoeuvres. Bank still follows the
+        // actual turn, with a cinematic response scale rather than literal
+        // Earth-gravity aircraft limits at the 600 km/h preview pace.
+        static let cinematic=Self(lateralAcceleration:100,yawRate:1.1,rollRate:1.05,acceleration:40,smoothingDistance:6,bankResponseAcceleration:64)
+        static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20,bankResponseAcceleration:9.81)
     }
-    /// Signed normal acceleration in the horizontal flight plane. No bank
-    /// clamp or independent lag: the prepared pace bounds the actual turn.
-    static func coordinatedBank(velocity:SIMD3<Double>,acceleration:SIMD3<Double>)->Float {
+    /// Map actual normal acceleration to a coordinated bank. The response
+    /// scale is shared by preparation and steering; no independent roll lag.
+    static func coordinatedBank(velocity:SIMD3<Double>,acceleration:SIMD3<Double>,responseAcceleration:Double=9.81)->Float {
         let speed=hypot(velocity.x,velocity.z)
         guard speed>0.00001 else { return 0 }
         let lateral=(velocity.x*acceleration.z-velocity.z*acceleration.x)/speed
-        return Float(-atan(lateral/9.81))
+        return Float(-atan(lateral/responseAcceleration))
     }
     static func maximumBank(overview:Double)->Double { (18-6*min(1,max(0,overview))) * .pi/180 }
     static func bank(curvature:Double,speed:Double,overview:Double)->Float {
@@ -156,7 +158,7 @@ struct WorldFlightGlide {
         let direction=simd_length_squared(velocity)>0.000001 ? SIMD3<Float>(simd_normalize(velocity)) : simd_normalize(reference.pose.look-reference.pose.eye)
         let point=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         var result=reference
-        result.pose = .init(eye:eye,look:eye+direction*80,focus:point,bank:reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:velocity,acceleration:acceleration))
+        result.pose = .init(eye:eye,look:eye+direction*80,focus:point,bank:reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:velocity,acceleration:acceleration,responseAcceleration:reference.bankResponseAcceleration))
         result.velocity=SIMD3<Float>(velocity);result.acceleration=SIMD3<Float>(acceleration);result.speed=simd_length(velocity)
         result.heightAboveGround+=offset.y;result.cameraPoint=point
         return result

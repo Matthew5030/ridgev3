@@ -138,6 +138,7 @@ struct WorldFlightPlan {
         var fieldOfView=WorldRouteTour.fieldOfView
         var acceleration=SIMD3<Float>.zero
         var movementAligned=false
+        var bankResponseAcceleration=9.81
     }
     /// Convert both eye and velocity together when streaming changes the scene
     /// origin. Steering state stays in the immutable plan frame.
@@ -183,6 +184,7 @@ struct WorldFlightPlan {
     let routeFraming:Bool
     let adaptiveFraming:Bool
     let movementAligned:Bool
+    let bankResponseAcceleration:Double
     private var keys:[Key]
     private var segments:[Segment]
     private var lookSegments:[Segment]=[]
@@ -195,6 +197,7 @@ struct WorldFlightPlan {
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
         self.routeFraming=routeFraming;self.adaptiveFraming=adaptiveFraming
         self.movementAligned=movementAligned
+        bankResponseAcceleration=movementAligned ? (turnLimits ?? (reduceMotion ? .gentle : .cinematic)).bankResponseAcceleration : 9.81
         var result:[Key]=[],time=0.0,lastTravel=0.0,lastSpeed=0.0
         var minimumHeights:[Double]=[]
         let desiredSpacing=max(corridor.length/40000,min(3,max(0.5,cruiseSpeed*0.12)))
@@ -384,7 +387,7 @@ struct WorldFlightPlan {
         }
     }
     /// Prepare a coordinated-turn speed envelope in actual playback seconds.
-    /// v² κ is lateral acceleration; bank is atan(v² κ / g). Curvature change
+    /// v² κ is lateral acceleration; bank uses the chosen response scale. Curvature change
     /// also limits pace, so rolling into a bend takes time. Braking is planned
     /// backwards along the whole journey, never discovered by the live camera.
     private static func retimeFlight(_ keys:inout [Key],cruiseSpeed:Double,limits:WorldFlightTurn.Limits) throws {
@@ -403,7 +406,7 @@ struct WorldFlightPlan {
             let change=abs(curvature[b]-curvature[a])/max(0.001,distance[b]-distance[a])
             let k=abs(curvature[i])
             let lateral=sqrt(limits.lateralAcceleration/max(0.0000001,k)),angular=limits.yawRate/max(0.0000001,k)
-            let roll=pow(9.81*(limits.rollRate*0.45)/max(0.000000001,change),1.0/3)
+            let roll=pow(limits.bankResponseAcceleration*(limits.rollRate*0.45)/max(0.000000001,change),1.0/3)
             return pow(min(cruise,lateral,angular,roll),2)
         }
         let spacing=distance.last!/Double(n-1)
@@ -457,7 +460,7 @@ struct WorldFlightPlan {
                     let horizontal=SIMD2(v.x,v.z),acceleration=SIMD2(a.x,a.z),speed=simd_length(horizontal)
                     let cross=horizontal.x*acceleration.y-horizontal.y*acceleration.x
                     let lateral=cross/max(0.00001,speed),rate=cross/max(0.00001,speed*speed)
-                    let bank=atan(-lateral/9.81),time=(keys[i].time+(keys[i+1].time-keys[i].time)*fraction)/scale
+                    let bank=atan(-lateral/limits.bankResponseAcceleration),time=(keys[i].time+(keys[i+1].time-keys[i].time)*fraction)/scale
                     var factor=max(1,sqrt(abs(lateral)/(limits.lateralAcceleration*1.1)),abs(rate)/(limits.yawRate*1.1))
                     if let previous=last,time>previous.time+0.000001 {
                         let rollRate=abs(bank-previous.bank)/(time-previous.time)
@@ -683,7 +686,7 @@ struct WorldFlightPlan {
         let bank:Float
         if movementAligned {
             let scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed
-            bank=reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:motion.velocity*scale,acceleration:motion.acceleration*scale*scale)
+            bank=reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:motion.velocity*scale,acceleration:motion.acceleration*scale*scale,responseAcceleration:bankResponseAcceleration)
         } else { bank=Float(left.bank+(right.bank-left.bank)*Double(t)) }
         let cameraPoint=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         let routeDistance=left.route+(right.route-left.route)*Double(t)
@@ -708,6 +711,6 @@ struct WorldFlightPlan {
         }
         let ground=left.ground+(right.ground-left.ground)*Double(t)
         return Sample(pose:.init(eye:eye,look:routeTarget ?? eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
-                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t),acceleration:acceleration,movementAligned:movementAligned)
+                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t),acceleration:acceleration,movementAligned:movementAligned,bankResponseAcceleration:bankResponseAcceleration)
     }
 }

@@ -53,7 +53,7 @@ import simd
                 check(simd_dot(view,simd_normalize(difference))>0.9999,"\(name): visible heading follows measured displacement")
                 let v=SIMD3<Double>(sample.velocity),a=SIMD3<Double>(sample.acceleration),horizontal=hypot(v.x,v.z)
                 let lateral=(v.x*a.z-v.z*a.x)/max(0.00001,horizontal)
-                check(abs(tan(Double(sample.pose.bank))*9.81+lateral)<0.0001,"\(name): bank and actual centripetal acceleration agree")
+                check(abs(tan(Double(sample.pose.bank))*sample.bankResponseAcceleration+lateral)<0.001,"\(name): cinematic bank agrees with the actual turn and shared response scale")
                 let before=plan.sample(time:time-0.001*scale),after=plan.sample(time:time+0.001*scale)
                 let measuredAcceleration=SIMD3<Double>(after.velocity-before.velocity)*(scale/0.002)
                 let derivativeError=simd_distance(measuredAcceleration,a)
@@ -72,13 +72,16 @@ import simd
                 if abs(change)>0.02 {
                     turns+=1;if Double(sample.pose.bank)*change<0 { correctTurns+=1 }
                 }
+                if abs(sample.pose.bank)>0.55 {
+                    check(abs(change)>0.20,"\(name): a pronounced bank produces an immediate, substantial change of travel direction")
+                }
                 rig.fly(on:camera,pose:.init(eye:sample.pose.eye,look:sample.pose.look,fieldOfView:sample.fieldOfView,bank:sample.pose.bank))
                 let column=camera.simdWorldTransform.columns.2,front = -SIMD3(column.x,column.y,column.z)
                 check(simd_dot(front,velocity)>0.99999,"\(name): rendered camera faces the movement, including while banked")
                 let upColumn=camera.simdWorldTransform.columns.1,up=SIMD3(upColumn.x,upColumn.y,upColumn.z)
                 let right=simd_normalize(simd_cross(SIMD3<Float>(0,1,0),-front)),levelUp=simd_cross(-front,right)
                 let renderedBank=atan2(-simd_dot(up,right),simd_dot(up,levelUp))
-                check(abs(renderedBank-sample.pose.bank)<0.0001,"\(name): rendered bank agrees with the trajectory's turn force")
+                check(abs(renderedBank-sample.pose.bank)<0.0001,"\(name): rendered bank agrees with the trajectory's prepared turn cue")
                 if tick%71==0 {
                     let again=plan.sample(time:time)
                     check(again.pose.eye==reference.pose.eye && again.pose.bank==reference.pose.bank && again.pose.look==reference.pose.look,"\(name): scrub/replay uses deterministic prepared motion")
@@ -86,21 +89,25 @@ import simd
                 }
                 previous=sample
             }
-            check(maxBank<55 * Double.pi/180 && maxLateral<13.3,"\(name): tighter turns use deeper coordinated banks within the manoeuvre envelope")
-            check(maxRollRate<0.62,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
-            check(maxYawRate<0.72,"\(name): tighter turns retain bounded continuous heading")
-            check(maxAcceleration<13,"\(name): acceleration and braking stay inside the faster pace envelope")
+            check(maxBank<62 * Double.pi/180 && maxLateral<111,"\(name): tighter turns use bounded cinematic banks within the manoeuvre envelope")
+            check(maxRollRate<1.08,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
+            check(maxYawRate<1.22,"\(name): tighter turns retain bounded continuous heading")
+            check(maxAcceleration<43,"\(name): acceleration and braking stay inside the faster pace envelope")
             check(minSpeed>0.5,"\(name): turn keeps moving forward")
             check(turns==0 || Double(correctTurns)/Double(turns)>0.99,"\(name): bank consistently agrees with the actual turn")
             if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
             if name=="small corrections" { check(maxBank<0.01 && variation<0.1,"Discarded path noise cannot flap the camera") }
             if name=="tight return" || name=="bend" || name=="hilly bends" {
                 let gentle=try make(points,hilly:name=="hilly bends",limits:.gentle)
-                check(plan.duration<gentle.duration*0.7,"\(name): the trip is materially faster than the previously accepted slow build")
+                check(plan.duration<gentle.duration*0.4,"\(name): cinematic flight does not stretch the journey into slow motion")
                 check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank")
             }
             if name=="tight return" {
-                check(minSpeed>20 && maxYawRate>0.4,"A tight return carries momentum and turns more sharply instead of crawling around the corner")
+                check(minSpeed>48 && maxYawRate>0.8,"A tight return carries momentum and turns decisively instead of crawling around the corner")
+            }
+            if name=="bend" {
+                let approach=plan.sample(time:plan.time(at:1000)),exit=plan.sample(time:plan.time(at:2200))
+                check(min(approach.speed,exit.speed)*scale>150,"The drone carries cruise into the approach and accelerates promptly out of the turn")
             }
             print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError)")
         }
@@ -139,7 +146,7 @@ import simd
                 if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
                 maxBank=max(maxBank,Double(abs(sample.pose.bank)))
             }
-            check(maxRate<0.8 && maxBank<58 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            check(maxRate<1.25 && maxBank<64 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
             print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
         }
         let quiet=try make(fixtures[3].1,quiet:true)
@@ -152,6 +159,6 @@ import simd
         check(converted.movementAligned && simd_dot(simd_normalize(converted.pose.look-converted.pose.eye),simd_normalize(converted.velocity))>0.99999,"Scene rebasing cannot separate travel from viewing direction")
         print("\(checks) coordinated flight checks, \(failures.count) failures")
         if !failures.isEmpty { throw NSError(domain:failures.sorted().joined(separator:"; "),code:1) }
-        print("PASS coordinated trajectory, actual bank physics, no sideslip, anticipatory pace, steering and Reduce Motion")
+        print("PASS coordinated trajectory, turn-coherent cinematic bank, no sideslip, anticipatory pace, steering and Reduce Motion")
     }
 }
