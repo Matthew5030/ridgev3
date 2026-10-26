@@ -60,6 +60,7 @@ import simd
         let tour=WorldRouteTour()
         let route=RidgeRoute(name:"Preview test",regionID:"test",segments:[RouteSegment(points:path.points,mode:"track")])
         try check(tour.open(route:route) && tour.isPresented && tour.isPlaying,"Preview opens playing")
+        try check(tour.corridor?.style == .drone,"Production preview opens with the single FPV drone flight recipe")
         try check(tour.isEntering && !tour.canAdvance && !tour.isTerrainReady,"The entry animation holds the route clock while terrain prepares")
         tour.isTerrainReady=true
         try check(!tour.canAdvance,"Terrain readiness alone cannot run the journey behind the intro")

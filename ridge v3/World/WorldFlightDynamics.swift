@@ -48,11 +48,18 @@ enum WorldFlightTurn {
         let acceleration:Double
         let smoothingDistance:Double
         let bankResponseAcceleration:Double
+        let pitchRate:Double
         // Map-scale FPV needs quick, local manoeuvres. Bank still follows the
         // actual turn, with a cinematic response scale rather than literal
         // Earth-gravity aircraft limits at the 600 km/h preview pace.
-        static let cinematic=Self(lateralAcceleration:100,yawRate:1.1,rollRate:1.05,acceleration:40,smoothingDistance:6,bankResponseAcceleration:64)
-        static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20,bankResponseAcceleration:9.81)
+        static let cinematic=Self(lateralAcceleration:120,yawRate:1.8,rollRate:1.6,acceleration:60,smoothingDistance:4,bankResponseAcceleration:64,pitchRate:0.7)
+        static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20,bankResponseAcceleration:9.81,pitchRate:0.2)
+    }
+    static func pitchRate(velocity:SIMD3<Double>,acceleration:SIMD3<Double>)->Double {
+        let horizontal=hypot(velocity.x,velocity.z)
+        guard horizontal>0.00001 else { return 0 }
+        let along=(velocity.x*acceleration.x+velocity.z*acceleration.z)/horizontal
+        return (acceleration.y*horizontal-velocity.y*along)/max(0.000001,simd_length_squared(velocity))
     }
     /// Map actual normal acceleration to a coordinated bank. The response
     /// scale is shared by preparation and steering; no independent roll lag.

@@ -33,12 +33,12 @@ import simd
                 try check(sample.heightAboveGround>tour.clearance-0.5 && sample.heightAboveGround<tour.clearance+WorldRouteTour.fpvCornerLift+4,"FPV stays low on straights and makes a bounded anticipatory lift over busy turns")
                 let v=SIMD2(sample.velocity.x,sample.velocity.z),gaze=SIMD2(sample.pose.look.x-sample.pose.eye.x,sample.pose.look.z-sample.pose.eye.z)
                 try check(simd_dot(simd_normalize(v),simd_normalize(gaze))>0.99999,"FPV horizontal heading stays aligned to actual forward travel")
-                try check(simd_length(v)>Float(plan.cruiseSpeed*0.7),"Switchbacks cannot stall or trap the FPV camera")
+                try check(Double(simd_length(v))*(600/3.6)/plan.cruiseSpeed>15,"Switchbacks cannot stall or trap the FPV drone")
             }
             if name=="switchbacks" {
                 let middle=plan.sample(time:plan.duration*0.5),heading=simd_normalize(SIMD2(middle.velocity.x,middle.velocity.z))
                 try check(simd_dot(heading,SIMD2<Float>(0,-1))>0.98,"A cluster of 80 m switchbacks is crossed in one forward pass")
-                try check(middle.heightAboveGround>tour.clearance+3,"FPV gains height over the skipped switchback cluster")
+                try check(abs(middle.heightAboveGround-tour.clearance)<0.1,"The drone cuts small switchbacks without a manufactured height swoop")
             }
             var slow=WorldFlightPlayback(),fast=WorldFlightPlayback();slow.reset(speed:30/3.6);fast.reset(speed:240/3.6)
             var a=0.0,b=0.0

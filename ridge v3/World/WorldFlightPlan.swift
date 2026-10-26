@@ -192,16 +192,17 @@ struct WorldFlightPlan {
     var count:Int { keys.count }
 
     init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,terrain:WorldFlightTerrain,frame:GeoBounds,cruiseSpeed:Double,reduceMotion:Bool,
-         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,movementAligned:Bool=false,turnLimits:WorldFlightTurn.Limits? = nil,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,movementAligned requestedAlignment:Bool=false,turnLimits:WorldFlightTurn.Limits? = nil,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+        let drone=corridor.style == .drone,movementAligned=requestedAlignment || corridor.style == .drone
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
-        self.routeFraming=routeFraming;self.adaptiveFraming=adaptiveFraming
+        self.routeFraming=routeFraming && !drone;self.adaptiveFraming=adaptiveFraming && !drone
         self.movementAligned=movementAligned
         bankResponseAcceleration=movementAligned ? (turnLimits ?? (reduceMotion ? .gentle : .cinematic)).bankResponseAcceleration : 9.81
         var result:[Key]=[],time=0.0,lastTravel=0.0,lastSpeed=0.0
         var minimumHeights:[Double]=[]
         let desiredSpacing=max(corridor.length/40000,min(3,max(0.5,cruiseSpeed*0.12)))
-        let intervals=max(2,Int(ceil(corridor.length/desiredSpacing))),spacing=corridor.length/Double(intervals)
+        let intervals=max(drone ? 32 : 2,Int(ceil(corridor.length/desiredSpacing))),spacing=corridor.length/Double(intervals)
         let stations=(0...intervals).map { Double($0)*spacing }
         for (i,travel) in stations.enumerated() {
             if i%128==0 { try Task.checkCancellation() }
@@ -216,14 +217,16 @@ struct WorldFlightPlan {
             let ground=terrain.elevation(rail.point)
             let uv=frame.uv(point)
             let eye=SIMD3((uv.u-0.5)*frame.widthMeters,Double(ground),(uv.v-0.5)*frame.depthMeters)
-            minimumHeights.append(Double(terrain.clearanceElevation(rail.point))+self.clearance+max(0,cornerLift)*rail.overview)
+            minimumHeights.append(Double(terrain.clearanceElevation(rail.point))+self.clearance+(drone ? 0 : max(0,cornerLift)*rail.overview))
             result.append(Key(time:time,route:rail.routeDistance,eye:eye,ground:Double(ground),overview:rail.overview))
+            if drone { result[result.count-1].fieldOfView=reduceMotion ? WorldRouteTour.fieldOfView : 78 }
             lastTravel=travel;lastSpeed=speed
         }
-        // Anticipate hills with a broad upper parabolic envelope. Its 1.4 km
-        // vertical radius bridges short hollows without lifting the whole route
-        // to the highest summit. This distance transform is linear in key count.
-        let count=minimumHeights.count,penalty=spacing*spacing/(2*1400)
+        // The drone follows a closer terrain envelope; the older gliding
+        // choreography keeps its broad hill anticipation. Both bridge small
+        // hollows with one prepared, continuous height curve.
+        let verticalRadius=drone ? 400.0 : 1400.0
+        let count=minimumHeights.count,penalty=spacing*spacing/(2*verticalRadius)
         var support=Array(repeating:0,count:count),boundary=Array(repeating:Double.infinity,count:count+1),k=0
         boundary[0] = -.infinity
         for q in 1..<count {
@@ -245,7 +248,7 @@ struct WorldFlightPlan {
         // spline amplifies tiny height errors into acceleration and pitch noise.
         // Four bounded box convolutions form a C2 smoothing kernel. Finite
         // support avoids the long filter tails that can lift distant valleys.
-        let radius=max(1,Int(ceil(120/spacing))),window=Double(radius*2+1)
+        let radius=max(1,Int(ceil((drone ? 60 : 120)/spacing))),window=Double(radius*2+1)
         for _ in 0..<4 {
             try Task.checkCancellation()
             var sums=Array(repeating:0.0,count:count+1)
@@ -261,7 +264,7 @@ struct WorldFlightPlan {
         // Every control contributing to a band includes that band's maximum;
         // positive spline weights guarantee the correction clears its samples.
         let deficits=zip(minimumHeights,heights).map { max(0,$0-$1) }
-        let bandWidth=max(200,spacing),bandCount=max(1,Int(ceil(corridor.length/bandWidth)))
+        let bandWidth=max(drone ? 120 : 200,spacing),bandCount=max(1,Int(ceil(corridor.length/bandWidth)))
         var peaks=Array(repeating:0.0,count:bandCount)
         for i in stations.indices {
             let band=min(bandCount-1,Int(stations[i]/bandWidth))
@@ -289,7 +292,7 @@ struct WorldFlightPlan {
                 result[i].eye.y=max(Double(result[i].ground)+5,result[i].eye.y+offset*weight)
             }
         }
-        if cornerLift>0 { Self.retime(&result,corridor:corridor,speed:cruiseSpeed) }
+        if cornerLift>0 && !drone { Self.retime(&result,corridor:corridor,speed:cruiseSpeed) }
         // Solve one C2 cubic trajectory through the timed positions. Estimating
         // derivatives separately and then fitting a higher-order interpolant
         // introduced false curvature and alternating banks between close keys.
@@ -302,7 +305,7 @@ struct WorldFlightPlan {
         var terrainGrades:[Double]=[]
         var terrainInfluence:[Double]=[]
         var framingAmount=Array(repeating:0.0,count:result.count)
-        if routeFraming {
+        if routeFraming && !drone {
             framingTargets=result.indices.map { i in
                 let point=terrain.subject(at:stations[i]),uv=frame.uv(point.coordinate)
                 var target=SIMD3((uv.u-0.5)*frame.widthMeters,point.elevation ?? result[i].ground,(uv.v-0.5)*frame.depthMeters)
@@ -401,13 +404,18 @@ struct WorldFlightPlan {
             return (v.x*a.y-v.y*a.x)/max(0.0000001,pow(simd_length(v),3))
         }
         let cruise=WorldRouteTour.previewCruiseSpeed/3.6
+        let fullCurvature=keys.map { key in
+            simd_length(simd_cross(key.velocity,key.acceleration))/max(0.0000001,pow(simd_length(key.velocity),3))
+        }
+        let pitchCurvature=keys.map { abs(WorldFlightTurn.pitchRate(velocity:$0.velocity,acceleration:$0.acceleration)) }
         var caps=keys.indices.map { i -> Double in
             let a=max(0,i-1),b=min(n-1,i+1)
             let change=abs(curvature[b]-curvature[a])/max(0.001,distance[b]-distance[a])
             let k=abs(curvature[i])
-            let lateral=sqrt(limits.lateralAcceleration/max(0.0000001,k)),angular=limits.yawRate/max(0.0000001,k)
-            let roll=pow(limits.bankResponseAcceleration*(limits.rollRate*0.45)/max(0.000000001,change),1.0/3)
-            return pow(min(cruise,lateral,angular,roll),2)
+            let lateral=sqrt(limits.lateralAcceleration/max(0.0000001,k)),angular=limits.yawRate/max(0.0000001,fullCurvature[i])
+            let roll=pow(limits.bankResponseAcceleration*limits.rollRate/max(0.000000001,change),1.0/3)
+            let pitch=limits.pitchRate/max(0.0000001,pitchCurvature[i])
+            return pow(min(cruise,lateral,angular,roll,pitch),2)
         }
         let spacing=distance.last!/Double(n-1)
         let radius=max(1,Int(ceil(limits.smoothingDistance/max(0.001,spacing))))
@@ -459,9 +467,11 @@ struct WorldFlightPlan {
                     let sample=segment.sample(fraction),v=sample.velocity*scale,a=sample.acceleration*scale*scale
                     let horizontal=SIMD2(v.x,v.z),acceleration=SIMD2(a.x,a.z),speed=simd_length(horizontal)
                     let cross=horizontal.x*acceleration.y-horizontal.y*acceleration.x
-                    let lateral=cross/max(0.00001,speed),rate=cross/max(0.00001,speed*speed)
+                    let lateral=cross/max(0.00001,speed)
+                    let rate=simd_length(simd_cross(v,a))/max(0.00001,simd_length_squared(v))
                     let bank=atan(-lateral/limits.bankResponseAcceleration),time=(keys[i].time+(keys[i+1].time-keys[i].time)*fraction)/scale
                     var factor=max(1,sqrt(abs(lateral)/(limits.lateralAcceleration*1.1)),abs(rate)/(limits.yawRate*1.1))
+                    factor=max(factor,abs(WorldFlightTurn.pitchRate(velocity:v,acceleration:a))/limits.pitchRate)
                     if let previous=last,time>previous.time+0.000001 {
                         let rollRate=abs(bank-previous.bank)/(time-previous.time)
                         factor=max(factor,pow(rollRate/limits.rollRate,1.0/3))

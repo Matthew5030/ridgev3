@@ -4,6 +4,8 @@ import simd
 /// A separate, metre-based camera rail. Route progress remains attached to the
 /// original line, while flight can cut a bend or overshoot a tight turnaround.
 struct WorldFlightCorridor {
+    enum Style { case gliding,drone }
+    let style:Style
     struct Sample {
         var point: GeoPoint
         var direction: SIMD2<Double>
@@ -22,8 +24,10 @@ struct WorldFlightCorridor {
     var length: Double { knots.last?.flight ?? 0 }
     var routeLength: Double { knots.last?.route ?? 0 }
 
-    init(path: WorldRouteTourPath, tolerance:Double=100,routeCentred:Bool=false) {
-        let tolerance=max(5,min(500,tolerance))
+    init(path: WorldRouteTourPath, tolerance:Double=100,routeCentred:Bool=false,style:Style = .gliding) {
+        self.style=style
+        let drone=style == .drone
+        let tolerance=drone ? 140 : max(5,min(500,tolerance))
         origin=path.points[0].coordinate
         longitudeScale=max(0.01,cos(origin.latitude * .pi/180))
         let origin=self.origin,scale=longitudeScale
@@ -100,9 +104,23 @@ struct WorldFlightCorridor {
         // Several overlapping hiking switchbacks in one narrow footprint are
         // one survey sweep, not a sequence of airplane turnarounds. Retain the
         // original ordered route separately; only its camera rail is condensed.
-        let narrowBundle=tolerance>100 && reach>50 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(tolerance*0.6,reach*0.3) }
+        let narrowBundle=(tolerance>100 || drone) && reach>50 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(tolerance*0.6,reach*0.3) }
         let elongatedReturn=(oneReturn || narrowBundle) && simd_length(end)<min(30,reach*0.2) && reach>0.5 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(80,max(3,tolerance*0.75)) }
-        if elongatedReturn && (tolerance<100 || routeCentred) {
+        if elongatedReturn && drone {
+            // A direct outbound line, one local hairpin, then a direct exit.
+            // No oval or sideways sweep along the full length of the route.
+            let side=SIMD2(-axis.y,axis.x),r=min(40,reach*0.2),run=reach-r
+            let peakRoute=path.distances[peak]
+            line(axis*run-side*r,peakRoute*run/reach)
+            let count=max(24,Int(ceil(.pi*r)))
+            for i in 1...count {
+                let angle=Double(i)/Double(count)*Double.pi,along=run+r*sin(angle)
+                let p=axis*along-side*(r*cos(angle))
+                let route=angle<=Double.pi/2 ? peakRoute*along/reach : peakRoute+(1-along/reach)*(path.length-peakRoute)
+                append(p,route)
+            }
+            line(end,path.length)
+        } else if elongatedReturn && (tolerance<100 || routeCentred) {
             // Follow both legs, with a small racetrack turnaround. An oval of
             // the entire journey starts sideways and desynchronizes progress.
             let side=SIMD2(-axis.y,axis.x),r=min(routeCentred ? 60 : tolerance,max(1,reach*0.2)),run=reach-r
@@ -136,7 +154,23 @@ struct WorldFlightCorridor {
                 guard before>0.01,after>0.01 else { continue }
                 let a=incoming/before,b=outgoing/after,dot=simd_dot(a,b)
                 if dot<0.94 { bends.append(path.distances[index]) }
-                let radius=min(tolerance < 100 ? tolerance*1.8 : (dot < -0.65 ? 320 : 240),min(before,after)*0.44)
+                if drone && dot < -0.65 {
+                    let axis=simd_normalize(a-b),cross=a.x*b.y-a.y*b.x
+                    let side=SIMD2(-axis.y,axis.x)*(cross < -0.0001 ? -1.0 : 1.0)
+                    let r=min(40,min(before,after)*0.24),center=corner-axis*r
+                    let start=path.distances[index]-r*(path.distances[index]-path.distances[indices[j-1]])/before
+                    let end=path.distances[index]+r*(path.distances[indices[j+1]]-path.distances[index])/after
+                    line(center-side*r,start)
+                    let count=max(24,Int(ceil(.pi*r)))
+                    for i in 1...count {
+                        let t=Double(i)/Double(count),angle=t*Double.pi
+                        let p=center-side*(r*cos(angle))+axis*(r*sin(angle))
+                        let route=t<=0.5 ? start+(path.distances[index]-start)*t*2 : path.distances[index]+(end-path.distances[index])*(t*2-1)
+                        append(p,route)
+                    }
+                    continue
+                }
+                let radius=min(drone ? 70 : (tolerance < 100 ? tolerance*1.8 : (dot < -0.65 ? 320 : 240)),min(before,after)*0.44)
                 let start=path.distances[index]-radius*(path.distances[index]-path.distances[indices[j-1]])/before
                 let end=path.distances[index]+radius*(path.distances[indices[j+1]]-path.distances[index])/after
                 let entry=corner-a*radius,exit=corner+b*radius
@@ -160,7 +194,7 @@ struct WorldFlightCorridor {
         // Fit the position itself across each straight/arc join. Four symmetric
         // box filters give a broad, smooth kernel without adding independent
         // heading or bank lag. Linear endpoint extension retains forward speed.
-        let raw=result,total=raw.last!.flight,count=max(2,Int(ceil(total/2)))
+        let raw=result,total=raw.last!.flight,count=max(drone ? 32 : 2,Int(ceil(total/2)))
         var uniform:[Knot]=[],cursor=0
         for i in 0...count {
             let distance=total*Double(i)/Double(count)
@@ -168,7 +202,7 @@ struct WorldFlightCorridor {
             let a=raw[cursor],b=raw[cursor+1],t=(distance-a.flight)/max(0.00001,b.flight-a.flight)
             uniform.append(Knot(position:a.position+(b.position-a.position)*t,route:a.route+(b.route-a.route)*t,flight:distance))
         }
-        let smoothing=tolerance>100 ? min(60,tolerance*0.2) : min(15,tolerance*0.5)
+        let smoothing=drone ? 6 : (tolerance>100 ? min(60,tolerance*0.2) : min(15,tolerance*0.5))
         let radius=max(1,Int(min(smoothing,total/30)/(total/Double(count))))
         var fitted=uniform.map(\.position)
         for _ in 0..<4 {
@@ -215,7 +249,7 @@ struct WorldFlightCorridor {
             let curvature=abs(turnCurvature(flightDistance:result[i].flight))
             // A relative pace curve keeps the speed control effective at every
             // setting. No hidden absolute corner cap can pin playback speed.
-            result[i].speed=tolerance<100 ? 1-0.60*min(1,curvature*35) : 1-0.18*min(1,curvature*180)
+            result[i].speed=drone ? 1 : (tolerance<100 ? 1-0.60*min(1,curvature*35) : 1-0.18*min(1,curvature*180))
         }
         knots=result
     }

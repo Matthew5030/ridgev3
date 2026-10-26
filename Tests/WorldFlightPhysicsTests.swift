@@ -25,7 +25,7 @@ import simd
             ("hilly bends",stride(from:0.0,through:6000.0,by:20).map { point(400*sin($0/500),-$0) })]
         let scale=(600/3.6)/25.0,dt=1.0/60
         func make(_ points:[RoutePoint],hilly:Bool=false,quiet:Bool=false,limits:WorldFlightTurn.Limits?=nil) throws -> WorldFlightPlan {
-            let path=WorldRouteTourPath(segments:[points])!,rail=WorldFlightCorridor(path:path,tolerance:160,routeCentred:true)
+            let path=WorldRouteTourPath(segments:[points])!,rail=WorldFlightCorridor(path:path,style:.drone)
             let distances=WorldFlightTerrain.distances(length:rail.length)
             let heights:[Float?]=distances.map { distance in
                 if hilly { return Float(300+300*sin(distance * Double.pi/6000)) }
@@ -39,7 +39,10 @@ import simd
             let began=Date(),plan=try make(points,hilly:name=="hilly bends"),preparation=Date().timeIntervalSince(began)
             var glide=WorldFlightGlide(),previous=plan.sample(time:0),lastBank=previous.pose.bank,lastYaw=0.0,lastRate=0.0
             var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0,maxDerivativeError=0.0
-            var correctTurns=0,turns=0
+            var correctTurns=0,turns=0,maxPitchRate=0.0
+            var lastPitch=atan2(Double(previous.velocity.y),Double(simd_length(SIMD2(previous.velocity.x,previous.velocity.z))))
+            var turnStart=Double.infinity,turnFinish=Double.infinity
+            let initialDirection=simd_normalize(SIMD2(previous.velocity.x,previous.velocity.z))
             let camera=SCNNode();camera.camera=SCNCamera();let rig=WorldCameraRig();rig.beginTour(on:camera)
             func yaw(_ v:SIMD3<Float>)->Double { atan2(Double(v.x),-Double(v.z)) }
             lastYaw=yaw(previous.velocity)
@@ -62,6 +65,12 @@ import simd
                 // cubic's jerk join are bounded independently of the bank math.
                 check(derivativeError<0.03,"\(name): bank uses acceleration measured from travel, with actual playback units")
                 let angle=yaw(sample.velocity),change=atan2(sin(angle-lastYaw),cos(angle-lastYaw))/dt
+                let pitch=atan2(v.y,horizontal)
+                maxPitchRate=max(maxPitchRate,abs(pitch-lastPitch)/dt);lastPitch=pitch
+                let deflection=Double(acos(min(1,max(-1,simd_dot(initialDirection,simd_normalize(SIMD2(sample.velocity.x,sample.velocity.z)))))))
+                if deflection>Double.pi/12 { turnStart=min(turnStart,time/scale) }
+                let finishAngle=(name=="tight return" ? 11.0 : 5.0)*Double.pi/12
+                if deflection>finishAngle { turnFinish=min(turnFinish,time/scale) }
                 lastYaw=angle;maxYawRate=max(maxYawRate,abs(change));variation+=abs(change-lastRate);lastRate=change
                 maxRollRate=max(maxRollRate,Double(abs(sample.pose.bank-lastBank))/dt);lastBank=sample.pose.bank
                 maxBank=max(maxBank,abs(Double(sample.pose.bank)));maxLateral=max(maxLateral,abs(lateral))
@@ -69,6 +78,8 @@ import simd
                 if tick>1 { maxAcceleration=max(maxAcceleration,Double(abs(simd_length(sample.velocity)-simd_length(previous.velocity)))/dt) }
                 check(sample.routeDistance>=previous.routeDistance,"\(name): ordered route progress is retained")
                 check(sample.heightAboveGround>9.7,"\(name): timing changes retain prepared terrain clearance")
+                check(sample.fieldOfView==78,"\(name): drone uses a fixed immersive lens without automatic pullback")
+                if name != "hilly bends" { check(abs(sample.heightAboveGround-10)<0.1,"\(name): flat-ground drone flight has no artificial corner climb") }
                 if abs(change)>0.02 {
                     turns+=1;if Double(sample.pose.bank)*change<0 { correctTurns+=1 }
                 }
@@ -89,10 +100,11 @@ import simd
                 }
                 previous=sample
             }
-            check(maxBank<62 * Double.pi/180 && maxLateral<111,"\(name): tighter turns use bounded cinematic banks within the manoeuvre envelope")
-            check(maxRollRate<1.08,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
-            check(maxYawRate<1.22,"\(name): tighter turns retain bounded continuous heading")
-            check(maxAcceleration<43,"\(name): acceleration and braking stay inside the faster pace envelope")
+            check(maxBank<66 * Double.pi/180 && maxLateral<133,"\(name): tighter turns use bounded cinematic banks within the manoeuvre envelope")
+            check(maxRollRate<1.65,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
+            check(maxYawRate<1.99,"\(name): tighter turns retain bounded continuous heading")
+            check(maxAcceleration<64,"\(name): acceleration and braking stay inside the faster pace envelope")
+            check(maxPitchRate<0.73,"\(name): terrain pitch remains calmer than the fast banked turns")
             check(minSpeed>0.5,"\(name): turn keeps moving forward")
             check(turns==0 || Double(correctTurns)/Double(turns)>0.99,"\(name): bank consistently agrees with the actual turn")
             if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
@@ -103,13 +115,15 @@ import simd
                 check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank")
             }
             if name=="tight return" {
-                check(minSpeed>48 && maxYawRate>0.8,"A tight return carries momentum and turns decisively instead of crawling around the corner")
+                check(minSpeed>30 && maxYawRate>1.2,"A local drone hairpin carries forward momentum through a decisive direction reversal")
+                check(turnFinish-turnStart<2.6,"A drone hairpin turns locally rather than making a long aircraft sweep")
             }
             if name=="bend" {
                 let approach=plan.sample(time:plan.time(at:1000)),exit=plan.sample(time:plan.time(at:2200))
                 check(min(approach.speed,exit.speed)*scale>150,"The drone carries cruise into the approach and accelerates promptly out of the turn")
+                check(turnFinish-turnStart<1.5,"The central part of a right-angle turn is a quick drone manoeuvre")
             }
-            print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError)")
+            print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError); pitch rate \(maxPitchRate); turn window \(turnFinish-turnStart)s")
         }
         let straight=try make([point(0,0),point(0,-12000)])
         func steer(_ hz:Double)->WorldFlightPlan.Sample {
@@ -146,7 +160,7 @@ import simd
                 if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
                 maxBank=max(maxBank,Double(abs(sample.pose.bank)))
             }
-            check(maxRate<1.25 && maxBank<64 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            check(maxRate<1.85 && maxBank<68 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
             print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
         }
         let quiet=try make(fixtures[3].1,quiet:true)
@@ -157,6 +171,25 @@ import simd
         let sample=straight.sample(time:straight.duration*0.4),output=GeoBounds(minLatitude:52.98,minLongitude:-4.03,maxLatitude:53.04,maxLongitude:-3.97)
         let converted=WorldFlightPlan.converted(sample,from:frame,to:output)
         check(converted.movementAligned && simd_dot(simd_normalize(converted.pose.look-converted.pose.eye),simd_normalize(converted.velocity))>0.99999,"Scene rebasing cannot separate travel from viewing direction")
+        let bendPath=WorldRouteTourPath(segments:[fixtures[2].1])!
+        let droneRail=WorldFlightCorridor(path:bendPath,style:.drone),oldRail=WorldFlightCorridor(path:bendPath,tolerance:160,routeCentred:true)
+        let corner=bendPath.sample(at:1600).coordinate
+        let droneGap=droneRail.sample(routeDistance:1600).point.distance(to:corner),oldGap=oldRail.sample(routeDistance:1600).point.distance(to:corner)
+        check(droneGap<40 && droneGap<oldGap*0.6,"The drone geometry takes a compact corner instead of the old broad arc")
+        let returnPath=WorldRouteTourPath(segments:[fixtures[3].1])!,returnRail=WorldFlightCorridor(path:returnPath,style:.drone)
+        let direction=returnRail.sample(flightDistance:returnRail.length*0.1).direction
+        for fraction in [0.2,0.3,0.35] {
+            check(simd_dot(direction,returnRail.sample(flightDistance:returnRail.length*fraction).direction)>0.999999,"Outbound leg is a direct line without a long sideways racetrack sweep")
+        }
+        print("Corner separation: drone \(droneGap)m, previous gliding rail \(oldGap)m")
+        let tiny=try make([point(0,0),point(0,-0.6),point(0,0)])
+        var previousDistance=0.0
+        for i in 0...200 {
+            let sample=tiny.sample(time:tiny.duration*Double(i)/200)
+            check(sample.routeDistance>=previousDistance && sample.routeDistance>=0,"A tiny closed route cannot acquire negative or reversed progress")
+            check(sample.velocity.x.isFinite && simd_length(sample.velocity)>0.00001,"A tiny drone hairpin retains a finite forward trajectory")
+            previousDistance=sample.routeDistance
+        }
         print("\(checks) coordinated flight checks, \(failures.count) failures")
         if !failures.isEmpty { throw NSError(domain:failures.sorted().joined(separator:"; "),code:1) }
         print("PASS coordinated trajectory, turn-coherent cinematic bank, no sideslip, anticipatory pace, steering and Reduce Motion")

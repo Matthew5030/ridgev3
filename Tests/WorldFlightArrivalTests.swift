@@ -9,7 +9,7 @@ import simd
         func point(_ x:Double,_ z:Double)->RoutePoint { .init(coordinate:.init(latitude:53-z/111195,longitude:-4+x/(111195*cos(53 * .pi/180))),elevation:100) }
         let frame=GeoBounds(minLatitude:52.8,minLongitude:-4.2,maxLatitude:53.2,maxLongitude:-3.8)
         for size in [500.0,8000] { for aspect in [0.5,1.4] { for progress in [0.0,0.5] {
-            let path=WorldRouteTourPath(segments:[[point(0,0),point(0,-size),point(size/3,-size)]])!,rail=WorldFlightCorridor(path:path,tolerance:160)
+            let path=WorldRouteTourPath(segments:[[point(0,0),point(0,-size),point(size/3,-size)]])!,rail=WorldFlightCorridor(path:path,style:.drone)
             let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:WorldFlightTerrain.distances(length:rail.length).map {_ in Float?(100)})
             let plan=try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:WorldRouteTour.flightClearance,cornerLift:WorldRouteTour.fpvCornerLift,routeFraming:true,movementAligned:true)
             let start=plan.sample(time:plan.time(at:path.length*progress)),entry=WorldFlightArrival(path:path,flight:start,frame:frame,aspect:aspect)
