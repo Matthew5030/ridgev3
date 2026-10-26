@@ -40,6 +40,7 @@ import simd
             var glide=WorldFlightGlide(),previous=plan.sample(time:0),lastBank=previous.pose.bank,lastYaw=0.0,lastRate=0.0
             var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0,maxDerivativeError=0.0
             var correctTurns=0,turns=0,maxPitchRate=0.0
+            var previousAlong=0.0,maxPaceJerk=0.0
             var lastPitch=atan2(Double(previous.velocity.y),Double(simd_length(SIMD2(previous.velocity.x,previous.velocity.z))))
             var turnStart=Double.infinity,turnFinish=Double.infinity
             var turnMinimum=Double.infinity,turnMaximum=0.0
@@ -56,6 +57,8 @@ import simd
                 let difference=plan.sample(time:time+0.001*scale).pose.eye-plan.sample(time:time-0.001*scale).pose.eye
                 check(simd_dot(view,simd_normalize(difference))>0.9999,"\(name): visible heading follows measured displacement")
                 let v=SIMD3<Double>(sample.velocity),a=SIMD3<Double>(sample.acceleration),horizontal=hypot(v.x,v.z)
+                let along=simd_dot(v,a)/max(0.000001,simd_length(v))
+                if tick>1 { maxPaceJerk=max(maxPaceJerk,abs(along-previousAlong)/dt) };previousAlong=along
                 let lateral=(v.x*a.z-v.z*a.x)/max(0.00001,horizontal)
                 check(abs(tan(Double(sample.pose.bank))*sample.bankResponseAcceleration+lateral)<0.001,"\(name): cinematic bank agrees with the actual turn and shared response scale")
                 let before=plan.sample(time:time-0.001*scale),after=plan.sample(time:time+0.001*scale)
@@ -117,12 +120,14 @@ import simd
             check(maxBank<66 * Double.pi/180 && maxLateral<133,"\(name): tighter turns use bounded cinematic banks within the manoeuvre envelope")
             check(maxRollRate<2.05,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
             check(maxYawRate<1.99,"\(name): tighter turns retain bounded continuous heading")
-            check(maxAcceleration<64,"\(name): acceleration and braking stay inside the faster pace envelope")
+            check(maxAcceleration<31,"\(name): acceleration and braking stay inside the eased pace envelope")
+            check(maxPaceJerk<150,"\(name): pace transitions ease in time instead of producing a throttle jolt")
             check(maxPitchRate<0.73,"\(name): terrain pitch remains calmer than the fast banked turns")
             check(minSpeed>0.5,"\(name): turn keeps moving forward")
             check(turns==0 || Double(correctTurns)/Double(turns)>0.99,"\(name): bank consistently agrees with the actual turn")
             if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
             if name=="small corrections" { check(maxBank<0.01 && variation<0.1,"Discarded path noise cannot flap the camera") }
+            if name=="heading wrap" { check(maxSpeed/minSpeed<1.05,"A continuous winding section holds one pace instead of sprinting between vertices") }
             if name=="tight return" || name=="bend" || name=="hilly bends" {
                 let gentle=try make(points,hilly:name=="hilly bends",limits:.gentle)
                 check(plan.duration<gentle.duration*0.4,"\(name): cinematic flight does not stretch the journey into slow motion")
@@ -143,6 +148,7 @@ import simd
                 print("\(name): turn pace \(turnMinimum*3.6)…\(turnMaximum*3.6)km/h")
             }
             print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError); pitch rate \(maxPitchRate); turn window \(turnFinish-turnStart)s")
+            print("\(name): peak pace jerk \(maxPaceJerk)m/s³")
         }
         let straight=try make([point(0,0),point(0,-12000)])
         func steer(_ hz:Double)->WorldFlightPlan.Sample {
@@ -229,7 +235,7 @@ import simd
             }
             return sample
         }
-        let normal=heldGlide([1/60]),stalled=heldGlide([1/60,0.22,1/30,0.16])
+        let normal=heldGlide([1.0/60]),stalled=heldGlide([1.0/60,0.22,1.0/30,0.16])
         check(simd_distance(normal.pose.eye,stalled.pose.eye)<0.01,"Steering also consumes full slow-frame time without lagging behind the flight clock")
         print("\(checks) coordinated flight checks, \(failures.count) failures")
         if !failures.isEmpty { throw NSError(domain:failures.sorted().joined(separator:"; "),code:1) }

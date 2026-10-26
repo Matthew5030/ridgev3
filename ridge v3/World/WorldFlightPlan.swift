@@ -420,7 +420,7 @@ struct WorldFlightPlan {
         func holdTurnPace(_ values:inout [Double]) {
             var turns:[ClosedRange<Int>]=[],start:Int?,last:Int?
             for i in keys.indices where values[i]<cruise*cruise*0.98 {
-                if let previous=last,distance[i]-distance[previous]>90,let a=start {
+                if let previous=last,distance[i]-distance[previous]>200,let a=start {
                     turns.append(a...previous);start=i
                 } else if start == nil { start=i }
                 last=i

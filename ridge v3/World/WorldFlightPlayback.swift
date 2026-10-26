@@ -24,3 +24,63 @@ struct WorldFlightPlayback {
         bank+=min(limit,max(-limit,step));return bank
     }
 }
+
+/// Opt-in, aggregate-only counters for device testing when Instruments cannot
+/// attach. No route coordinates are recorded; file writes stay off both the
+/// main thread and the render callback. Normal launches do not collect data.
+final class WorldFlightFrameMonitor:@unchecked Sendable {
+    let isEnabled=ProcessInfo.processInfo.arguments.contains("--ridge-flight-profile")
+    private let lock=NSLock(),writer=DispatchQueue(label:"ridge.flight.frame-profile",qos:.utility)
+    private var active=false,lastRender:Double?,windowStart=0.0
+    private var frames=0,renderTotal=0.0,renderMax=0.0,lateRender=0
+    private var ticks=0,tickMax=0.0,lateTicks=0,lowSpeed=Double.infinity,highSpeed=0.0
+    private let file=FileManager.default.urls(for:.cachesDirectory,in:.userDomainMask).first!.appendingPathComponent("ridge-flight-profile.jsonl")
+    init() {
+        if isEnabled { let file=file;writer.async { try? Data().write(to:file,options:.atomic) } }
+    }
+    func setActive(_ value:Bool) {
+        guard isEnabled else { return }
+        lock.lock();defer { lock.unlock() }
+        guard active != value else { return }
+        active=value;lastRender=nil;windowStart=0
+        frames=0;renderTotal=0;renderMax=0;lateRender=0
+        ticks=0;tickMax=0;lateTicks=0;lowSpeed = .infinity;highSpeed=0
+    }
+    func recordTick(seconds:Double,speed:Double) {
+        guard isEnabled else { return }
+        lock.lock();defer { lock.unlock() }
+        guard active else { return }
+        ticks+=1;tickMax=max(tickMax,seconds);if seconds>0.05 { lateTicks+=1 }
+        lowSpeed=min(lowSpeed,speed);highSpeed=max(highSpeed,speed)
+    }
+    @discardableResult func recordRender(at time:Double)->Bool {
+        guard isEnabled else { return false }
+        lock.lock()
+        guard active else { lock.unlock();return false }
+        let previous=lastRender
+        lastRender=time
+        if windowStart==0 { windowStart=time }
+        if let previous,time>previous,time-previous<2 {
+            let dt=time-previous
+            frames+=1;renderTotal+=dt;renderMax=max(renderMax,dt);if dt>0.05 { lateRender+=1 }
+        }
+        guard time-windowStart>=2 else { lock.unlock();return true }
+        let row:[String:Double]=[
+            "seconds":time,"frames":Double(frames),"meanRenderMs":frames>0 ? renderTotal/Double(frames)*1000 : 0,
+            "maxRenderMs":renderMax*1000,"lateRender50ms":Double(lateRender),"ticks":Double(ticks),
+            "maxMainTickMs":tickMax*1000,"lateMainTicks50ms":Double(lateTicks),
+            "minSpeedKmh":lowSpeed.isFinite ? lowSpeed*3.6 : 0,"maxSpeedKmh":highSpeed*3.6]
+        windowStart=time;frames=0;renderTotal=0;renderMax=0;lateRender=0
+        ticks=0;tickMax=0;lateTicks=0;lowSpeed = .infinity;highSpeed=0
+        lock.unlock()
+        let file=file
+        writer.async {
+            guard var data=try? JSONSerialization.data(withJSONObject:row,options:.sortedKeys) else { return }
+            data.append(10)
+            guard let handle=try? FileHandle(forWritingTo:file) else { return }
+            defer { try? handle.close() }
+            _=try? handle.seekToEnd();try? handle.write(contentsOf:data)
+        }
+        return true
+    }
+}

@@ -52,7 +52,7 @@ enum WorldFlightTurn {
         // Map-scale FPV needs quick, local manoeuvres. Bank still follows the
         // actual turn, with a cinematic response scale rather than literal
         // Earth-gravity aircraft limits at the 600 km/h preview pace.
-        static let cinematic=Self(lateralAcceleration:120,yawRate:1.8,rollRate:2.0,acceleration:60,smoothingDistance:4,bankResponseAcceleration:64,pitchRate:0.7)
+        static let cinematic=Self(lateralAcceleration:120,yawRate:1.8,rollRate:2.0,acceleration:30,smoothingDistance:30,bankResponseAcceleration:64,pitchRate:0.7)
         static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20,bankResponseAcceleration:9.81,pitchRate:0.2)
     }
     static func pitchRate(velocity:SIMD3<Double>,acceleration:SIMD3<Double>)->Double {

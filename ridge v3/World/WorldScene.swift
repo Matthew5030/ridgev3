@@ -35,6 +35,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     weak var model: WorldModel?
     weak var tour: WorldRouteTour?
     private var tourLink: CADisplayLink?
+    private nonisolated let flightFrameMonitor=WorldFlightFrameMonitor()
     private var tourSavedPose: TerrainCameraPose?
     private var tourDistance = 0.0
     private let cameraRig=WorldCameraRig()
@@ -201,7 +202,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             lastCommand=command;lastAtlasRequest=atlasRequest
             applyOverhead(overheadViewport);return
         }
-        delegate=nil
+        delegate=flightFrameMonitor.isEnabled ? self : nil
         if reportedSurface || reportedEntrySurface != nil,let span=model.entrySpan {
             model.entrySpan=nil;beginEntry(span:span)
         }
@@ -423,6 +424,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         offlineBoundaryNode.geometry?.firstMaterial?.setValue(NSValue(scnVector4:SCNVector4(target.x,target.z,visibility,0)),forKey:"ridgeBoundaryFocus")
     }
     nonisolated func renderer(_ renderer:any SCNSceneRenderer,didRenderScene scene:SCNScene,atTime time:TimeInterval) {
+        if flightFrameMonitor.recordRender(at:ProcessInfo.processInfo.systemUptime) { return }
         DispatchQueue.main.async { [weak self] in
             guard let self,self.overheadViewport != nil,let source=self.source else { return }
             // The continuous bundled mesh can hand off immediately. Fine tile
@@ -682,6 +684,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         }
     }
     private func ensureTourFrames() {
+        flightFrameMonitor.setActive(tour?.canAdvance == true)
         guard flightPlan != nil,let tour,tour.isPresented,tour.isPlaying || (tour.isEntering && tour.isRevealing && tour.progress>=1) else {
             tourLink?.invalidate();tourLink=nil;rendersContinuously=false;return
         }
@@ -691,6 +694,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
         link.preferredFramesPerSecond=60;tourLink=link;rendersContinuously=true;link.add(to:.main,forMode:.common)
     }
     func stopTour(restore: Bool) {
+        flightFrameMonitor.setActive(false)
         model?.setClosePreviewDetail(false)
         flightPreparation?.cancel();flightPreparation=nil;flightPreparationID=UUID();preparingClearance=nil;preparingSpeed=nil;preparingMotion=nil
         flightArrival=nil;flightArrivalTime=0;flightPlan=nil;flightTerrain=nil;flightGlide.reset();flightSample=nil;flightSession=nil;flightPreparationFailed=false;tour?.isPreparing=false
@@ -735,6 +739,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 tour.pause()
             } else {
                 flightGlide=glide;flightSample=sample
+                flightFrameMonitor.recordTick(seconds:elapsed,speed:sample.speed)
                 flightTime=nextTime;tourDistance=next
                 if now-tourLastReport>=0.1 || next>=path.length {
                     tourLastReport=now;tour.reportSpeed(sample.speed);tour.report(distance:next)
