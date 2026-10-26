@@ -24,20 +24,20 @@ import simd
                     let along=rail.sample(flightDistance:travel).direction.y
                     if abs(along)>0.5 { if last*along<0 { reversals+=1 };last=along }
                 }
-                try check(reversals==1,"Overlapping switchbacks form one forward/return sweep, without repeated turnaround loops")
+                try check(reversals>=3,"The closer drone path follows the ordered overlapping returns")
             }
             for time in stride(from:0.0,through:plan.duration,by:0.05) {
                 let sample=plan.sample(time:time),route=path.sample(at:sample.routeDistance).coordinate
                 let error=route.distance(to:sample.pose.focus);maxError=max(maxError,error)
-                try check(error<800,"\(name): a broad flight remains in the route neighbourhood (\(error))")
+                try check(error<75,"\(name): the closer drone stays near its ordered route marker (\(error))")
                 try check(sample.heightAboveGround>tour.clearance-0.5 && sample.heightAboveGround<tour.clearance+WorldRouteTour.fpvCornerLift+4,"FPV stays low on straights and makes a bounded anticipatory lift over busy turns")
                 let v=SIMD2(sample.velocity.x,sample.velocity.z),gaze=SIMD2(sample.pose.look.x-sample.pose.eye.x,sample.pose.look.z-sample.pose.eye.z)
                 try check(simd_dot(simd_normalize(v),simd_normalize(gaze))>0.99999,"FPV horizontal heading stays aligned to actual forward travel")
                 try check(Double(simd_length(v))*(600/3.6)/plan.cruiseSpeed>15,"Switchbacks cannot stall or trap the FPV drone")
             }
             if name=="switchbacks" {
-                let middle=plan.sample(time:plan.duration*0.5),heading=simd_normalize(SIMD2(middle.velocity.x,middle.velocity.z))
-                try check(simd_dot(heading,SIMD2<Float>(0,-1))>0.98,"A cluster of 80 m switchbacks is crossed in one forward pass")
+                let middle=plan.sample(time:plan.duration*0.5)
+                try check(maxError<60,"The closer drone follows the switchback cluster without wandering away")
                 try check(abs(middle.heightAboveGround-tour.clearance)<0.1,"The drone cuts small switchbacks without a manufactured height swoop")
             }
             var slow=WorldFlightPlayback(),fast=WorldFlightPlayback();slow.reset(speed:30/3.6);fast.reset(speed:240/3.6)

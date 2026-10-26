@@ -409,13 +409,35 @@ struct WorldFlightPlan {
         }
         let pitchCurvature=keys.map { abs(WorldFlightTurn.pitchRate(velocity:$0.velocity,acceleration:$0.acceleration)) }
         var caps=keys.indices.map { i -> Double in
-            let a=max(0,i-1),b=min(n-1,i+1)
-            let change=abs(curvature[b]-curvature[a])/max(0.001,distance[b]-distance[a])
             let k=abs(curvature[i])
             let lateral=sqrt(limits.lateralAcceleration/max(0.0000001,k)),angular=limits.yawRate/max(0.0000001,fullCurvature[i])
-            let roll=pow(limits.bankResponseAcceleration*limits.rollRate/max(0.000000001,change),1.0/3)
             let pitch=limits.pitchRate/max(0.0000001,pitchCurvature[i])
-            return pow(min(cruise,lateral,angular,roll,pitch),2)
+            return pow(min(cruise,lateral,angular,pitch),2)
+        }
+        // One pace through a manoeuvre. Independent curvature-change caps at
+        // entry and exit created a brake/accelerate/brake pulse inside a turn.
+        // Include the filtered joins, and hold nearby bends as one section.
+        func holdTurnPace(_ values:inout [Double]) {
+            var turns:[ClosedRange<Int>]=[],start:Int?,last:Int?
+            for i in keys.indices where values[i]<cruise*cruise*0.98 {
+                if let previous=last,distance[i]-distance[previous]>90,let a=start {
+                    turns.append(a...previous);start=i
+                } else if start == nil { start=i }
+                last=i
+            }
+            if let a=start,let b=last { turns.append(a...b) }
+            var spans:[ClosedRange<Int>]=[]
+            for turn in turns {
+                var a=turn.lowerBound,b=turn.upperBound
+                while a>0 && distance[turn.lowerBound]-distance[a]<12 { a-=1 }
+                while b<n-1 && distance[b]-distance[turn.upperBound]<12 { b+=1 }
+                if let previous=spans.last,a<=previous.upperBound+1 { spans[spans.count-1]=previous.lowerBound...b }
+                else { spans.append(a...b) }
+            }
+            for span in spans {
+                let speed=span.map { values[$0] }.min()!
+                for i in span { values[i]=speed }
+            }
         }
         let spacing=distance.last!/Double(n-1)
         let radius=max(1,Int(ceil(limits.smoothingDistance/max(0.001,spacing))))
@@ -451,9 +473,11 @@ struct WorldFlightPlan {
             return values
         }
         var residual=1.0
-        for _ in 0..<8 {
+        for _ in 0..<20 {
             try Task.checkCancellation()
-            let speeds=envelope(caps).map { sqrt(max(0.0001,$0)) }
+            var targets=caps
+            holdTurnPace(&targets)
+            let speeds=envelope(targets).map { sqrt(max(0.0001,$0)) }
             keys[0].time=0
             for i in 1..<n {
                 keys[i].time=keys[i-1].time+2*(distance[i]-distance[i-1])/(speeds[i]+speeds[i-1])*scale
@@ -483,8 +507,8 @@ struct WorldFlightPlan {
                     last=(bank,time)
                 }
             }
-            if valid { break }
-            for i in caps.indices { caps[i]/=pow(max(1,factors[i]*1.02),2) }
+            if valid { residual=1;break }
+            for i in caps.indices where factors[i]>1.001 { caps[i]/=pow(factors[i]*1.02,2) }
         }
         if residual>1.001 {
             // A pathological join still gets one continuous, slower timeline;

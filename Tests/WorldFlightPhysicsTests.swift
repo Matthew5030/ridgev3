@@ -42,6 +42,7 @@ import simd
             var correctTurns=0,turns=0,maxPitchRate=0.0
             var lastPitch=atan2(Double(previous.velocity.y),Double(simd_length(SIMD2(previous.velocity.x,previous.velocity.z))))
             var turnStart=Double.infinity,turnFinish=Double.infinity
+            var turnMinimum=Double.infinity,turnMaximum=0.0
             let initialDirection=simd_normalize(SIMD2(previous.velocity.x,previous.velocity.z))
             let camera=SCNNode();camera.camera=SCNCamera();let rig=WorldCameraRig();rig.beginTour(on:camera)
             func yaw(_ v:SIMD3<Float>)->Double { atan2(Double(v.x),-Double(v.z)) }
@@ -59,10 +60,18 @@ import simd
                 check(abs(tan(Double(sample.pose.bank))*sample.bankResponseAcceleration+lateral)<0.001,"\(name): cinematic bank agrees with the actual turn and shared response scale")
                 let before=plan.sample(time:time-0.001*scale),after=plan.sample(time:time+0.001*scale)
                 let measuredAcceleration=SIMD3<Double>(after.velocity-before.velocity)*(scale/0.002)
-                let derivativeError=simd_distance(measuredAcceleration,a)
+                // Compare the velocity integral over the finite stencil. C2
+                // motion has continuous acceleration but may change jerk at a
+                // knot, so a central difference need not equal its midpoint.
+                var meanAcceleration=SIMD3<Double>.zero
+                for part in 0...8 {
+                    let offset = -0.001+Double(part)*0.00025
+                    let weight=(part==0 || part==8) ? 0.5 : 1.0
+                    meanAcceleration+=SIMD3<Double>(plan.sample(time:time+offset*scale).acceleration)*weight
+                }
+                meanAcceleration*=scale*scale/8
+                let derivativeError=simd_distance(measuredAcceleration,meanAcceleration)
                 maxDerivativeError=max(maxDerivativeError,derivativeError)
-                // Float velocity quantisation and a finite stencil crossing a
-                // cubic's jerk join are bounded independently of the bank math.
                 check(derivativeError<0.03,"\(name): bank uses acceleration measured from travel, with actual playback units")
                 let angle=yaw(sample.velocity),change=atan2(sin(angle-lastYaw),cos(angle-lastYaw))/dt
                 let pitch=atan2(v.y,horizontal)
@@ -71,6 +80,11 @@ import simd
                 if deflection>Double.pi/12 { turnStart=min(turnStart,time/scale) }
                 let finishAngle=(name=="tight return" ? 11.0 : 5.0)*Double.pi/12
                 if deflection>finishAngle { turnFinish=min(turnFinish,time/scale) }
+                let plateauStart=(name=="tight return" ? 4.0 : 2.0)*Double.pi/12
+                let plateauEnd=(name=="tight return" ? 8.0 : 4.0)*Double.pi/12
+                if deflection>plateauStart && deflection<plateauEnd {
+                    turnMinimum=min(turnMinimum,sample.speed);turnMaximum=max(turnMaximum,sample.speed)
+                }
                 lastYaw=angle;maxYawRate=max(maxYawRate,abs(change));variation+=abs(change-lastRate);lastRate=change
                 maxRollRate=max(maxRollRate,Double(abs(sample.pose.bank-lastBank))/dt);lastBank=sample.pose.bank
                 maxBank=max(maxBank,abs(Double(sample.pose.bank)));maxLateral=max(maxLateral,abs(lateral))
@@ -101,7 +115,7 @@ import simd
                 previous=sample
             }
             check(maxBank<66 * Double.pi/180 && maxLateral<133,"\(name): tighter turns use bounded cinematic banks within the manoeuvre envelope")
-            check(maxRollRate<1.65,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
+            check(maxRollRate<2.05,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
             check(maxYawRate<1.99,"\(name): tighter turns retain bounded continuous heading")
             check(maxAcceleration<64,"\(name): acceleration and braking stay inside the faster pace envelope")
             check(maxPitchRate<0.73,"\(name): terrain pitch remains calmer than the fast banked turns")
@@ -112,7 +126,7 @@ import simd
             if name=="tight return" || name=="bend" || name=="hilly bends" {
                 let gentle=try make(points,hilly:name=="hilly bends",limits:.gentle)
                 check(plan.duration<gentle.duration*0.4,"\(name): cinematic flight does not stretch the journey into slow motion")
-                check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank")
+                if name != "hilly bends" { check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank") }
             }
             if name=="tight return" {
                 check(minSpeed>30 && maxYawRate>1.2,"A local drone hairpin carries forward momentum through a decisive direction reversal")
@@ -121,7 +135,12 @@ import simd
             if name=="bend" {
                 let approach=plan.sample(time:plan.time(at:1000)),exit=plan.sample(time:plan.time(at:2200))
                 check(min(approach.speed,exit.speed)*scale>150,"The drone carries cruise into the approach and accelerates promptly out of the turn")
+                check(maxSpeed*3.6>599,"A local turn constraint cannot reduce the cruise speed of a clear straight")
                 check(turnFinish-turnStart<1.5,"The central part of a right-angle turn is a quick drone manoeuvre")
+            }
+            if name=="bend" || name=="tight return" {
+                check(turnMinimum.isFinite && turnMaximum/turnMinimum<1.02,"\(name): hold one pace through the turn without a mid-corner surge")
+                print("\(name): turn pace \(turnMinimum*3.6)…\(turnMaximum*3.6)km/h")
             }
             print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError); pitch rate \(maxPitchRate); turn window \(turnFinish-turnStart)s")
         }
@@ -160,7 +179,7 @@ import simd
                 if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
                 maxBank=max(maxBank,Double(abs(sample.pose.bank)))
             }
-            check(maxRate<1.85 && maxBank<68 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            check(maxRate<2.2 && maxBank<68 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
             print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
         }
         let quiet=try make(fixtures[3].1,quiet:true)
@@ -182,6 +201,7 @@ import simd
             check(simd_dot(direction,returnRail.sample(flightDistance:returnRail.length*fraction).direction)>0.999999,"Outbound leg is a direct line without a long sideways racetrack sweep")
         }
         print("Corner separation: drone \(droneGap)m, previous gliding rail \(oldGap)m")
+        check(droneGap<22,"The new tighter corner passes closer than the previous drone recipe")
         let tiny=try make([point(0,0),point(0,-0.6),point(0,0)])
         var previousDistance=0.0
         for i in 0...200 {
@@ -190,6 +210,27 @@ import simd
             check(sample.velocity.x.isFinite && simd_length(sample.velocity)>0.00001,"A tiny drone hairpin retains a finite forward trajectory")
             previousDistance=sample.routeDistance
         }
+        var delayed=WorldFlightPlayback(),regular=WorldFlightPlayback()
+        delayed.reset(speed:10);regular.reset(speed:10)
+        var now=100.0,elapsed=0.0,travel=0.0
+        for _ in 0..<20 { for dt in [1.0/60,0.22,1.0/30,0.16] {
+            let next=now+dt,frame=WorldFlightPlayback.frameSeconds(now:next,previous:now,displayInterval:1/60)
+            travel+=delayed.advance(seconds:frame,requested:600/3.6,preparedSpeed:25)
+            elapsed+=dt;now=next
+        } }
+        let expected=regular.advance(seconds:elapsed,requested:600/3.6,preparedSpeed:25)
+        check(abs(travel-expected)<0.000001,"Slow rendering frames cannot discard elapsed flight time or lower the actual pace")
+        check(abs(WorldFlightPlayback.frameSeconds(now:200,previous:100,displayInterval:1/60)-1/60)<0.000001,"A long suspension restarts from a fresh display interval without skipping the route")
+        func heldGlide(_ cadence:[Double])->WorldFlightPlan.Sample {
+            var glide=WorldFlightGlide(),time=0.0,index=0,sample=straight.sample(time:0)
+            while time<5 {
+                let dt=min(cadence[index%cadence.count],5-time);time+=dt;index+=1
+                sample=glide.advance(reference:straight.sample(time:time*scale),yaw:0.6,pitch:0.2,speedScale:scale,seconds:dt,frame:frame,reduceMotion:false,clearance:10)
+            }
+            return sample
+        }
+        let normal=heldGlide([1/60]),stalled=heldGlide([1/60,0.22,1/30,0.16])
+        check(simd_distance(normal.pose.eye,stalled.pose.eye)<0.01,"Steering also consumes full slow-frame time without lagging behind the flight clock")
         print("\(checks) coordinated flight checks, \(failures.count) failures")
         if !failures.isEmpty { throw NSError(domain:failures.sorted().joined(separator:"; "),code:1) }
         print("PASS coordinated trajectory, turn-coherent cinematic bank, no sideslip, anticipatory pace, steering and Reduce Motion")

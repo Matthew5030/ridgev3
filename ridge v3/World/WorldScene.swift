@@ -710,7 +710,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
     @objc private func advanceTour(_ link:CADisplayLink) {
         guard let tour,tour.isPresented,let path=tour.path else { syncTour();return }
         let now=link.targetTimestamp
-        let elapsed=max(0,min(0.1,tourLastTime>0 ? now-tourLastTime : link.targetTimestamp-link.timestamp))
+        let elapsed=WorldFlightPlayback.frameSeconds(now:now,previous:tourLastTime,displayInterval:link.targetTimestamp-link.timestamp)
         tourLastTime=now
         if tour.isEntering && tour.isRevealing && (tour.isPlaying || tour.progress>=1),flightPlan != nil {
             // The entry and route clocks never wait for visual detail. The
@@ -719,7 +719,7 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
             if abs(tour.entryElapsed-flightArrivalTime)>=1.0/30 { tour.reportEntry(elapsed:flightArrivalTime) }
         }
         cinematicLook.advance(seconds:elapsed)
-        if tour.canAdvance {
+        if tour.canAdvance && elapsed>0 {
             guard let plan=flightPlan else { return }
             let clockStep=flightPlayback.advance(seconds:elapsed,requested:tour.metersPerSecond,preparedSpeed:plan.cruiseSpeed)
             let nextTime=min(plan.duration,flightTime+clockStep),reference=plan.sample(time:nextTime)
@@ -734,12 +734,10 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 tour.message="Preview paused at the edge of your downloaded map. Download this area to continue."
                 tour.pause()
             } else {
-                let previous=flightSample ?? plan.sample(time:flightTime)
-                let measured=elapsed>0 ? Double(simd_distance(previous.pose.eye,sample.pose.eye))/elapsed : 0
                 flightGlide=glide;flightSample=sample
                 flightTime=nextTime;tourDistance=next
                 if now-tourLastReport>=0.1 || next>=path.length {
-                    tourLastReport=now;tour.reportSpeed(measured);tour.report(distance:next)
+                    tourLastReport=now;tour.reportSpeed(sample.speed);tour.report(distance:next)
                 }
             }
         }

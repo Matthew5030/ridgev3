@@ -52,7 +52,7 @@ enum WorldFlightTurn {
         // Map-scale FPV needs quick, local manoeuvres. Bank still follows the
         // actual turn, with a cinematic response scale rather than literal
         // Earth-gravity aircraft limits at the 600 km/h preview pace.
-        static let cinematic=Self(lateralAcceleration:120,yawRate:1.8,rollRate:1.6,acceleration:60,smoothingDistance:4,bankResponseAcceleration:64,pitchRate:0.7)
+        static let cinematic=Self(lateralAcceleration:120,yawRate:1.8,rollRate:2.0,acceleration:60,smoothingDistance:4,bankResponseAcceleration:64,pitchRate:0.7)
         static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20,bankResponseAcceleration:9.81,pitchRate:0.2)
     }
     static func pitchRate(velocity:SIMD3<Double>,acceleration:SIMD3<Double>)->Double {
@@ -146,7 +146,7 @@ struct WorldFlightGlide {
     /// roll all use these same derivatives; the input never pans a camera alone.
     private mutating func coordinated(reference:WorldFlightPlan.Sample,yaw:Float,pitch:Float,
                                       speedScale:Double,seconds:Double,frame:GeoBounds,reduceMotion:Bool,clearance:Double)->WorldFlightPlan.Sample {
-        let dt=max(0,min(0.1,seconds)),baseVelocity=SIMD3<Double>(reference.velocity)*speedScale
+        let dt=seconds.isFinite ? max(0,seconds) : 0,baseVelocity=SIMD3<Double>(reference.velocity)*speedScale
         let horizontal=SIMD2(baseVelocity.x,baseVelocity.z)
         let forward=simd_length_squared(horizontal)>0.000001 ? simd_normalize(horizontal) : SIMD2<Double>(0,-1)
         let right=SIMD3(-forward.y,0,forward.x),descent=min(10,max(0,clearance-5))

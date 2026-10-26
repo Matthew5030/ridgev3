@@ -27,7 +27,7 @@ struct WorldFlightCorridor {
     init(path: WorldRouteTourPath, tolerance:Double=100,routeCentred:Bool=false,style:Style = .gliding) {
         self.style=style
         let drone=style == .drone
-        let tolerance=drone ? 140 : max(5,min(500,tolerance))
+        let tolerance=drone ? 40 : max(5,min(500,tolerance))
         origin=path.points[0].coordinate
         longitudeScale=max(0.01,cos(origin.latitude * .pi/180))
         let origin=self.origin,scale=longitudeScale
@@ -104,12 +104,12 @@ struct WorldFlightCorridor {
         // Several overlapping hiking switchbacks in one narrow footprint are
         // one survey sweep, not a sequence of airplane turnarounds. Retain the
         // original ordered route separately; only its camera rail is condensed.
-        let narrowBundle=(tolerance>100 || drone) && reach>50 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(tolerance*0.6,reach*0.3) }
+        let narrowBundle = !drone && tolerance>100 && reach>50 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(tolerance*0.6,reach*0.3) }
         let elongatedReturn=(oneReturn || narrowBundle) && simd_length(end)<min(30,reach*0.2) && reach>0.5 && positions.allSatisfy { abs($0.x*axis.y-$0.y*axis.x)<min(80,max(3,tolerance*0.75)) }
         if elongatedReturn && drone {
             // A direct outbound line, one local hairpin, then a direct exit.
             // No oval or sideways sweep along the full length of the route.
-            let side=SIMD2(-axis.y,axis.x),r=min(40,reach*0.2),run=reach-r
+            let side=SIMD2(-axis.y,axis.x),r=min(28,reach*0.2),run=reach-r
             let peakRoute=path.distances[peak]
             line(axis*run-side*r,peakRoute*run/reach)
             let count=max(24,Int(ceil(.pi*r)))
@@ -157,7 +157,7 @@ struct WorldFlightCorridor {
                 if drone && dot < -0.65 {
                     let axis=simd_normalize(a-b),cross=a.x*b.y-a.y*b.x
                     let side=SIMD2(-axis.y,axis.x)*(cross < -0.0001 ? -1.0 : 1.0)
-                    let r=min(40,min(before,after)*0.24),center=corner-axis*r
+                    let r=min(28,min(before,after)*0.24),center=corner-axis*r
                     let start=path.distances[index]-r*(path.distances[index]-path.distances[indices[j-1]])/before
                     let end=path.distances[index]+r*(path.distances[indices[j+1]]-path.distances[index])/after
                     line(center-side*r,start)
@@ -170,7 +170,7 @@ struct WorldFlightCorridor {
                     }
                     continue
                 }
-                let radius=min(drone ? 70 : (tolerance < 100 ? tolerance*1.8 : (dot < -0.65 ? 320 : 240)),min(before,after)*0.44)
+                let radius=min(drone ? 50 : (tolerance < 100 ? tolerance*1.8 : (dot < -0.65 ? 320 : 240)),min(before,after)*0.44)
                 let start=path.distances[index]-radius*(path.distances[index]-path.distances[indices[j-1]])/before
                 let end=path.distances[index]+radius*(path.distances[indices[j+1]]-path.distances[index])/after
                 let entry=corner-a*radius,exit=corner+b*radius
