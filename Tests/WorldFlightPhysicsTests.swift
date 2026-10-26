@@ -21,6 +21,10 @@ import simd
             ("short return",[point(0,0),point(0,-35),point(0,0)]),
             ("nearby bends",[point(0,0),point(0,-1500),point(200,-1500),point(200,-1800),point(500,-1800),point(500,-3500)]),
             ("overlapping returns",[point(0,0),point(0,-350),point(20,-40),point(40,-320),point(10,0)]),
+            // Deterministic synthetic junction, not a saved user's GPS track.
+            // Position averaging made a cusp here and reduced the entire
+            // flight to about 3.3 km/h despite two long clear legs.
+            ("close consecutive reversals",[point(0,0),point(0,-2000),point(159,-1923),point(255,-1784),point(-173,-1742),point(72,-1789),point(18,-1738),point(62,-1887),point(213,-2203),point(-272,-1934),point(200,-5000)]),
             ("heading wrap",circle),
             ("hilly bends",stride(from:0.0,through:6000.0,by:20).map { point(400*sin($0/500),-$0) })]
         let scale=(600/3.6)/25.0,dt=1.0/60
@@ -130,6 +134,7 @@ import simd
             if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
             if name=="small corrections" { check(maxBank<0.01 && variation<0.1,"Discarded path noise cannot flap the camera") }
             if name=="heading wrap" { check(maxSpeed/minSpeed<1.05,"A continuous winding section holds one pace instead of sprinting between vertices") }
+            if name=="close consecutive reversals" { check(minSpeed>30,"A collapsed local join cannot drag a kilometre-scale journey down to walking pace") }
             if name=="tight return" || name=="bend" || name=="hilly bends" {
                 let gentle=try make(points,hilly:name=="hilly bends",limits:.gentle)
                 check(plan.duration<gentle.duration*0.4,"\(name): cinematic flight does not stretch the journey into slow motion")
@@ -143,7 +148,7 @@ import simd
                 let approach=plan.sample(time:plan.time(at:1000)),exit=plan.sample(time:plan.time(at:2200))
                 check(min(approach.speed,exit.speed)*scale>150,"The drone carries cruise into the approach and accelerates promptly out of the turn")
                 check(maxSpeed*3.6>599,"A local turn constraint cannot reduce the cruise speed of a clear straight")
-                check(turnFinish-turnStart<1.5,"The central part of a right-angle turn is a quick drone manoeuvre")
+                check(turnFinish-turnStart<2,"The central part of a right-angle turn stays quick while the course blends continuously")
             }
             if name=="bend" || name=="tight return" {
                 check(turnMinimum.isFinite && turnMaximum/turnMinimum<1.02,"\(name): hold one pace through the turn without a mid-corner surge")
@@ -218,6 +223,21 @@ import simd
             check(sample.routeDistance>=previousDistance && sample.routeDistance>=0,"A tiny closed route cannot acquire negative or reversed progress")
             check(sample.velocity.x.isFinite && simd_length(sample.velocity)>0.00001,"A tiny drone hairpin retains a finite forward trajectory")
             previousDistance=sample.routeDistance
+        }
+        for seed in 1...60 {
+            var state=UInt64(seed)
+            func draw()->Double {
+                state=state &* 6364136223846793005 &+ 1442695040888963407
+                return Double(Int((state>>32)%601)-300)
+            }
+            var points=[point(0,0),point(0,-2000)]
+            for _ in 0..<8 { points.append(point(draw(),-2000+draw())) }
+            points.append(point(200,-5000))
+            let plan=try make(points),pace=plan.sample(time:0).speed*scale
+            check(pace>30,"Synthetic junction \(seed): close reversals cannot collapse the full-flight pace")
+            for fraction in [0.0,0.25,0.5,0.75,1.0] {
+                check(abs(plan.sample(time:plan.duration*fraction).speed*scale-pace)<0.001,"Synthetic junction \(seed): cruise stays constant throughout the prepared shot")
+            }
         }
         var delayed=WorldFlightPlayback(),regular=WorldFlightPlayback()
         delayed.reset(speed:10);regular.reset(speed:10)

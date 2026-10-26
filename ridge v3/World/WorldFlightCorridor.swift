@@ -208,7 +208,77 @@ struct WorldFlightCorridor {
         let smoothing=drone ? 60 : (tolerance>100 ? min(60,tolerance*0.2) : min(15,tolerance*0.5))
         let radius=max(1,Int(min(smoothing,total/30)/(total/Double(count))))
         var fitted=uniform.map(\.position)
-        for _ in 0..<4 {
+        if drone {
+            var attraction=fitted
+            for _ in 0..<4 {
+                var extended:[SIMD2<Double>]=[]
+                let first=attraction[0],last=attraction.last!,start=attraction[1]-first,end=last-attraction[attraction.count-2]
+                for i in -radius..<(attraction.count+radius) {
+                    extended.append(i<0 ? first+start*Double(i) : i>=attraction.count ? last+end*Double(i-attraction.count+1) : attraction[i])
+                }
+                var prefix=[SIMD2<Double>.zero]
+                for p in extended { prefix.append(prefix.last!+p) }
+                attraction=attraction.indices.map { (prefix[$0+radius*2+1]-prefix[$0])/Double(radius*2+1) }
+            }
+            // Averaging positions can collapse a close return into a cusp:
+            // its tangent nearly vanishes and the pace solver sees an almost
+            // instantaneous reversal. Fair the course, then integrate unit
+            // forward steps so the prepared rail cannot stall at that join.
+            var headings:[Double]=[]
+            for i in uniform.indices {
+                let a=max(0,i-1),b=min(count,i+1),delta=uniform[b].position-uniform[a].position
+                let angle=atan2(delta.y,delta.x)
+                headings.append(headings.last.map { $0+atan2(sin(angle-$0),cos(angle-$0)) } ?? angle)
+            }
+            var span=min(110,total/8)
+            for _ in 0..<8 {
+                let r=max(1,Int(ceil(span/(total/Double(count))))),window=Double(r*2+1)
+                var angles=headings
+                for _ in 0..<4 {
+                    var sums=[0.0]
+                    for angle in angles { sums.append(sums.last!+angle) }
+                    angles=angles.indices.map { i in
+                        let a=max(0,i-r),b=min(count,i+r)
+                        let pad=Double(max(0,r-i))*angles[0]+Double(max(0,i+r-count))*angles[count]
+                        return (sums[b+1]-sums[a]+pad)/window
+                    }
+                }
+                var flow=[uniform[0].position],guidance=[SIMD2<Double>.zero]
+                for i in 1...count {
+                    let angle=(angles[i-1]+angles[i])/2,step=uniform[i].flight-uniform[i-1].flight
+                    let forward=SIMD2(cos(angle),sin(angle)),expected=flow.last!+forward*step
+                    let error=attraction[i]-expected,distance=simd_length(error)
+                    // A bounded, gradual route attraction prevents course
+                    // integration accumulating drift along a long journey.
+                    // It cannot cancel the forward step or recreate a cusp.
+                    let correction=distance>0.000001 ? error*(0.3*tanh(distance/150)/distance) : .zero
+                    guidance.append(correction)
+                    flow.append(expected+correction*step)
+                }
+                // Fair the attraction as well as the course. Otherwise a
+                // small reference bend can still make the bank twitch even
+                // though forward speed never vanishes.
+                for _ in 0..<4 {
+                    var sums=[SIMD2<Double>.zero]
+                    for value in guidance { sums.append(sums.last!+value) }
+                    guidance=guidance.indices.map { i in
+                        let a=max(0,i-radius),b=min(count,i+radius)
+                        let pad=Double(max(0,radius-i))*guidance[0]+Double(max(0,i+radius-count))*guidance[count]
+                        return (sums[b+1]-sums[a]+pad)/Double(radius*2+1)
+                    }
+                }
+                flow=[uniform[0].position]
+                for i in 1...count {
+                    let angle=(angles[i-1]+angles[i])/2,step=uniform[i].flight-uniform[i-1].flight
+                    flow.append(flow.last!+(SIMD2(cos(angle),sin(angle))+guidance[i])*step)
+                }
+                fitted=flow
+                // The linear endpoint correction below must retain a forward
+                // tangent even for short, closed or overlapping journeys.
+                if simd_distance(flow.last!,uniform.last!.position)<total*0.4 || span<1 { break }
+                span*=0.5
+            }
+        } else { for _ in 0..<4 {
             var extended:[SIMD2<Double>]=[]
             let first=fitted[0],last=fitted.last!,start=fitted[1]-first,end=last-fitted[fitted.count-2]
             for i in -radius..<(fitted.count+radius) {
@@ -217,7 +287,7 @@ struct WorldFlightCorridor {
             var prefix=[SIMD2<Double>.zero]
             for p in extended { prefix.append(prefix.last!+p) }
             fitted=fitted.indices.map { (prefix[$0+radius*2+1]-prefix[$0])/Double(radius*2+1) }
-        }
+        } }
         let startCorrection=uniform[0].position-fitted[0],endCorrection=uniform.last!.position-fitted.last!
         for i in uniform.indices {
             let t=Double(i)/Double(count)

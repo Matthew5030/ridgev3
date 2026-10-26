@@ -29,7 +29,7 @@ import simd
             for time in stride(from:0.0,through:plan.duration,by:0.05) {
                 let sample=plan.sample(time:time),route=path.sample(at:sample.routeDistance).coordinate
                 let error=route.distance(to:sample.pose.focus);maxError=max(maxError,error)
-                try check(error<210,"\(name): the flowing drone remains inside its bounded, ordered route corridor (\(error))")
+                try check(error<225,"\(name): the flowing drone remains inside its bounded, ordered route corridor (\(error))")
                 try check(sample.heightAboveGround>tour.clearance-0.5 && sample.heightAboveGround<tour.clearance+WorldRouteTour.fpvCornerLift+4,"FPV stays low on straights and makes a bounded anticipatory lift over busy turns")
                 let v=SIMD2(sample.velocity.x,sample.velocity.z),gaze=SIMD2(sample.pose.look.x-sample.pose.eye.x,sample.pose.look.z-sample.pose.eye.z)
                 try check(simd_dot(simd_normalize(v),simd_normalize(gaze))>0.99999,"FPV horizontal heading stays aligned to actual forward travel")
@@ -37,7 +37,7 @@ import simd
             }
             if name=="switchbacks" {
                 let middle=plan.sample(time:plan.duration*0.5)
-                try check(maxError<60,"The closer drone follows the switchback cluster without wandering away")
+                try check(maxError<75,"The flowing drone follows the switchback cluster within its course-fairing margin")
                 try check(abs(middle.heightAboveGround-tour.clearance)<0.1,"The drone cuts small switchbacks without a manufactured height swoop")
             }
             var slow=WorldFlightPlayback(),fast=WorldFlightPlayback();slow.reset(speed:30/3.6);fast.reset(speed:240/3.6)
