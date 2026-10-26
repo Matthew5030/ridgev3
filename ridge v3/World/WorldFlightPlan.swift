@@ -190,7 +190,7 @@ struct WorldFlightPlan {
     var count:Int { keys.count }
 
     init(path:WorldRouteTourPath,corridor:WorldFlightCorridor,terrain:WorldFlightTerrain,frame:GeoBounds,cruiseSpeed:Double,reduceMotion:Bool,
-         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,movementAligned:Bool=false,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
+         clearance:Double=20,cornerLift:Double=0,routeFraming:Bool=false,adaptiveFraming:Bool=true,coordinatedTurns:Bool=true,movementAligned:Bool=false,turnLimits:WorldFlightTurn.Limits? = nil,speedChangeAt:Double? = nil,initialSpeed:Double? = nil,initialAltitude:Float? = nil) throws {
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
         self.routeFraming=routeFraming;self.adaptiveFraming=adaptiveFraming
@@ -340,7 +340,7 @@ struct WorldFlightPlan {
             // One trajectory supplies position, velocity, pitch and bank. Pace
             // must change to fit that trajectory, rather than faking a gentle
             // bank while crossing a hairpin at the straight-line cruise speed.
-            try Self.retimeFlight(&result,cruiseSpeed:cruiseSpeed)
+            try Self.retimeFlight(&result,cruiseSpeed:cruiseSpeed,limits:turnLimits ?? (reduceMotion ? .gentle : .cinematic))
             keys=result;segments=(0..<(result.count-1)).map { Segment(result[$0],result[$0+1]) }
             return
         }
@@ -387,7 +387,7 @@ struct WorldFlightPlan {
     /// v² κ is lateral acceleration; bank is atan(v² κ / g). Curvature change
     /// also limits pace, so rolling into a bend takes time. Braking is planned
     /// backwards along the whole journey, never discovered by the live camera.
-    private static func retimeFlight(_ keys:inout [Key],cruiseSpeed:Double) throws {
+    private static func retimeFlight(_ keys:inout [Key],cruiseSpeed:Double,limits:WorldFlightTurn.Limits) throws {
         let n=keys.count,scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed
         var distance=Array(repeating:0.0,count:n)
         for i in 1..<n { distance[i]=distance[i-1]+simd_distance(keys[i].eye,keys[i-1].eye) }
@@ -402,17 +402,19 @@ struct WorldFlightPlan {
             let a=max(0,i-1),b=min(n-1,i+1)
             let change=abs(curvature[b]-curvature[a])/max(0.001,distance[b]-distance[a])
             let k=abs(curvature[i])
-            let lateral=sqrt(3.2/max(0.0000001,k)),angular=0.20/max(0.0000001,k)
-            let roll=pow(9.81*0.08/max(0.000000001,change),1.0/3)
+            let lateral=sqrt(limits.lateralAcceleration/max(0.0000001,k)),angular=limits.yawRate/max(0.0000001,k)
+            let roll=pow(9.81*(limits.rollRate*0.45)/max(0.000000001,change),1.0/3)
             return pow(min(cruise,lateral,angular,roll),2)
         }
         let spacing=distance.last!/Double(n-1)
-        let radius=max(1,Int(ceil(20/max(0.001,spacing))))
-        func envelope(_ limits:[Double])->[Double] {
-            var values=limits
-            // Four m/s² acceleration and braking, with no speed steps.
-            for i in 1..<n { values[i]=min(values[i],values[i-1]+8*(distance[i]-distance[i-1])) }
-            for i in stride(from:n-2,through:0,by:-1) { values[i]=min(values[i],values[i+1]+8*(distance[i+1]-distance[i])) }
+        let radius=max(1,Int(ceil(limits.smoothingDistance/max(0.001,spacing))))
+        func envelope(_ ceilings:[Double])->[Double] {
+            var values=ceilings
+            // Anticipate the manoeuvre without dragging its low corner speed
+            // through kilometres of otherwise clear route.
+            let slope=2*limits.acceleration
+            for i in 1..<n { values[i]=min(values[i],values[i-1]+slope*(distance[i]-distance[i-1])) }
+            for i in stride(from:n-2,through:0,by:-1) { values[i]=min(values[i],values[i+1]+slope*(distance[i+1]-distance[i])) }
             // A minimum over the complete filter support, then positive box
             // filters, stays below every original cap while easing its joins.
             let reach=radius*4
@@ -456,11 +458,11 @@ struct WorldFlightPlan {
                     let cross=horizontal.x*acceleration.y-horizontal.y*acceleration.x
                     let lateral=cross/max(0.00001,speed),rate=cross/max(0.00001,speed*speed)
                     let bank=atan(-lateral/9.81),time=(keys[i].time+(keys[i+1].time-keys[i].time)*fraction)/scale
-                    var factor=max(1,sqrt(abs(lateral)/3.8),abs(rate)/0.22)
+                    var factor=max(1,sqrt(abs(lateral)/(limits.lateralAcceleration*1.1)),abs(rate)/(limits.yawRate*1.1))
                     if let previous=last,time>previous.time+0.000001 {
                         let rollRate=abs(bank-previous.bank)/(time-previous.time)
-                        factor=max(factor,pow(rollRate/0.18,1.0/3))
-                        residual=max(residual,rollRate/0.18)
+                        factor=max(factor,pow(rollRate/limits.rollRate,1.0/3))
+                        residual=max(residual,rollRate/limits.rollRate)
                     }
                     if factor>1.001 { valid=false }
                     residual=max(residual,factor)

@@ -41,6 +41,17 @@ struct WorldFlightPace {
 /// A coordinated turn: radius and actual speed determine the lean. Busy
 /// switchbacks use a higher, calmer view and a smaller maximum bank.
 enum WorldFlightTurn {
+    struct Limits {
+        let lateralAcceleration:Double
+        let yawRate:Double
+        let rollRate:Double
+        let acceleration:Double
+        let smoothingDistance:Double
+        // A steep coordinated bank lets a tight bend retain momentum. These
+        // are cinematic manoeuvre limits, not an aircraft performance model.
+        static let cinematic=Self(lateralAcceleration:12,yawRate:0.65,rollRate:0.60,acceleration:12,smoothingDistance:12)
+        static let gentle=Self(lateralAcceleration:3.2,yawRate:0.20,rollRate:0.18,acceleration:4,smoothingDistance:20)
+    }
     /// Signed normal acceleration in the horizontal flight plane. No bank
     /// clamp or independent lag: the prepared pace bounds the actual turn.
     static func coordinatedBank(velocity:SIMD3<Double>,acceleration:SIMD3<Double>)->Float {

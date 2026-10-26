@@ -24,7 +24,7 @@ import simd
             ("heading wrap",circle),
             ("hilly bends",stride(from:0.0,through:6000.0,by:20).map { point(400*sin($0/500),-$0) })]
         let scale=(600/3.6)/25.0,dt=1.0/60
-        func make(_ points:[RoutePoint],hilly:Bool=false,quiet:Bool=false) throws -> WorldFlightPlan {
+        func make(_ points:[RoutePoint],hilly:Bool=false,quiet:Bool=false,limits:WorldFlightTurn.Limits?=nil) throws -> WorldFlightPlan {
             let path=WorldRouteTourPath(segments:[points])!,rail=WorldFlightCorridor(path:path,tolerance:160,routeCentred:true)
             let distances=WorldFlightTerrain.distances(length:rail.length)
             let heights:[Float?]=distances.map { distance in
@@ -33,12 +33,12 @@ import simd
             }
             let terrain=WorldFlightTerrain(path:path,corridor:rail,heights:heights)
             return try WorldFlightPlan(path:path,corridor:rail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:quiet,
-                clearance:10,cornerLift:12,routeFraming:true,movementAligned:true)
+                clearance:10,cornerLift:12,routeFraming:true,movementAligned:true,turnLimits:limits)
         }
         for (name,points) in fixtures {
             let began=Date(),plan=try make(points,hilly:name=="hilly bends"),preparation=Date().timeIntervalSince(began)
             var glide=WorldFlightGlide(),previous=plan.sample(time:0),lastBank=previous.pose.bank,lastYaw=0.0,lastRate=0.0
-            var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0
+            var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0,maxDerivativeError=0.0
             var correctTurns=0,turns=0
             let camera=SCNNode();camera.camera=SCNCamera();let rig=WorldCameraRig();rig.beginTour(on:camera)
             func yaw(_ v:SIMD3<Float>)->Double { atan2(Double(v.x),-Double(v.z)) }
@@ -54,9 +54,13 @@ import simd
                 let v=SIMD3<Double>(sample.velocity),a=SIMD3<Double>(sample.acceleration),horizontal=hypot(v.x,v.z)
                 let lateral=(v.x*a.z-v.z*a.x)/max(0.00001,horizontal)
                 check(abs(tan(Double(sample.pose.bank))*9.81+lateral)<0.0001,"\(name): bank and actual centripetal acceleration agree")
-                let before=plan.sample(time:time-0.002*scale),after=plan.sample(time:time+0.002*scale)
-                let measuredAcceleration=SIMD3<Double>(after.velocity-before.velocity)*(scale/0.004)
-                check(simd_distance(measuredAcceleration,a)<0.03,"\(name): bank uses acceleration measured from travel, with actual playback units")
+                let before=plan.sample(time:time-0.001*scale),after=plan.sample(time:time+0.001*scale)
+                let measuredAcceleration=SIMD3<Double>(after.velocity-before.velocity)*(scale/0.002)
+                let derivativeError=simd_distance(measuredAcceleration,a)
+                maxDerivativeError=max(maxDerivativeError,derivativeError)
+                // Float velocity quantisation and a finite stencil crossing a
+                // cubic's jerk join are bounded independently of the bank math.
+                check(derivativeError<0.03,"\(name): bank uses acceleration measured from travel, with actual playback units")
                 let angle=yaw(sample.velocity),change=atan2(sin(angle-lastYaw),cos(angle-lastYaw))/dt
                 lastYaw=angle;maxYawRate=max(maxYawRate,abs(change));variation+=abs(change-lastRate);lastRate=change
                 maxRollRate=max(maxRollRate,Double(abs(sample.pose.bank-lastBank))/dt);lastBank=sample.pose.bank
@@ -82,16 +86,23 @@ import simd
                 }
                 previous=sample
             }
-            check(maxBank<24 * Double.pi/180 && maxLateral<4.0,"\(name): turn pace supports a comfortable physical bank")
-            check(maxRollRate<0.225,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
-            check(maxYawRate<0.225,"\(name): no fast swivel through tight turns")
-            check(maxAcceleration<4.3,"\(name): speed changes anticipate bends without hard braking")
+            check(maxBank<55 * Double.pi/180 && maxLateral<13.3,"\(name): tighter turns use deeper coordinated banks within the manoeuvre envelope")
+            check(maxRollRate<0.62,"\(name): roll rate is bounded by the prepared movement, without a lagging camera filter")
+            check(maxYawRate<0.72,"\(name): tighter turns retain bounded continuous heading")
+            check(maxAcceleration<13,"\(name): acceleration and braking stay inside the faster pace envelope")
             check(minSpeed>0.5,"\(name): turn keeps moving forward")
             check(turns==0 || Double(correctTurns)/Double(turns)>0.99,"\(name): bank consistently agrees with the actual turn")
             if name=="straight" { check(abs(minSpeed-600/3.6)<0.01 && abs(maxSpeed-minSpeed)<0.01,"Straight flight keeps the selected 600 km/h cruise") }
             if name=="small corrections" { check(maxBank<0.01 && variation<0.1,"Discarded path noise cannot flap the camera") }
-            if name=="tight return" { check(minSpeed<25 && maxSpeed>minSpeed*2,"A tight turn slows rather than applying fake bank at cruise pace") }
-            print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip)")
+            if name=="tight return" || name=="bend" || name=="hilly bends" {
+                let gentle=try make(points,hilly:name=="hilly bends",limits:.gentle)
+                check(plan.duration<gentle.duration*0.7,"\(name): the trip is materially faster than the previously accepted slow build")
+                check(maxBank>35 * Double.pi/180,"\(name): a sharp turn is achieved with a deeper bank")
+            }
+            if name=="tight return" {
+                check(minSpeed>20 && maxYawRate>0.4,"A tight return carries momentum and turns more sharply instead of crawling around the corner")
+            }
+            print("\(name): prepare \(preparation)s; wall duration \(plan.duration/scale)s; speed \(minSpeed*3.6)…\(maxSpeed*3.6)km/h; bank \(maxBank*180 / .pi)°; roll rate \(maxRollRate); yaw rate \(maxYawRate); acceleration \(maxAcceleration); slip \(maxSlip); derivative error \(maxDerivativeError)")
         }
         let straight=try make([point(0,0),point(0,-12000)])
         func steer(_ hz:Double)->WorldFlightPlan.Sample {
@@ -128,7 +139,7 @@ import simd
                 if tick>1 { maxRate=max(maxRate,Double(abs(sample.pose.bank-lastBank))/dt) };lastBank=sample.pose.bank
                 maxBank=max(maxBank,Double(abs(sample.pose.bank)))
             }
-            check(maxRate<0.25 && maxBank<30 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
+            check(maxRate<0.8 && maxBank<58 * Double.pi/180,"\(name): steering through prepared bends retains continuous bounded banking")
             print("\(name) with steering: peak bank \(maxBank*180 / .pi)°; roll rate \(maxRate)")
         }
         let quiet=try make(fixtures[3].1,quiet:true)
