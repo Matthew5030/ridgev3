@@ -45,6 +45,7 @@ import simd
             var maxBank=0.0,maxRollRate=0.0,maxYawRate=0.0,maxLateral=0.0,minSpeed=Double.infinity,maxSpeed=0.0,maxAcceleration=0.0,maxSlip=0.0,variation=0.0,maxDerivativeError=0.0
             var correctTurns=0,turns=0,maxPitchRate=0.0
             var previousAlong=0.0,maxPaceJerk=0.0
+            var previousBodyBank:Double?,maxBodyBank=0.0,maxBodyRoll=0.0
             var returnBankSign=0.0
             var lastPitch=atan2(Double(previous.velocity.y),Double(simd_length(SIMD2(previous.velocity.x,previous.velocity.z))))
             var turnStart=Double.infinity,turnFinish=Double.infinity
@@ -66,7 +67,13 @@ import simd
                 let along=simd_dot(v,a)/max(0.000001,simd_length(v))
                 if tick>1 { maxPaceJerk=max(maxPaceJerk,abs(along-previousAlong)/dt) };previousAlong=along
                 let lateral=(v.x*a.z-v.z*a.x)/max(0.00001,horizontal)
-                check(abs(tan(Double(sample.pose.bank))*sample.bankResponseAcceleration+lateral)<0.001,"\(name): cinematic bank agrees with the actual turn and shared response scale")
+                let bodyBank = -atan(lateral/sample.bankResponseAcceleration)
+                maxBodyBank=max(maxBodyBank,abs(bodyBank))
+                if let previousBodyBank { maxBodyRoll=max(maxBodyRoll,abs(bodyBank-previousBodyBank)/dt) }
+                previousBodyBank=bodyBank
+                let squared=lateral*lateral,softness=WorldFlightTurn.cinematicRollSoftness
+                let cameraLateral=sample.stabilizesRoll ? lateral*squared/(squared+softness*softness) : lateral
+                check(abs(tan(Double(sample.pose.bank))*sample.bankResponseAcceleration+cameraLateral)<0.001,"\(name): camera bank responds to measured turning with the prepared horizon stabilization")
                 let before=plan.sample(time:time-0.001*scale),after=plan.sample(time:time+0.001*scale)
                 let measuredAcceleration=SIMD3<Double>(after.velocity-before.velocity)*(scale/0.002)
                 // Compare the velocity integral over the finite stencil. C2
@@ -133,6 +140,7 @@ import simd
             }
             check(maxBank<84 * Double.pi/180 && maxLateral<500,"\(name): anchored turns permit stronger but bounded cinematic banks")
             check(maxRollRate<3.4,"\(name): the whole-shot pace bounds roll without corner braking or camera lag")
+            check(maxBodyBank<84 * .pi/180 && maxBodyRoll<3.4,"\(name): a stabilized horizon cannot relax the underlying movement envelope")
             check(maxYawRate<3.3,"\(name): turns retain bounded continuous heading")
             check(maxAcceleration<0.01,"\(name): the flight cannot brake and accelerate between bends")
             check(maxPaceJerk<0.1,"\(name): constant arc-length pace removes longitudinal throttle jolts")
@@ -190,6 +198,18 @@ import simd
         }
         let a=steer(30),b=steer(60),c=steer(120)
         check(simd_distance(a.pose.eye,b.pose.eye)<0.1 && simd_distance(b.pose.eye,c.pose.eye)<0.1,"Manual glide is consistent across display rates")
+        var previousLean=0.0
+        for lateral in [0.0,2,5,10,20,40,100,300] {
+            let bank=WorldFlightTurn.coordinatedBank(velocity:SIMD3<Double>(100,0,0),acceleration:SIMD3<Double>(0,0,lateral),responseAcceleration:64,stabilized:true)
+            let lean=abs(Double(bank))*180 / .pi
+            check(lean>=previousLean,"Horizon stabilization preserves increasing lean for stronger actual turns")
+            check(lateral==0 || Double(bank)*lateral<0,"Horizon stabilization keeps the bank pointing into the measured turn")
+            if lateral<=10 { check(lean<1,"Gentle course corrections keep the visible horizon almost level") }
+            if lateral==20 { check(lean<4,"Small transfer corrections cannot repeatedly tip the camera by double-digit angles") }
+            if lateral==100 { check(lean>50,"A decisive turn retains a pronounced bank") }
+            if lateral==300 { check(lean>75,"Tight high-speed turns retain deep banking") }
+            previousLean=lean
+        }
         for name in ["tight return","hilly bends"] {
             let fixture=fixtures.first { $0.0==name }!,plan=try make(fixture.1,hilly:name=="hilly bends")
             var glide=WorldFlightGlide(),lastBank:Float=0,maxRate=0.0,maxBank=0.0
@@ -209,6 +229,39 @@ import simd
             let sample=quiet.sample(time:time)
             check(sample.pose.bank==0 && simd_dot(simd_normalize(sample.pose.look-sample.pose.eye),simd_normalize(sample.velocity))>0.99999,"Reduce Motion retains forward movement with a level horizon")
         }
+        let crossingPath=WorldRouteTourPath(segments:[[point(0,0),point(0,-1200),point(2000,-1200),point(2000,0),point(-1000,0),point(-1000,-201),point(0,-201)]])!
+        let crossingRail=WorldFlightCorridor(path:crossingPath,style:.drone)
+        let crossingStations=WorldFlightTerrain.distances(length:crossingRail.length)
+        var crossingFloors=crossingStations.map { _ in Float?(100) }
+        crossingFloors[crossingFloors.count-1]=250
+        let crossingTerrain=WorldFlightTerrain(path:crossingPath,corridor:crossingRail,heights:crossingStations.map { _ in Float?(100) },clearanceHeights:crossingFloors)
+        check(crossingTerrain.clearanceElevation(at:201)==100,"First crossing uses its own prepared clearance corridor")
+        check(crossingTerrain.clearanceElevation(at:crossingRail.length)==250,"The later perpendicular pass retains its different clearance floor at the same location")
+        let crossingPlan=try WorldFlightPlan(path:crossingPath,corridor:crossingRail,terrain:crossingTerrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+        let firstCrossing=crossingPlan.sample(time:crossingPlan.time(at:201))
+        check(firstCrossing.heightAboveGround<12,"A later crossing's high clearance floor cannot manufacture an altitude bump on the earlier flat leg")
+        print("Crossing clearance: first 100m, final 250m; first-pass camera clearance \(firstCrossing.heightAboveGround)m")
+        let rampTerrain=WorldFlightTerrain(path:crossingPath,corridor:crossingRail,heights:crossingStations.map { Float(100+$0*0.1) })
+        check(abs(rampTerrain.elevation(at:123.25)-112.325)<0.001,"Prepared ground height interpolates continuously along ordered travel")
+        let cliffPath=WorldRouteTourPath(segments:[[point(0,0),point(0,-3000)]])!,cliffRail=WorldFlightCorridor(path:cliffPath,style:.drone)
+        let cliffStations=WorldFlightTerrain.distances(length:cliffRail.length),lanes=WorldFlightTerrain.clearancePoints(corridor:cliffRail)
+        check(abs(lanes[0].distance(to:lanes[4])-WorldFlightGlide.coordinatedLateralLimit*2)<0.01,"Production clearance samples cover the actual steering corridor")
+        func cliffPlan(offset:Double) throws -> WorldFlightPlan {
+            let floors=cliffStations.indices.map { i -> Float? in
+                lanes[(i*5)..<(i*5+5)].map { p -> Float in
+                    let right=(p.longitude-cliffPath.points[0].coordinate.longitude)*111195*cos(53 * .pi/180)
+                    return cliffStations[i]>800 && cliffStations[i]<1600 && right>offset ? 250 : 100
+                }.max()!
+            }
+            let terrain=WorldFlightTerrain(path:cliffPath,corridor:cliffRail,heights:cliffStations.map { _ in Float?(100) },clearanceHeights:floors)
+            return try WorldFlightPlan(path:cliffPath,corridor:cliffRail,terrain:terrain,frame:frame,cruiseSpeed:25,reduceMotion:false,clearance:10)
+        }
+        let outsideCliff=try cliffPlan(offset:18),reachableCliff=try cliffPlan(offset:10)
+        let outsideHeight=outsideCliff.sample(time:outsideCliff.time(at:1200)).heightAboveGround
+        let reachableHeight=reachableCliff.sample(time:reachableCliff.time(at:1200)).heightAboveGround
+        check(outsideHeight<11,"A cliff outside reachable steering cannot create a false climb")
+        check(reachableHeight>159,"A cliff inside the steering corridor still raises the prepared clearance floor")
+        print("Cliff clearance: outside steering \(outsideHeight)m; reachable cliff \(reachableHeight)m")
         let sample=straight.sample(time:straight.duration*0.4),output=GeoBounds(minLatitude:52.98,minLongitude:-4.03,maxLatitude:53.04,maxLongitude:-3.97)
         let converted=WorldFlightPlan.converted(sample,from:frame,to:output)
         check(converted.movementAligned && simd_dot(simd_normalize(converted.pose.look-converted.pose.eye),simd_normalize(converted.velocity))>0.99999,"Scene rebasing cannot separate travel from viewing direction")

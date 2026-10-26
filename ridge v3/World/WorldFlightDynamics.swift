@@ -63,11 +63,19 @@ enum WorldFlightTurn {
     }
     /// Map actual normal acceleration to a coordinated bank. The response
     /// scale is shared by preparation and steering; no independent roll lag.
-    static func coordinatedBank(velocity:SIMD3<Double>,acceleration:SIMD3<Double>,responseAcceleration:Double=9.81)->Float {
+    static let cinematicRollSoftness=40.0
+    static func cameraBank(lateral:Double,responseAcceleration:Double,stabilized:Bool)->Double {
+        // A lag-free horizon stabilizer. Tiny steering corrections stay close
+        // to level; substantial turns retain their strong coordinated lean.
+        let squared=lateral*lateral
+        let effective=stabilized ? lateral*squared/(squared+cinematicRollSoftness*cinematicRollSoftness) : lateral
+        return -atan(effective/responseAcceleration)
+    }
+    static func coordinatedBank(velocity:SIMD3<Double>,acceleration:SIMD3<Double>,responseAcceleration:Double=9.81,stabilized:Bool=false)->Float {
         let speed=hypot(velocity.x,velocity.z)
         guard speed>0.00001 else { return 0 }
         let lateral=(velocity.x*acceleration.z-velocity.z*acceleration.x)/speed
-        return Float(-atan(lateral/responseAcceleration))
+        return Float(cameraBank(lateral:lateral,responseAcceleration:responseAcceleration,stabilized:stabilized))
     }
     static func maximumBank(overview:Double)->Double { (18-6*min(1,max(0,overview))) * .pi/180 }
     static func bank(curvature:Double,speed:Double,overview:Double)->Float {
@@ -87,6 +95,7 @@ enum WorldFlightTurn {
 /// pause/seek never integrate hidden movement.
 struct WorldFlightGlide {
     static let lateralLimit=24.0
+    static let coordinatedLateralLimit=12.0
     private var offset=SIMD3<Double>.zero
     private var derivative=SIMD3<Double>.zero
     private var previousVelocity:SIMD3<Double>?
@@ -151,7 +160,7 @@ struct WorldFlightGlide {
         let forward=simd_length_squared(horizontal)>0.000001 ? simd_normalize(horizontal) : SIMD2<Double>(0,-1)
         let right=SIMD3(-forward.y,0,forward.x),descent=min(10,max(0,clearance-5))
         let vertical=(pitch<0 ? descent : 12)*tanh(Double(pitch)*2)
-        let target=right*(12*tanh(Double(yaw)*1.5))+SIMD3(0,vertical,0)
+        let target=right*(Self.coordinatedLateralLimit*tanh(Double(yaw)*1.5))+SIMD3(0,vertical,0)
         let omega=0.45,u=omega*dt,decay=exp(-u)
         let a=first-target,b=second-target,c=offset-target
         first=target+a*decay
@@ -165,7 +174,7 @@ struct WorldFlightGlide {
         let direction=simd_length_squared(velocity)>0.000001 ? SIMD3<Float>(simd_normalize(velocity)) : simd_normalize(reference.pose.look-reference.pose.eye)
         let point=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         var result=reference
-        result.pose = .init(eye:eye,look:eye+direction*80,focus:point,bank:reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:velocity,acceleration:acceleration,responseAcceleration:reference.bankResponseAcceleration))
+        result.pose = .init(eye:eye,look:eye+direction*80,focus:point,bank:reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:velocity,acceleration:acceleration,responseAcceleration:reference.bankResponseAcceleration,stabilized:reference.stabilizesRoll))
         result.velocity=SIMD3<Float>(velocity);result.acceleration=SIMD3<Float>(acceleration);result.speed=simd_length(velocity)
         result.heightAboveGround+=offset.y;result.cameraPoint=point
         return result

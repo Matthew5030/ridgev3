@@ -21,11 +21,12 @@ struct WorldFlightTerrain {
     /// Five lanes cover the steering corridor. They share a single cache-only
     /// terrain read; no geometry or height queries run during playback.
     static func clearancePoints(corridor:WorldFlightCorridor)->[GeoPoint] {
-        distances(length:corridor.length).flatMap { distance -> [GeoPoint] in
+        let limit=corridor.style == .drone ? WorldFlightGlide.coordinatedLateralLimit : WorldFlightGlide.lateralLimit
+        return distances(length:corridor.length).flatMap { distance -> [GeoPoint] in
             let rail=corridor.sample(flightDistance:distance)
             let right=SIMD2(-rail.direction.y,rail.direction.x)
             return [-1.0,-0.5,0,0.5,1].map { lane in
-                let offset=right*(lane*WorldFlightGlide.lateralLimit)
+                let offset=right*(lane*limit)
                 return GeoPoint(latitude:rail.point.latitude-offset.y/111195,
                                 longitude:rail.point.longitude+offset.x/(111195*max(0.01,cos(rail.point.latitude * .pi/180))))
             }
@@ -110,6 +111,25 @@ struct WorldFlightTerrain {
     }
     func elevation(_ p:GeoPoint)->Float { nearest(p).map { heights[$0] } ?? 0 }
     func clearanceElevation(_ p:GeoPoint)->Float { nearest(p).map { clearanceHeights[$0] } ?? 0 }
+    private func bracketTravel(_ travel:Double)->(Int,Int,Double) {
+        let distance=min(subjectDistances.last!,max(0,travel.isFinite ? travel : 0))
+        var a=0,b=subjectDistances.count-1
+        while a+1<b { let m=(a+b)/2;if subjectDistances[m]<=distance { a=m } else { b=m } }
+        return (a,b,(distance-subjectDistances[a])/max(0.000001,subjectDistances[b]-subjectDistances[a]))
+    }
+    /// The same position can be visited with a different heading and clearance
+    /// corridor. Production must retain that occurrence, not choose a nearby
+    /// sample from another leg at a crossing or close return.
+    func elevation(at travel:Double)->Double {
+        let (a,b,t)=bracketTravel(travel)
+        return Double(heights[a])+(Double(heights[b])-Double(heights[a]))*t
+    }
+    func clearanceElevation(at travel:Double)->Double {
+        let (a,b,t)=bracketTravel(travel)
+        if t<=0.000000001 { return Double(clearanceHeights[a]) }
+        if t>=0.999999999 { return Double(clearanceHeights[b]) }
+        return Double(max(clearanceHeights[a],clearanceHeights[b]))
+    }
     func subject(at travel:Double)->RoutePoint {
         var a=0,b=subjects.count-1
         while a+1<b { let m=(a+b)/2;if subjectDistances[m]<=travel { a=m } else { b=m } }
@@ -139,6 +159,7 @@ struct WorldFlightPlan {
         var acceleration=SIMD3<Float>.zero
         var movementAligned=false
         var bankResponseAcceleration=9.81
+        var stabilizesRoll=false
     }
     /// Convert both eye and velocity together when streaming changes the scene
     /// origin. Steering state stays in the immutable plan frame.
@@ -205,6 +226,7 @@ struct WorldFlightPlan {
     let adaptiveFraming:Bool
     let movementAligned:Bool
     let bankResponseAcceleration:Double
+    let stabilizesRoll:Bool
     private var keys:[Key]
     private var segments:[Segment]
     private var lookSegments:[Segment]=[]
@@ -218,6 +240,7 @@ struct WorldFlightPlan {
         let drone=corridor.style == .drone,movementAligned=requestedAlignment || corridor.style == .drone
         self.frame=frame;self.cruiseSpeed=cruiseSpeed;self.reduceMotion=reduceMotion;self.clearance=min(1000,max(5,clearance))
         hasSpeedTransition=initialSpeed != nil || initialAltitude != nil
+        stabilizesRoll=drone && !reduceMotion && turnLimits == nil && initialSpeed == nil && initialAltitude == nil
         self.routeFraming=routeFraming && !drone;self.adaptiveFraming=adaptiveFraming && !drone
         self.movementAligned=movementAligned
         bankResponseAcceleration=movementAligned ? (turnLimits ?? (reduceMotion ? .gentle : .cinematic)).bankResponseAcceleration : 9.81
@@ -236,10 +259,11 @@ struct WorldFlightPlan {
             }
             if i>0 { time+=(travel-lastTravel)*2/(speed+lastSpeed) }
             let point=rail.point
-            let ground=terrain.elevation(rail.point)
+            let ground=drone ? terrain.elevation(at:travel) : Double(terrain.elevation(rail.point))
             let uv=frame.uv(point)
             let eye=SIMD3((uv.u-0.5)*frame.widthMeters,Double(ground),(uv.v-0.5)*frame.depthMeters)
-            minimumHeights.append(Double(terrain.clearanceElevation(rail.point))+self.clearance+(drone ? 0 : max(0,cornerLift)*rail.overview))
+            let floor=drone ? terrain.clearanceElevation(at:travel) : Double(terrain.clearanceElevation(rail.point))
+            minimumHeights.append(floor+self.clearance+(drone ? 0 : max(0,cornerLift)*rail.overview))
             result.append(Key(time:time,route:rail.routeDistance,eye:eye,ground:Double(ground),overview:rail.overview))
             if drone { result[result.count-1].fieldOfView=reduceMotion ? WorldRouteTour.fieldOfView : 78 }
             lastTravel=travel;lastSpeed=speed
@@ -441,13 +465,16 @@ struct WorldFlightPlan {
             }
         }
         func accepts(_ speed:Double)->Bool {
-            var last:(distance:Double,bank:Double)?
+            var last:(distance:Double,bank:Double,bodyBank:Double)?
             for s in stations {
-                let bank=atan(-s.lateral*speed*speed/response)
-                if abs(bank)>WorldFlightCorridor.droneBankLimit || s.angular*speed>WorldFlightCorridor.droneAngularLimit || s.pitch*speed>0.6 { return false }
+                let bank=WorldFlightTurn.cameraBank(lateral:s.lateral*speed*speed,responseAcceleration:response,stabilized:true)
+                let bodyBank=atan(-s.lateral*speed*speed/response)
+                // Horizon stabilization must not let the flight exceed its
+                // original movement limits merely because the camera leans less.
+                if abs(bodyBank)>WorldFlightCorridor.droneBankLimit || s.angular*speed>WorldFlightCorridor.droneAngularLimit || s.pitch*speed>0.6 { return false }
                 if let previous=last,s.distance>previous.distance+0.0000001,
-                   abs(bank-previous.bank)*speed/(s.distance-previous.distance)>WorldFlightCorridor.droneRollLimit { return false }
-                last=(s.distance,bank)
+                   max(abs(bank-previous.bank),abs(bodyBank-previous.bodyBank))*speed/(s.distance-previous.distance)>WorldFlightCorridor.droneRollLimit { return false }
+                last=(s.distance,bank,bodyBank)
             }
             return true
         }
@@ -783,6 +810,29 @@ struct WorldFlightPlan {
         if !arcLengths.isEmpty { return keys[a].time+segments[a].arcLength(to:t)/arcSpeed }
         return keys[a].time+(keys[b].time-keys[a].time)*t
     }
+    /// Opt-in device diagnostics: relative progress and motion only, with no
+    /// coordinates. Called on the preparation worker, never in the frame loop.
+    func diagnosticProfile(corridor:WorldFlightCorridor,terrain:WorldFlightTerrain)->Data? {
+        let scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed,seconds=duration/scale
+        let count=max(1,min(10000,Int(ceil(seconds/0.05))))
+        var rows:[[String:Double]]=[]
+        for i in 0...count {
+            let time=seconds*Double(i)/Double(count),sample=sample(time:time*scale)
+            let velocity=SIMD3<Double>(sample.velocity)*scale
+            let acceleration=SIMD3<Double>(sample.acceleration)*scale*scale
+            let travel=corridor.flightDistance(at:sample.routeDistance)
+            let pitch=atan2(velocity.y,hypot(velocity.x,velocity.z))
+            rows.append([
+                "seconds":time,"routeDistanceM":sample.routeDistance,"speedKmh":sample.speed*scale*3.6,
+                "altitudeM":Double(sample.pose.eye.y),"groundM":terrain.elevation(at:travel),
+                "clearanceFloorM":terrain.clearanceElevation(at:travel)+clearance,"heightAGL":sample.heightAboveGround,
+                "pitchDegrees":pitch*180 / .pi,"bankDegrees":Double(sample.pose.bank)*180 / .pi,
+                "pitchRateDegreesS":WorldFlightTurn.pitchRate(velocity:velocity,acceleration:acceleration)*180 / .pi,
+                "verticalVelocityMS":velocity.y,"verticalAccelerationMS2":acceleration.y])
+        }
+        let payload:[String:Any]=["format":1,"recordedAtUnix":Date().timeIntervalSince1970,"durationSeconds":seconds,"stabilizesRoll":stabilizesRoll,"samples":rows]
+        return try? JSONSerialization.data(withJSONObject:payload,options:.sortedKeys)
+    }
     func sample(time:Double,in outputFrame:GeoBounds? = nil)->Sample {
         let (a,b,fraction)=bracket(time,byTime:true),left=keys[a],right=keys[b]
         let t:Double
@@ -800,7 +850,7 @@ struct WorldFlightPlan {
         let bank:Float
         if movementAligned {
             let scale=WorldRouteTour.previewCruiseSpeed/3.6/cruiseSpeed
-            bank=reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:motion.velocity*scale,acceleration:motion.acceleration*scale*scale,responseAcceleration:bankResponseAcceleration)
+            bank=reduceMotion ? 0 : WorldFlightTurn.coordinatedBank(velocity:motion.velocity*scale,acceleration:motion.acceleration*scale*scale,responseAcceleration:bankResponseAcceleration,stabilized:stabilizesRoll)
         } else { bank=Float(left.bank+(right.bank-left.bank)*Double(t)) }
         let cameraPoint=frame.point(u:Double(eye.x)/frame.widthMeters+0.5,v:Double(eye.z)/frame.depthMeters+0.5)
         let routeDistance=left.route+(right.route-left.route)*Double(t)
@@ -825,6 +875,6 @@ struct WorldFlightPlan {
         }
         let ground=left.ground+(right.ground-left.ground)*Double(t)
         return Sample(pose:.init(eye:eye,look:routeTarget ?? eye+direction*80,focus:focus,bank:bank),routeDistance:routeDistance,
-                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t),acceleration:acceleration,movementAligned:movementAligned,bankResponseAcceleration:bankResponseAcceleration)
+                      speed:Double(simd_length(velocity)),velocity:velocity,heightAboveGround:Double(eye.y)-ground,cameraPoint:cameraPoint,routeTarget:routeTarget,fieldOfView:left.fieldOfView+(right.fieldOfView-left.fieldOfView)*Double(t),acceleration:acceleration,movementAligned:movementAligned,bankResponseAcceleration:bankResponseAcceleration,stabilizesRoll:stabilizesRoll)
     }
 }

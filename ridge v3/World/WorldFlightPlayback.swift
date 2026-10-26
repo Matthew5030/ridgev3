@@ -53,6 +53,11 @@ final class WorldFlightFrameMonitor:@unchecked Sendable {
         ticks+=1;tickMax=max(tickMax,seconds);if seconds>0.05 { lateTicks+=1 }
         lowSpeed=min(lowSpeed,speed);highSpeed=max(highSpeed,speed)
     }
+    func recordPlan(_ data:Data) {
+        guard isEnabled else { return }
+        let destination=file.deletingLastPathComponent().appendingPathComponent("ridge-flight-plan.json")
+        writer.async { try? data.write(to:destination,options:.atomic) }
+    }
     @discardableResult func recordRender(at time:Double)->Bool {
         guard isEnabled else { return false }
         lock.lock()

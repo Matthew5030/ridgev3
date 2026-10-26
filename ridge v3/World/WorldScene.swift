@@ -668,10 +668,13 @@ final class WorldSceneView: SCNView,SCNSceneRendererDelegate {
                 }
                 try Task.checkCancellation()
                 let build=Task.detached(priority:.userInitiated) {
-                    try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift,routeFraming:true,movementAligned:true)
+                    let plan=try WorldFlightPlan(path:path,corridor:corridor,terrain:terrain,frame:frame,cruiseSpeed:speed,reduceMotion:motion,clearance:clearance,cornerLift:cornerLift,routeFraming:true,movementAligned:true)
+                    let profile=ProcessInfo.processInfo.arguments.contains("--ridge-flight-profile") ? plan.diagnosticProfile(corridor:corridor,terrain:terrain) : nil
+                    return (plan,profile)
                 }
-                let plan=try await withTaskCancellationHandler(operation:{try await build.value},onCancel:{build.cancel()})
+                let (plan,profile)=try await withTaskCancellationHandler(operation:{try await build.value},onCancel:{build.cancel()})
                 guard let self,self.flightPreparationID==token,self.tour?.sessionID==session,self.tour?.isPresented==true,!Task.isCancelled else { return }
+                if let profile { self.flightFrameMonitor.recordPlan(profile) }
                 self.flightTerrain=terrain;self.flightArrival=nil;self.flightPlan=plan;self.flightTime=plan.time(at:self.tourDistance)
                 self.flightGlide.reset();self.flightSample=nil
                 self.flightPreparation=nil;self.preparingClearance=nil;self.preparingSpeed=nil;self.preparingMotion=nil
