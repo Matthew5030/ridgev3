@@ -9,6 +9,15 @@ import SwiftUI
 
 @main
 struct ridge_v3App: App {
+    @AppStorage(RidgeWalkthrough.completedVersionKey) private var walkthroughVersion = 0
+    @State private var pendingOpenURL: URL?
+    @State private var forceWalkthrough = ProcessInfo.processInfo.arguments.contains("--ridge-show-walkthrough")
+    private var needsWalkthrough: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return forceWalkthrough || (walkthroughVersion < RidgeWalkthrough.version
+            && !arguments.contains("--ridge-skip-walkthrough") && !arguments.contains("--verify-preinstalled-atlas"))
+    }
+
     init() {
         UserDefaults.standard.register(defaults: [
             "ridge.mapSourceMode": WorldLibrary.defaultMode,
@@ -49,7 +58,20 @@ struct ridge_v3App: App {
     }
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                if needsWalkthrough {
+                    RidgeWalkthroughView {
+                        walkthroughVersion = RidgeWalkthrough.version
+                        forceWalkthrough = false
+                    }
+                } else {
+                    ContentView(initialOpenURL: pendingOpenURL)
+                }
+            }
+            .onOpenURL { url in
+                // Keep files opened from Files until the first-run guide ends.
+                if needsWalkthrough { pendingOpenURL = url }
+            }
         }
     }
 }

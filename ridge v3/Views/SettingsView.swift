@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Bindable var store: AppStore
     @Environment(WorldModel.self) private var world
     @State private var showDownloadedMaps = false
+    @State private var showWalkthrough = false
     @Environment(\.dismiss) private var dismiss
     @State private var savedAssetBytes: Int64?
     @State private var worldSavedAreaCount = 0
@@ -64,6 +65,14 @@ struct SettingsView: View {
                     if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
                     Text("Download a region, then zoom into it to explore in 3D. Saved terrain works without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Getting started").font(RidgeTheme.sectionTitle)
+                    Button { showWalkthrough = true } label: {
+                        Label("Show the app walkthrough", systemImage: "sparkles.rectangle.stack")
+                            .font(.body.weight(.medium)).frame(minHeight: 44)
+                    }
+                    .accessibilityIdentifier("settings.walkthrough")
+                }
                 worldGestureSection
                 offlineSection
                 legendSection
@@ -90,6 +99,9 @@ struct SettingsView: View {
                 .padding(.horizontal, 24).padding(.vertical, 18)
                 .background(RidgeTheme.paper)
                 .overlay(alignment: .bottom) { Divider() }
+            }
+            .fullScreenCover(isPresented: $showWalkthrough) {
+                RidgeWalkthroughView(isReplay: true) { showWalkthrough = false }
             }
             .onChange(of: selectedMapMode) { _, _ in resetConnectionCheck() }
             .sheet(isPresented:$showDownloadedMaps,onDismiss:{ storageRefresh+=1 }) { WorldDownloadedMapsView(store:store,world:world) }
