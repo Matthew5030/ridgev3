@@ -14,7 +14,7 @@ Prepared 27–30 October 2026. **Public release remains on hold.** Nothing in th
 - [x] Audit actual network paths and retention, save complete Device ID / Other Usage Data questionnaire answers, and check the preview against build 3's manifest. The declaration remains unpublished until the corrected policy is live.
 - [ ] Account Holder accepts outstanding Apple agreements in Business; do not accept on their behalf.
 - [x] Save and verify the privately supplied reviewer contact details with Apple. No private phone number is stored here.
-- [ ] Confirm availability territories, DSA trader details and content-rights declarations with the Account Holder.
+- [ ] Confirm DSA trader details and content-rights declarations with the Account Holder. UK-only availability is saved for the proposed first release and remains editable.
 - [ ] Upload build 3 after the download test, then select the tested distribution build and appropriate approved asset-pack versions. Internal build 2 remains unchanged.
 - [x] Verify all eight screenshot uploads processed as COMPLETE and the saved listing matches its source files.
 - [ ] Obtain release approval before submission.

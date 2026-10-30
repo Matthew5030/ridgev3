@@ -28,5 +28,5 @@ Source references already linked by the project:
 - https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2
 
 The owner also needs to confirm the DSA trader information shown for the app and
-its first availability territories. UK-first is proposed; availability has not
-been published. These decisions do not require changing the approved flight path.
+its first availability territories. UK-only availability is saved for the
+proposed first release, remains editable, and is not publicly available. These decisions do not require changing the approved flight path.

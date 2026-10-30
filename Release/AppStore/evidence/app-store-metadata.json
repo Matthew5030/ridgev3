@@ -23,5 +23,11 @@
   "privacyPolicyURL": "https://bilellaworks.com/apps/ridge/privacy/",
   "reviewerContactComplete": true,
   "privateContactValuesIncluded": false,
-  "signInRequired": false
+  "signInRequired": false,
+  "availabilityCountries": [
+    "GBR"
+  ],
+  "availabilityStatus": "Available on App Release",
+  "preOrder": false,
+  "availabilityAssumption": "UK-first, matching the current map catalogue; editable before submission."
 }

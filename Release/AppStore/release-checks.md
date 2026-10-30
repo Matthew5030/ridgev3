@@ -8,7 +8,9 @@
 - Navigation primary category, Travel secondary category; Apple calculated and
   saved a 4+ content rating. Not designated Made for Kids.
 - Free price schedule and manual release saved. Mac and Vision Pro compatibility
-  distribution disabled for this iPhone/iPad launch.
+  distribution disabled for this iPhone/iPad launch. UK-only availability saved
+  as the proposed initial territory; Apple shows Available on App Release.
+  No pre-order was created.
 - No sign-in requirement. Reviewer name, email and the phone supplied privately
   by the owner are saved and verified. Private contact values are excluded here.
 - Complete privacy questionnaire saved as an unpublished draft: Device ID and
@@ -58,8 +60,9 @@
    Connect currently reports an updated Developer Program License Agreement;
    the earlier Paid Applications Schedule notice must also be resolved if present.
    No agreement was accepted by the agent.
-5. Confirm launch territories (UK-first is proposed because coverage is UK-only),
-   DSA trader details and rights to redistribute the included third-party content.
+5. Confirm DSA trader details and rights to redistribute the included third-party
+   content. UK-only availability is saved, matching current map coverage; change
+   it before submission if a broader first launch is desired.
    Do not select “no third-party content”. See `content-rights-review.md`.
 6. After testing, upload and select the validated distribution build; submit
    the appropriate map packs for their review. Current internal build 2 and its
