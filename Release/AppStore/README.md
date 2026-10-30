@@ -10,8 +10,8 @@ Prepared 27–30 October 2026. **Public release remains on hold.** Nothing in th
 - [x] Version the existing Apple delivery integration and prepare a uniquely numbered, signed 1.0 (3) archive and local App Store IPA export. Apple's validation passed with no errors. See `evidence/release-archive.json`; no build was uploaded or selected.
 - [ ] Final iPhone/iPad smoke test of first open, region downloads, route editing/reopening, cross-section path routing, GPX Files import/export and preview.
 - [ ] Investigate measured iPad main-thread camera stalls without changing the approved route-following mathematics.
-- [ ] Publish the reviewed Ridge support/privacy website changes and verify their production URLs.
-- [x] Audit actual network paths and retention, save complete Device ID / Other Usage Data questionnaire answers, and check the preview against build 3's manifest. The declaration remains unpublished until the corrected policy is live.
+- [x] Publish the owner-approved Ridge website changes and verify the production product/support/privacy URLs. See `evidence/website-publication.json`.
+- [x] Audit actual network paths and retention, save complete Device ID / Other Usage Data questionnaire answers, and check the preview against build 3's manifest. The corrected website policy is live; the declaration remains a draft for final submission preparation.
 - [ ] Account Holder accepts outstanding Apple agreements in Business; do not accept on their behalf.
 - [x] Save and verify the privately supplied reviewer contact details with Apple. No private phone number is stored here.
 - [ ] Confirm DSA trader details and content-rights declarations with the Account Holder. UK-only availability is saved for the proposed first release and remains editable.

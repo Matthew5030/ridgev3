@@ -50,8 +50,10 @@ part of store preparation.
 - Policy: https://bilellaworks.com/apps/ridge/privacy/
 - Support: https://bilellaworks.com/apps/ridge/support/
 - Optional feedback: public studio email already used on Bilella Works.
-- Website corrections are prepared locally in `website-update.patch`; live pages
-  must be updated before publishing the new privacy declaration or submitting.
+- Website corrections were published with owner approval on 30 October 2026.
+  The live policy, support redirect and product page were verified in the browser;
+  see `evidence/website-publication.json`. The App Store declaration remains an
+  unpublished draft for final submission preparation.
 - On 30 October, both draft data types were saved as App Functionality, linked
   to the device, and not used for tracking. The product-page preview shows
   Identifiers and Usage Data under Data Linked to You. Publish was not pressed.

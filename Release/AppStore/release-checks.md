@@ -25,7 +25,10 @@
   route/diagnostic attachment and is not required for free access.
 - Website product, support and privacy corrections prepared locally, with the
   actual app icon. Static site validation passed; the scoped binary/text patch
-  was reverse-checked against the local website changes. No website was deployed.
+  was reverse-checked against the local website changes. The owner approved
+  publication on 30 October; website PR #1 was merged and production deployment
+  succeeded. Live product, support redirect, policy and privacy-index checks
+  passed. Unrelated local website work was preserved.
 - All 100 internal map-pack versions rechecked on 30 October against the frozen,
   checksum-verified publication: all unchanged, unarchived and COMPLETE for
   processing. This is not public-review approval. Proposed batches of ten are
@@ -54,8 +57,8 @@
    editing/reopening across sections, GPX Files import/export, and preview.
    Investigate the previously measured iPad main-thread camera gaps if they are
    still reproducible; renderer callback rate alone is not proof of smooth motion.
-3. Get owner approval to publish the prepared website changes. Verify live
-   support/privacy URLs, then publish the matching App Store privacy declaration.
+3. The reviewed website policy is now live. Publish the saved matching App Store
+   privacy declaration during final submission preparation; it remains a draft.
 4. The Account Holder must review Apple's outstanding agreements. App Store
    Connect currently reports an updated Developer Program License Agreement;
    the earlier Paid Applications Schedule notice must also be resolved if present.
