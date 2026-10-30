@@ -16,9 +16,28 @@
   "publicSubmission": false,
   "assetPackVersionsChanged": false,
   "agentUninstalledApp": false,
-  "networkComparison": "Awaiting mobile-data test",
+  "networkComparison": "User reports the retry still fails; network at the failed attempt was not independently recorded.",
   "appleSupportCase": "103009501518",
   "followUpPrepared": true,
   "followUpSent": false,
-  "causeConfirmed": false
+  "causeConfirmed": false,
+  "testFlightClientReset": {
+    "removedVersion": "4.4.1 (697.1)",
+    "reinstalledVersion": "4.4.1 (697.1)",
+    "result": "User reports the same installation failure after reinstalling TestFlight.",
+    "ridgeDataDeletedByAgent": false,
+    "testerMembershipChanged": false
+  },
+  "directDevelopmentInstall": {
+    "build": "1.0 (3)",
+    "configuration": "Release with development signing",
+    "buildResult": "BUILD SUCCEEDED",
+    "signatureVerification": "codesign --verify --deep --strict passed",
+    "installed": true,
+    "launched": true,
+    "screenVerified": "First-launch Ridge walkthrough visible on the real iPhone",
+    "localManagedAssetDownloadVerified": false,
+    "liveAppleDeliveryVerified": false,
+    "remainingSetup": "Xcode 27 Run Options Background Asset Packs folder; Xcode UI control is currently timing out."
+  }
 }
