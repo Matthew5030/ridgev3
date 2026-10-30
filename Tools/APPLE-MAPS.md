@@ -1,7 +1,7 @@
 # Apple-hosted Ridge maps
 
-Status (26 October 2026): all 100 packs are uploaded, processed and remotely
-verified. Build 2 is **IN_BETA_TESTING** for the account holder in Ridge Internal.
+Status (30 October 2026): all 100 packs are uploaded, processed and remotely
+verified. Build 3 is **IN_BETA_TESTING** for the account holder in Ridge Internal.
 The full existing UK library contains 5,001 sections and 26,299,553,493 packaged
 bytes. A real TestFlight device download/offline check remains pending; Cloudflare
 is retained until that passes. No public App Store release has been made.
@@ -90,8 +90,10 @@ transport MD5. A successful transfer alone is not a ready publication.
 
 The internal group **Ridge Internal** contains only the account holder. Automatic
 access to all builds is disabled. Build 1 was superseded during preparation;
-only build 2, which uses the 100-slot bootstrap, was added after all packs
-were ready and verified. Internal TestFlight uses the latest processed asset
+build 2, which uses the 100-slot bootstrap, was added after all packs
+were ready and verified. Build 3 was added on 30 October after validation; both
+builds remain valid but the real iPhone reports an unavailable-app installation
+error, including after reinstalling TestFlight. Internal TestFlight uses the latest processed asset
 versions automatically. External testing and App Store distribution have their
 own Apple review steps; no public release is authorized by this setup.
 
@@ -100,6 +102,35 @@ confirm a region download over Wi-Fi, then reopen terrain and walking routes
 in airplane mode. Also check cancel, relaunch, overlap and a changed pack version.
 Retain Cloudflare until a real Apple-hosted device test passes. Locally signing
 or uploading the app does not prove actual Apple delivery works.
+
+## Local framework test with Xcode 27
+
+A directly installed development build can exercise the same managed-download
+backend against Xcode’s local server. Apple’s hosted service still requires a
+TestFlight or App Store installation; a local pass does not verify that service.
+
+Duplicate the app scheme, leave the duplicate unshared, and select **Run →
+Options → Background Asset Packs**. Set the folder to the current publication’s
+`archives` directory containing its 100 `.aar` files. Use **Release** for the run
+configuration with development signing and keep the physical phone unlocked
+and connected. Run the scheme from Xcode so it attaches its asset service. Keep
+production Info.plists, entitlements and pack IDs unchanged.
+
+For this test, select Apple downloads and use an uncached area outside the
+bundled Snowdon demonstration. Check native download progress, completed terrain
+access, cancellation/retry, and a later cold open without network. Existing saved
+terrain or bundled content alone cannot demonstrate a fresh managed download.
+Use the ordinary scheme without the local folder for subsequent TestFlight tests.
+
+On 30 October the private **Ridge Local Apple Maps** scheme was configured and
+the signed development build installed. The first Xcode run stopped waiting for
+the phone to unlock; the on-device managed download remains unverified. See the
+[retry evidence](../Release/AppStore/evidence/testflight-retry-2026-10-30.json).
+
+Apple documents the folder option in the
+[Xcode 27 release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes)
+and demonstrates it in
+[the Background Assets testing session](https://developer.apple.com/videos/play/wwdc2026/378/).
 
 ## Checks run
 

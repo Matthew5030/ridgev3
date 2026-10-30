@@ -38,6 +38,21 @@
     "screenVerified": "First-launch Ridge walkthrough visible on the real iPhone",
     "localManagedAssetDownloadVerified": false,
     "liveAppleDeliveryVerified": false,
-    "remainingSetup": "Xcode 27 Run Options Background Asset Packs folder; Xcode UI control is currently timing out."
+    "remainingSetup": "Local Xcode scheme is configured; awaiting unlocked iPhone run and a fresh managed-asset download."
+  },
+  "localManagedAssetTest": {
+    "scheme": "Ridge Local Apple Maps",
+    "shared": false,
+    "runConfiguration": "Release",
+    "publishedArchiveCount": 100,
+    "archiveBytes": 26299553493,
+    "usesUnchangedAppleDownloadBackend": true,
+    "schemeConfiguredInXcode": true,
+    "deviceBuildAndInstall": "Succeeded",
+    "firstXcodeRun": "Stopped while waiting for the iPhone to unlock",
+    "deviceHub": "Not responding; restarted through Activity Monitor and live device-control window recovered",
+    "deviceDownloadResult": "Pending an unlocked iPhone run",
+    "liveAppleDeliveryVerified": false,
+    "productionAppConfigurationChanged": false
   }
 }
