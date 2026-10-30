@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import CryptoKit
 import UIKit
 
 /// Opt-in physical-device comparison. Uses isolated temporary caches and never
@@ -13,10 +14,10 @@ enum WorldPackDiagnostics {
         func save() { if let data=try? JSONEncoder().encode(result) { try? data.write(to:report,options:.atomic) } }
         save()
         do {
-            let root=try WorldLibrary.root(mode:"local",local:UserDefaults.standard.string(forKey:"ridge.localMapServer") ?? WorldLibrary.defaultLocalServer)
+            let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_BENCHMARK_SERVER"] ?? UserDefaults.standard.string(forKey:"ridge.localMapServer") ?? WorldLibrary.defaultLocalServer)
             let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
             guard let region=catalog.sources.first(where: { $0.id==sourceID }),let pack=region.pack else { throw RidgeError.message("Pilot pack unavailable") }
-            for bundled in [false,true] {
+            for bundled in (WorldProtectedAccess.protected(root) ? [true] : [false,true]) {
                 let directory=cache.appendingPathComponent(bundled ? "packed" : "loose")
                 let files=WorldSourceStore(cacheURL:directory)
                 let address=root.appendingPathComponent(region.path).absoluteString
@@ -25,6 +26,15 @@ enum WorldPackDiagnostics {
                 if bundled {
                     let bytes=try await files.downloadPack(pack,source:source,assetProgress:{ _,_ in },progress:{ _ in })
                     result["packedBytes"]=String(bytes)
+                    if WorldProtectedAccess.protected(root) {
+                        let file=WorldSectionPack.file(pack,cache:directory)
+                        guard ProtectedMapStorage.isEncrypted(file) else { throw RidgeError.message("Downloaded pack was not encrypted.") }
+                        result["packedEncrypted"]="passed"
+                        var rejected=false
+                        do { let wrong=try ProtectedMapStorage.Reader(url:file,masterKey:SymmetricKey(size:.bits256));defer { try? wrong.close() };_=try wrong.read(upToCount:16) } catch { rejected=true }
+                        guard rejected else { throw RidgeError.message("Another device key could open this pack.") }
+                        result["wrongDeviceKeyRejected"]="passed"
+                    }
                 } else {
                     try await files.pin(source.tiles,source:source,countCachedInProgress:false,coverageID:source.id,progress:{ _ in })
                     result["looseBytes"]=String(WorldSourceStore.assets(tiles:source.tiles,source:source).reduce(0) { $0+$1.byteCount })
@@ -53,7 +63,7 @@ enum WorldPackDiagnostics {
         func save() { if let data=try? JSONEncoder().encode(result) { try? data.write(to:report,options:.atomic) } }
         save()
         do {
-            let root=try WorldLibrary.root(mode:"local",local:UserDefaults.standard.string(forKey:"ridge.localMapServer") ?? WorldLibrary.defaultLocalServer)
+            let root=try WorldLibrary.root(mode:"local",local:ProcessInfo.processInfo.environment["RIDGE_BENCHMARK_SERVER"] ?? UserDefaults.standard.string(forKey:"ridge.localMapServer") ?? WorldLibrary.defaultLocalServer)
             let catalog=try await WorldCatalogStore(cacheURL:cache).open(root:root)
             let library=try WorldRegionPack.loadLibrary()
             guard let region=(library.areas+library.parks).first(where: { $0.id==id }),

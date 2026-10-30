@@ -308,6 +308,7 @@ struct WorldDownloadPlan: Sendable {
     let bounds: [GeoBounds]
     let edges: [WorldOfflineCoverage.Edge]
     let readyBounds: Set<GeoBounds>
+    var usesAppleAssets=false
 }
 
 actor WorldDownloadStore {
@@ -347,12 +348,20 @@ actor WorldDownloadStore {
             bounds += source.tiles.map { $0.mesh.bounds }
         }
         guard bounds.contains(where:{$0.contains(center)}) else { throw RidgeError.message("Detailed terrain is missing at this location. Choose a nearby area.") }
-        return WorldDownloadPlan(center:center,radius:radius,selection:selection,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },bounds:bounds,edges:WorldOfflineCoverage.outline(bounds),readyBounds:ready)
+        let bytes:Int64
+        if WorldAppleAssets.handles(root) {
+            bytes=try await WorldAppleAssets.shared.downloadBytes(sections:parts.filter { $0.missingBytes>0 }.map { $0.source.id })
+        } else { bytes=parts.reduce(0) { $0+$1.missingBytes } }
+        return WorldDownloadPlan(center:center,radius:radius,selection:selection,parts:parts,bytes:bytes,bounds:bounds,edges:WorldOfflineCoverage.outline(bounds),readyBounds:ready,usesAppleAssets:WorldAppleAssets.handles(root))
     }
     func download(_ plan: WorldDownloadPlan, tilesProgress: @escaping @Sendable (Set<GeoBounds>,Set<GeoBounds>) async -> Void = { _,_ in }, progress: @escaping @Sendable (Int64) async -> Void) async throws {
         var completed: Int64=0
         var ready=plan.readyBounds
         await tilesProgress(ready,[])
+        let apple=plan.usesAppleAssets
+        if apple {
+            completed=try await WorldAppleAssets.shared.ensureTerrain(sections:plan.parts.filter { $0.missingBytes>0 }.map { $0.source.id },progress:progress)
+        }
         for part in plan.parts {
             try Task.checkCancellation()
             let base=completed, previous=ready.subtracting(part.source.tiles.map { $0.mesh.bounds })
@@ -366,10 +375,10 @@ actor WorldDownloadStore {
                 }
                 await tilesProgress(done,loading)
             }) { value in
-                await progress(min(plan.bytes,base+value))
+                await progress(min(plan.bytes,apple ? base : base+value))
             }
             ready.formUnion(part.source.tiles.map { $0.mesh.bounds })
-            completed += part.missingBytes
+            if !apple { completed += part.missingBytes }
             await progress(min(plan.bytes,completed))
         }
         try Task.checkCancellation()

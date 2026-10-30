@@ -249,7 +249,7 @@ struct WorldRegionDownloadPlan: Sendable {
             let physical=installed.container?.asset ?? installed.asset
             guard pins.contains(physical.sha256),
                   installed.container.map({ WorldSectionPack.validRegion(physical) && $0.offset>=12 && $0.offset<=physical.byteCount-pack.byteCount }) ?? WorldSectionPack.valid(physical) else { return nil }
-            let size=sizes[physical.sha256] ?? (try? WorldSectionPack.file(physical,cache:cache).resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? -1
+            let size=sizes[physical.sha256] ?? (try? ProtectedMapStorage.logicalSize(WorldSectionPack.file(physical,cache:cache))) ?? -1
             sizes[physical.sha256]=size
             let address=root.appendingPathComponent(region.path).absoluteString
             let index=cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(address.utf8))+".index")
@@ -422,6 +422,10 @@ actor WorldRegionDownloadStore {
             return .init(pack:pack,root:root,parts:parts,bytes:archiveBytes,totalBytes:archives.reduce(0) { $0+Int64($1.asset.byteCount) },tileCount:tiles,
                 archive:archives.count==1 ? archives[0] : nil,archives:archives.count>1 ? archives : [])
         }
+        if WorldAppleAssets.handles(root) {
+            let bytes=try await WorldAppleAssets.shared.downloadBytes(sections:parts.filter { $0.missingBytes>0 }.map { $0.region.id })
+            return .init(pack:pack,root:root,parts:parts,bytes:bytes,totalBytes:max(total,bytes),tileCount:tiles)
+        }
         return .init(pack:pack,root:root,parts:parts,bytes:parts.reduce(0) { $0+$1.missingBytes },totalBytes:total,tileCount:tiles)
     }
     func download(_ plan:WorldRegionDownloadPlan,tileProgress:@escaping @Sendable (WorldRegionTileProgress) async -> Void = { _ in },progress:@escaping @Sendable (Int64,Int) async -> Void) async throws {
@@ -440,6 +444,9 @@ actor WorldRegionDownloadStore {
             return
         }
         var completed:Int64=0,checkedConnection=false
+        if WorldAppleAssets.handles(plan.root) {
+            completed=try await WorldAppleAssets.shared.ensureTerrain(sections:plan.parts.filter { $0.missingBytes>0 }.map { $0.region.id }) { value in await progress(value,0) }
+        }
         var savedFills:[GeoBounds]=[],savedTileCount=0
         for (index,part) in plan.parts.enumerated() {
             try Task.checkCancellation()
@@ -447,7 +454,7 @@ actor WorldRegionDownloadStore {
             let assets=WorldSourceStore.assets(tiles:source.tiles,source:source)
             let cached=try await files.cachedAssetHashes(for:assets)
             let fresh=assets.filter { !cached.contains($0.sha256) }
-            let bundle=part.region.pack.flatMap { WorldSectionPack.useBundle($0,missing:fresh) ? $0 : nil }
+            let bundle=part.region.pack.flatMap { (WorldAppleAssets.handles(plan.root) && !fresh.isEmpty) || WorldSectionPack.useBundle($0,missing:fresh) ? $0 : nil }
             let missing=bundle.map { WorldSectionPack.remainingBytes($0,cache:cache) } ?? fresh.reduce(Int64(0)) { $0+Int64($1.byteCount) }
             if missing>0,let capacity=try? cache.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
                capacity<missing+256*1024*1024 { throw RidgeError.message("There isn’t enough free space. Completed sections are kept; free some storage to continue.") }

@@ -9,7 +9,7 @@ xcrun swiftc -swift-version 5 -O -parse-as-library \
  "$ROOT/ridge v3/Core/TileGrid.swift" "$ROOT/ridge v3/Core/TerrainBudget.swift" \
  "$ROOT/ridge v3/Core/PackStore.swift" "$ROOT/ridge v3/Core/AdaptivePackStore.swift" \
  "$ROOT/ridge v3/Core/RouteEngine.swift" \
- "$ROOT/ridge v3/World/WorldPreview.swift" "$ROOT/ridge v3/World/WorldSource.swift" "$ROOT/ridge v3/World/WorldSectionPack.swift" "$ROOT/ridge v3/World/WorldOfflineCoverage.swift" "$ROOT/ridge v3/World/WorldCartography.swift" \
+ "$ROOT/ridge v3/World/WorldPreview.swift" "$ROOT/ridge v3/World/WorldSource.swift" "$ROOT/ridge v3/Core/ProtectedMapStorage.swift" "$ROOT/ridge v3/World/WorldProtectedAccess.swift" "$ROOT/ridge v3/World/WorldAppleAssets.swift" "$ROOT/ridge v3/World/WorldSectionPack.swift" "$ROOT/ridge v3/World/WorldOfflineCoverage.swift" "$ROOT/ridge v3/World/WorldCartography.swift" \
  "$ROOT/ridge v3/World/WorldCatalog.swift" "$ROOT/ridge v3/World/WorldRegionPacks.swift" "$ROOT/ridge v3/World/WorldRegionArchive.swift" \
  "$ROOT/ridge v3/World/WorldGeometry.swift" "$ROOT/Tests/WorldGroundColourTests.swift" "$ROOT/Tests/WorldSourceTests.swift" -o "$TEST/run"
 "$TEST/run" "$ROOT/ridge v3/Resources/WorldData.bundle" "$@"

@@ -44,7 +44,7 @@ struct WorldRegionArchive:Decodable,Sendable {
         var end:Int { container.offset+member.asset.byteCount }
     }
     func sections(file:URL,regions:[WorldCatalog.Region]) throws -> [Section]? {
-        let handle=try FileHandle(forReadingFrom:file)
+        let handle=try ProtectedMapStorage.Reader(url:file)
         defer { try? handle.close() }
         let prefix=try handle.read(upToCount:12) ?? Data()
         guard prefix.count==12 else { return nil }
@@ -119,7 +119,7 @@ private actor WorldArchiveTransfer {
     func finish() throws -> [WorldRegionArchive.Section] {
         if let failure { throw failure }
         guard let sections,current==sections.count else { throw RidgeError.message("The region download is incomplete.") }
-        let handle=try FileHandle(forReadingFrom:file)
+        let handle=try ProtectedMapStorage.Reader(url:file)
         defer { try? handle.close() }
         var digest=SHA256(),count=0
         while let data=try handle.read(upToCount:1024*1024),!data.isEmpty {

@@ -4,13 +4,17 @@ import Foundation
 enum WorldLibrary {
     /// A live check, deliberately independent of the offline catalogue cache.
     static func checkConnection(root: URL) async throws -> Int {
+        if WorldAppleAssets.handles(root) {
+            return try JSONDecoder().decode(WorldCatalog.self,from:await WorldAppleAssets.shared.catalogData()).sources.count
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 8
         configuration.timeoutIntervalForResource = 12
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
-        let request = URLRequest(url: root.appendingPathComponent("catalog.json"), cachePolicy: .reloadIgnoringLocalCacheData)
+        var request = URLRequest(url: root.appendingPathComponent("catalog.json"), cachePolicy: .reloadIgnoringLocalCacheData)
+        request=try await WorldProtectedAccess.shared.authorised(request)
         do {
             let (file, response) = try await session.download(for: request)
             defer { try? FileManager.default.removeItem(at: file) }
@@ -39,9 +43,9 @@ enum WorldLibrary {
             throw RidgeError.message("Cannot reach \(root.host ?? "the server"). \(help) \(error.localizedDescription) (\(error.errorCode))")
         }
     }
-    static let defaultMode = "local"
+    static let defaultMode = "cloud"
     static let defaultLocalServer = "http://Matthews-MacBook-Pro.local:8787/world/"
-    static let cloud = "https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev/pilot-2026-10-07/"
+    static var cloud:String { WorldAppleAssets.root.absoluteString }
     static func root(mode: String, local: String) throws -> URL {
         if mode != "local" { return URL(string: cloud)! }
         let text = local.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -150,8 +154,13 @@ actor WorldCatalogStore {
         if preferCached, let data=try? Data(contentsOf:saved),let value=try? decode(data),
            value.packVersion==1,value.sources.allSatisfy({ $0.pack != nil && ($0.missingTerrain != nil || $0.tileCount==256) }) { return value }
         do {
+            if WorldAppleAssets.handles(root) {
+                let data=try await WorldAppleAssets.shared.catalogData(),value=try decode(data)
+                try data.write(to:saved,options:.atomic);return value
+            }
             var request = URLRequest(url: url); request.timeoutInterval = 10
-            let (file, response) = try await URLSession.shared.download(for: request)
+            let authorised=try await WorldProtectedAccess.shared.authorised(request)
+            let (file, response) = try await URLSession.shared.download(for: authorised)
             defer { try? FileManager.default.removeItem(at: file) }
             try Task.checkCancellation()
             guard (response as? HTTPURLResponse)?.statusCode == 200,

@@ -67,7 +67,7 @@ enum WorldOfflineCoverage {
                 if let value = present[asset] { return value }
                 let file=asset.packed == true ? WorldSectionPack.directory(cache).appendingPathComponent(asset.hash+".ridgepack") : cache.appendingPathComponent(asset.hash)
                 let valid = asset.hash.count == 64 && asset.hash.allSatisfy(\.isHexDigit) && pins.contains(asset.hash)
-                    && (try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize) == asset.bytes
+                    && (try? ProtectedMapStorage.logicalSize(file)) == asset.bytes
                 present[asset] = valid
                 return valid
             }
