@@ -15,8 +15,12 @@
   "localArtifactFolder": "/Users/matthewbilella/Documents/ChatGPT/project-ridgeV3/ReleaseBuilds/1.0-3",
   "sourceBaseline": "84c0f72766e0b39d64b0847c5f6e1324a80270f8",
   "sourceFileDigestSHA256": "d24f12ee80d682ed5b08e126809a5d72304aa298fb012a4699d75d074c7f320f",
-  "uploadedToApple": false,
-  "testFlightBuildChanged": false,
+  "uploadedToApple": true,
+  "testFlightBuildChanged": true,
   "appleValidation": "VERIFY SUCCEEDED with no errors",
-  "appleValidationDate": "2026-10-30"
+  "appleValidationDate": "2026-10-30",
+  "uploadDate": "2026-10-30",
+  "uploadResult": "UPLOAD SUCCEEDED with no errors",
+  "testFlightBuildID": "15a74902-2012-43ec-8d31-a23654dd59a9",
+  "testFlightState": "IN_BETA_TESTING"
 }

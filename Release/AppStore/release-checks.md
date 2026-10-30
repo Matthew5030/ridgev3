@@ -37,8 +37,11 @@
   iOS Release and Simulator Release builds passed. Unique build 1.0 (3) archived,
   exported for App Store distribution, passed strict code-signature checking and
   Apple's distribution validation with no errors.
-  Its app and downloader extension versions agree; no build upload or TestFlight
-  group change was made. `evidence/release-archive.json` identifies the local IPA.
+  Its app and downloader extension versions agree. On the owner’s TestFlight
+  retry, build 3 was uploaded, processed as VALID and added to the existing
+  one-person internal group. It still failed installation with the same error;
+  no map-pack version or group membership was changed. The evidence receipts
+  identify the exact local IPA and failed hardware retry.
 - 16 Apple adapter checks, 36 walking-plan assertions, 9,465 bundled world-source
   assertions, 17 offline-boundary checks and 31 section-pack transfer/indexed
   offline/reuse/resume/corruption checks passed. Logs are in `evidence/checks/`.
@@ -67,9 +70,9 @@
    content. UK-only availability is saved, matching current map coverage; change
    it before submission if a broader first launch is desired.
    Do not select “no third-party content”. See `content-rights-review.md`.
-6. After testing, upload and select the validated distribution build; submit
-   the appropriate map packs for their review. Current internal build 2 and its
-   pack versions remain unchanged. No app or pack review has been requested.
+6. Build 3 is now uploaded for internal testing. Resolve its installation error
+   and complete the hardware checks before selecting the App Store build and
+   submitting the appropriate map packs. No app or pack review was requested.
 7. Obtain explicit submission/release approval. The app remains PREPARE_FOR_SUBMISSION
    with MANUAL release; there is no public launch date or pre-order.
 

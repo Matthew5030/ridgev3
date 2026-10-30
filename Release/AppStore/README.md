@@ -7,7 +7,7 @@ Prepared 27–30 October 2026. **Public release remains on hold.** Nothing in th
 ## Release gates
 
 - [ ] Fresh TestFlight Apple-hosted map download, interruption/resume and offline cold reopen pass on real hardware.
-- [x] Version the existing Apple delivery integration and prepare a uniquely numbered, signed 1.0 (3) archive and local App Store IPA export. Apple's validation passed with no errors. See `evidence/release-archive.json`; no build was uploaded or selected.
+- [x] Version the existing Apple delivery integration and prepare a uniquely numbered, signed 1.0 (3) archive and local App Store IPA export. Apple's validation passed with no errors. See `evidence/release-archive.json`; build 3 was subsequently uploaded for the owner’s internal TestFlight retry; no App Store build is selected.
 - [ ] Final iPhone/iPad smoke test of first open, region downloads, route editing/reopening, cross-section path routing, GPX Files import/export and preview.
 - [ ] Investigate measured iPad main-thread camera stalls without changing the approved route-following mathematics.
 - [x] Publish the owner-approved Ridge website changes and verify the production product/support/privacy URLs. See `evidence/website-publication.json`.
@@ -15,7 +15,8 @@ Prepared 27–30 October 2026. **Public release remains on hold.** Nothing in th
 - [ ] Account Holder accepts outstanding Apple agreements in Business; do not accept on their behalf.
 - [x] Save and verify the privately supplied reviewer contact details with Apple. No private phone number is stored here.
 - [ ] Confirm DSA trader details and content-rights declarations with the Account Holder. UK-only availability is saved for the proposed first release and remains editable.
-- [ ] Upload build 3 after the download test, then select the tested distribution build and appropriate approved asset-pack versions. Internal build 2 remains unchanged.
+- [x] Upload build 3 and add it to the existing private internal group after build 2 failed again. Apple processed it as VALID / IN_BETA_TESTING, but the phone still reports an unavailable/nonexistent app.
+- [ ] Resolve TestFlight installation, complete the hardware checks, then select the tested App Store build and approved asset-pack versions.
 - [x] Verify all eight screenshot uploads processed as COMPLETE and the saved listing matches its source files.
 - [ ] Obtain release approval before submission.
 
@@ -31,7 +32,7 @@ download: that remains a separate hardware release gate.
 - Manual release after approval; no automatic launch or pre-order.
 - UK map coverage only; no worldwide, live-navigation or survey-accuracy claims.
 - Keep accessibility support claims unset until each claimed experience has been tested across the whole app.
-- Leave the current internal TestFlight build/group and its map packs unchanged while results are pending.
+- The existing one-person internal group now includes build 3 for the authorized retry. Its map-pack versions and group membership are unchanged.
 
 ## Authoritative Apple references
 
