@@ -1,0 +1,7 @@
+Running altool at path '/Applications/Xcode.app/Contents/SharedFrameworks/ContentDelivery.framework/Resources/altool'...
+
+2026-10-30 10:51:35.588  INFO: [ContentDelivery.Uploader.768D0512C0]
+==========================================
+VERIFY SUCCEEDED with no errors
+==========================================
+No errors validating archive at '/Users/matthewbilella/Documents/ChatGPT/project-ridgeV3/ReleaseBuilds/1.0-3/export/ridge v3.ipa'.

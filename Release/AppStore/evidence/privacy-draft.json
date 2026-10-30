@@ -1,0 +1,23 @@
+{
+  "verified": "2026-10-30",
+  "source": "App Store Connect native Safari questionnaire and Product Page Preview Details",
+  "saved": true,
+  "published": false,
+  "dataTypes": [
+    {
+      "type": "Device ID",
+      "purpose": "App Functionality",
+      "linkedToDevice": true,
+      "tracking": false
+    },
+    {
+      "type": "Other Usage Data",
+      "purpose": "App Functionality",
+      "linkedToDevice": true,
+      "tracking": false
+    }
+  ],
+  "preview": "Data Linked to You: Identifiers and Usage Data",
+  "releaseArchiveManifestChecked": true,
+  "gate": "Publish corrected policy before publishing this declaration; public submission remains on hold."
+}

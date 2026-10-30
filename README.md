@@ -1,5 +1,14 @@
 # Ridge
 
+## Current release preparation
+
+The iPhone/iPad release target is **iOS 26.0 or later**. Additional UK map areas
+use Apple-hosted downloads by default; a local download server is only needed
+for the optional development source. The UK overview and Snowdon demonstration
+are included. See [the 1.0 release preparation](Release/AppStore/README.md) for
+the listing, native screenshots, privacy evidence and remaining launch gates.
+Public submission remains on hold while the TestFlight download checks run.
+
 The current adaptive/vector world flow and ordered first-release plan are in
 [World app and finish plan](Tools/world_source/README.md). The UK overview is now
 textured; national detailed-source preparation and multi-region app integration
@@ -22,7 +31,7 @@ git lfs pull
 
 If you already cloned the repository, run `git lfs install` and `git lfs pull` inside it before building. GitHub's source ZIP does not reliably include the full LFS assets; use a Git clone.
 
-Open `ridge v3.xcodeproj` in Xcode, select the **ridge v3** scheme and an iPhone or iPad simulator, then Run. The deployment target is **iOS 18**. No package-manager setup is required. New adaptive downloads require the local download server; saved areas work offline. The existing Bilella Works bundle identifier and signing team have been retained; running on an actual phone requires access to that team's signing credentials, or selecting your own team in Xcode.
+Open `ridge v3.xcodeproj` in Xcode, select the **ridge v3** scheme and an iPhone or iPad simulator, then Run. The deployment target is **iOS 26**. No package-manager setup is required. Apple-hosted downloads are the default; saved areas work offline. The existing Bilella Works bundle identifier and signing team have been retained; running on an actual phone requires access to that team's signing credentials, or selecting your own team in Xcode.
 
 From Terminal, with Xcode installed at its usual location:
 

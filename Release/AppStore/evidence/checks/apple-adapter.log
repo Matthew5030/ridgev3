@@ -1,0 +1,27 @@
+/Users/matthewbilella/Documents/ChatGPT/project-ridgeV3/texture-study-code/ridge v3/Core/TerrainBudget.swift:100:73: warning: 'mac2' was deprecated in macOS 27.0: renamed to 'MTLGPUFamily.apple7' [#DeprecatedDeclaration]
+ 98 |             context.recommendedGPUWorkingSet = workingSet > 0 ? workingSet : nil
+ 99 |             context.maximumBufferLength = bufferLength > 0 ? bufferLength : nil
+100 |             if device.supportsFamily(.apple7) || device.supportsFamily(.mac2) {
+    |                                                                         |- warning: 'mac2' was deprecated in macOS 27.0: renamed to 'MTLGPUFamily.apple7' [#DeprecatedDeclaration]
+    |                                                                         `- note: use 'MTLGPUFamily.apple7' instead
+101 |                 context.gpuTier = .modern
+102 |             } else if device.supportsFamily(.apple1) {
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+PASS: Opening the library fetches only the essential catalogue
+PASS: Preview metadata never downloads terrain
+PASS: Repeated sections count a geographic download once
+PASS: Native download progress is monotonic and deduplicated
+PASS: Available Apple packs require no further network bytes
+PASS: Imported section cache is encrypted
+PASS: Imported section contains the current walking graph
+PASS: Offline assets are verified directly from the installed section
+PASS: Saved sections reopen without accessing Apple
+PASS: Internal identifiers reject query-string tampering
+PASS: Unknown sections are rejected
+PASS: Corrupt terrain fails before installation
+PASS: A failed import leaves no installed section or partial file
+PASS: Library traversal paths are rejected
+PASS: Cancellation reaches the native download wait
+PASS: Cancellation never installs unfinished terrain
+PASS 16 Apple map delivery checks

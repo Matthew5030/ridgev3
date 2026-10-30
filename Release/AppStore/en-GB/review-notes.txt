@@ -1,0 +1,16 @@
+Ridge is a native offline walking-route planner for iPhone and iPad. No Ridge account or sign-in is required. There are no in-app purchases, advertisements or subscriptions in this version.
+
+Getting started:
+1. Complete or skip the first-open walkthrough. It can be replayed in Settings > Getting started.
+2. The UK overview and Snowdon demonstration are bundled with the app. Explore uses the map directly: zoom into available saved terrain to enter 3D. There is no separate Explore in 3D button.
+3. Tap Plan your route, then add two or more points. Follow paths uses the saved walking network; Direct line creates a manual connection. The route saves locally.
+4. Open route details for waypoints and elevation. Preview route starts the FPV flight; pause and scrub controls are available. Close preview to return to editing.
+5. Open a route's menu > Before you go for pace, breaks, estimated finish, route legs, saved-map coverage, checklist and notes. These estimates do not change preview playback speed.
+6. Routes contains the saved library, search, favourites, sorting and Import GPX. Export GPX is in each route's menu and uses the system share sheet.
+
+Map delivery:
+Additional UK terrain is delivered using Apple-hosted asset packs and the Background Assets downloader extension. Choose Apple downloads in Settings (the default), open a region on the overview, review its download size and confirm the download. Downloads need an internet connection and sufficient free storage. Saved areas can be reopened in airplane mode. Local network is an optional development/source-import setting and is not needed for normal Apple-hosted downloads.
+
+The map asset packs must be approved and available alongside the first App Store app version. Map coverage and terrain detail vary; the UI shows unavailable areas and incomplete elevation rather than inventing data. The app does not provide live turn-by-turn navigation or background location tracking. Location permission is optional for showing the device position in the supported map view.
+
+The current features are free during early access; feedback is optional. Future pricing changes would be handled in a later version. Map/data credits are visible in Settings and on the map.

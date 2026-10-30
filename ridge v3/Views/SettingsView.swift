@@ -37,7 +37,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map source").font(RidgeTheme.sectionTitle)
                     Picker("Map source", selection: $selectedMapMode) {
-                        Text("Cloud").tag("cloud")
+                        Text("Apple downloads").tag("cloud")
                         Text("Local network").tag("local")
                     }.pickerStyle(.segmented)
                     if selectedMapMode == "local" {
@@ -46,7 +46,7 @@ struct SettingsView: View {
                             .accessibilityLabel("Local map server")
                         Text("Use the Mac serving your external drive. Keep it running and connect to the same network.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     } else {
-                        Text("Terrain loads as you explore. Cloud coverage currently includes the Snowdon pilot.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                        Text("Download map areas from Apple before your trip. Saved areas work offline. The bundled overview and Snowdon demo are available immediately.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     }
                     Button(action: saveSourceAndDismiss) {
                         Label("Save map source", systemImage: "checkmark")
@@ -77,6 +77,7 @@ struct SettingsView: View {
                 offlineSection
                 legendSection
                 storageSection
+                RidgeSupportSection()
                 estimatesSection
                 attributionSection
                 HStack {
