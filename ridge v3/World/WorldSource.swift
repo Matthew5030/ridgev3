@@ -260,6 +260,10 @@ actor WorldSourceStore {
             if !stageForDownload, (preferCached || !allowsNetwork), let raw = try? Data(contentsOf:cached),
                let saved = try? JSONDecoder().decode(WorldSource.self,from:raw), (try? saved.validate()) != nil {
                 manifest = raw
+            } else if WorldAppleAssets.handles(url), let included=WorldBundledMaps.included,
+                      included.index.sections[try WorldAppleAssets.sectionID(url)] != nil,
+                      !WorldBundledMaps.downloadsEnabled || !allowsNetwork {
+                manifest = try included.metadata(id:WorldAppleAssets.sectionID(url))
             } else {
                 guard allowsNetwork else { throw RidgeError.message("This map index is missing. Download the area again while connected.") }
                 do {

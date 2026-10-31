@@ -36,8 +36,11 @@ enum WorldSectionPack {
     static func reference(_ sourceID:String,cache:URL)->URL { directory(cache).appendingPathComponent(AdaptiveTerrainCodec.hash(Data(sourceID.utf8))+".json") }
     static func open(sourceID:String,cache:URL)->Reader? {
         guard let data=try? Data(contentsOf:reference(sourceID,cache:cache)),
-              let installed=try? JSONDecoder().decode(Installed.self,from:data),installed.sourceID==sourceID else { return nil }
-        return try? Reader(url:file(installed.container?.asset ?? installed.asset,cache:cache),asset:installed.asset,sourceID:sourceID,container:installed.container)
+              let installed=try? JSONDecoder().decode(Installed.self,from:data),installed.sourceID==sourceID else {
+            return WorldBundledMaps.included?.reader(id:sourceID)
+        }
+        return (try? Reader(url:file(installed.container?.asset ?? installed.asset,cache:cache),asset:installed.asset,sourceID:sourceID,container:installed.container))
+            ?? WorldBundledMaps.included?.reader(id:sourceID)
     }
     static func install(_ asset:WorldMapAsset,sourceID:String,cache:URL,container:Container?=nil) throws {
         let ref=Installed(sourceID:sourceID,asset:asset,container:container)

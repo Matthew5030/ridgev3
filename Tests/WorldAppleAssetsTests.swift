@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 actor AppleFixtureBackend: WorldAppleAssetBackend {
     let root: URL
@@ -34,6 +35,16 @@ actor AppleProgress {
 
 @main struct WorldAppleAssetsTests {
     static func main() async throws {
+        // Each fixture owns its key. Reusing a prior unsigned executable's
+        // Keychain item can wait for an unrelated access prompt on the Mac.
+        let fixtureID="apple-fixture-"+UUID().uuidString
+        UserDefaults.standard.set(fixtureID,forKey:"ridge.protectedInstallationID.v1")
+        defer {
+            let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,
+                kSecAttrService as String:"com.bilellaworks.ridge.protected-downloads",
+                kSecAttrAccount as String:"content-key-v1:"+fixtureID]
+            SecItemDelete(query as CFDictionary)
+        }
         var checks=0
         func check(_ value:Bool,_ message:String) throws {
             guard value else { throw RidgeError.message(message) }

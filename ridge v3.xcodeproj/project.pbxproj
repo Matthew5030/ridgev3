@@ -83,12 +83,10 @@
 				70DA176C3056DDF8006F6FCF /* Frameworks */,
 				70DA176D3056DDF8006F6FCF /* Resources */,
                 59E2233334D955AD50956424 /* StageBundledOverview */,
-                6EE7DF89CA521F915F8E167F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-                7319DA30FF9AA23BFEA654DD,
 			);
 			fileSystemSynchronizedGroups = (
 				70DA17713056DDF8006F6FCF /* ridge v3 */,
@@ -181,7 +179,7 @@
             outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/WorldAtlas.bundle", "$(DERIVED_FILE_DIR)/RidgeBundledOverview", );
             runOnlyForDeploymentPostprocessing = 0;
             shellPath = /bin/sh;
-            shellScript = "python3 \"$SRCROOT/Tools/stage_bundled_overview.py\"\n";
+            shellScript = "python3 \"$SRCROOT/Tools/stage_bundled_overview.py\"\npython3 \"$SRCROOT/Tools/stage_offline_starter.py\"\n";
         };
 /* End PBXShellScriptBuildPhase section */
 
@@ -319,7 +317,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = J8M4ND59V4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -372,7 +370,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = J8M4ND59V4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -423,7 +421,7 @@
             APPLICATION_EXTENSION_API_ONLY = YES;
             CODE_SIGN_STYLE = Automatic;
             CODE_SIGN_ENTITLEMENTS = Config/RidgeMapDownloader.entitlements;
-            CURRENT_PROJECT_VERSION = 3;
+            CURRENT_PROJECT_VERSION = 4;
             DEVELOPMENT_TEAM = J8M4ND59V4;
             GENERATE_INFOPLIST_FILE = YES;
             INFOPLIST_FILE = Config/RidgeMapDownloaderInfo.plist;
@@ -444,7 +442,7 @@
             APPLICATION_EXTENSION_API_ONLY = YES;
             CODE_SIGN_STYLE = Automatic;
             CODE_SIGN_ENTITLEMENTS = Config/RidgeMapDownloader.entitlements;
-            CURRENT_PROJECT_VERSION = 3;
+            CURRENT_PROJECT_VERSION = 4;
             DEVELOPMENT_TEAM = J8M4ND59V4;
             GENERATE_INFOPLIST_FILE = YES;
             INFOPLIST_FILE = Config/RidgeMapDownloaderInfo.plist;

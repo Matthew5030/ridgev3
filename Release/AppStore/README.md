@@ -1,24 +1,37 @@
 # Ridge 1.0 release preparation
 
-Prepared 27–30 October 2026. **Public release remains on hold.** Nothing in this folder authorizes app submission, asset-pack review or publication.
+Prepared 27–31 October 2026. **Public release remains on hold.** Nothing in this folder authorizes app submission, asset-pack review or publication.
 
 `en-GB/metadata.json` is the source for the English (UK) listing. `en-GB/review-notes.txt` contains reviewer instructions. Screenshots must be real native app captures, with public demonstration routes only. Preserve their source device, build and capture details in `screenshots/manifest.json`.
 
-## Release gates
+## Offline starter release gates (build 4)
 
-- [ ] Fresh TestFlight Apple-hosted map download, interruption/resume and offline cold reopen pass on real hardware.
-- [x] Version the existing Apple delivery integration and prepare a uniquely numbered, signed 1.0 (3) archive and local App Store IPA export. Apple's validation passed with no errors. See `evidence/release-archive.json`; build 3 was subsequently uploaded for the owner’s internal TestFlight retry; no App Store build is selected.
-- [ ] Final iPhone/iPad smoke test of first open, region downloads, route editing/reopening, cross-section path routing, GPX Files import/export and preview.
-- [ ] Investigate measured iPad main-thread camera stalls without changing the approved route-following mathematics.
-- [x] Publish the owner-approved Ridge website changes and verify the production product/support/privacy URLs. See `evidence/website-publication.json`.
-- [x] Audit actual network paths and retention, save complete Device ID / Other Usage Data questionnaire answers, and check the preview against build 3's manifest. The corrected website policy is live; the declaration remains a draft for final submission preparation.
-- [ ] Account Holder accepts outstanding Apple agreements in Business; do not accept on their behalf.
-- [x] Save and verify the privately supplied reviewer contact details with Apple. No private phone number is stored here.
-- [ ] Confirm DSA trader details and content-rights declarations with the Account Holder. UK-only availability is saved for the proposed first release and remains editable.
-- [x] Upload build 3 and add it to the existing private internal group after build 2 failed again. Apple processed it as VALID / IN_BETA_TESTING, but the phone still reports an unavailable/nonexistent app.
-- [ ] Resolve TestFlight installation, complete the hardware checks, then select the tested App Store build and approved asset-pack versions.
-- [x] Verify all eight screenshot uploads processed as COMPLETE and the saved listing matches its source files.
-- [ ] Obtain release approval before submission.
+The owner selected a self-contained release including Eryri, Lake District,
+Peak District, and Chilterns & Thames Valley. Build 3 and its separate Apple
+asset download experiment are retained as historical evidence. Successful Apple
+hosted delivery is a gate for enabling future downloads, not for this offline
+starter release. See `Tools/OFFLINE-STARTER.md` for the update path.
+
+- [x] Prepare 282 sections / 67,987 tiles; verify all pack and decompressed entry hashes.
+- [x] Offline integration checks cover four areas, Aylesbury/Chilterns samples,
+  cache removal, and precedence for a later downloaded manifest and pack.
+- [x] Existing region geometry reports no missing land rectangles for the four
+  selections; the 12 missing catalogue cells at Eryri's boundary do not overlap
+  the clipped land shapes. Missing source-tile coverage remains represented.
+- [x] Preserve the full UK source library, published Apple pack registry, existing
+  route identities and downloader source for a future update.
+- [x] Update local listing and reviewer notes to describe four included areas.
+- [ ] Finish signed build 4 archive, measure final uncompressed size below 4 GB,
+  export App Store IPA, verify signatures and run Apple distribution validation.
+- [ ] Final physical iPhone/iPad smoke test: first open, immediate offline terrain,
+  route editing/reopening, cross-section routing, GPX import/export and preview.
+- [ ] Save revised listing and select the verified build in App Store Connect.
+- [ ] Final privacy/content-rights declarations and Account Holder agreement checks.
+- [ ] Obtain owner approval before App Review submission/publication.
+
+The product/support/privacy website and eight listing screenshots are already
+prepared. The product page currently describes downloadable maps, so its copy
+needs the owner-approved starter-coverage wording before this release.
 
 Open `preview.html` for the prepared listing. The five iPhone and three landscape
 iPad screenshots are full native captures; `screenshots/manifest.json` records

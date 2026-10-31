@@ -34,6 +34,14 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                if !WorldBundledMaps.downloadsEnabled {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Included offline maps").font(RidgeTheme.sectionTitle)
+                        Text("Eryri, Lake District, Peak District, and Chilterns & Thames Valley.")
+                        Text("Your maps and walking paths are included with Ridge. Zoom into an included area to explore in 3D and plan a route, even without a signal. The UK overview remains available elsewhere.")
+                            .font(.caption).foregroundStyle(RidgeTheme.muted)
+                    }
+                } else {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map source").font(RidgeTheme.sectionTitle)
                     Picker("Map source", selection: $selectedMapMode) {
@@ -64,6 +72,7 @@ struct SettingsView: View {
                     }
                     if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
                     Text("Download a region, then zoom into it to explore in 3D. Saved terrain works without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                }
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Getting started").font(RidgeTheme.sectionTitle)

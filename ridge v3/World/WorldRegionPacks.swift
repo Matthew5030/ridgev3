@@ -186,6 +186,7 @@ struct WorldRegionPack: Identifiable, Sendable {
             let mapShapes:[MapShape]?;let labelBounds:GeoBounds?
         }
         struct Index: Decodable { let schemaVersion:Int;let regions:[Zone];let parks:[Zone] }
+        let useBundledSelection = url == nil
         guard let url = url ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json")
             ?? Bundle.main.url(forResource:"uk-download-zones",withExtension:"json",subdirectory:"Resources") else {
             throw RidgeError.message("The region list is missing from this build.")
@@ -210,7 +211,12 @@ struct WorldRegionPack: Identifiable, Sendable {
             return Self(id:zone.id,name:zone.name,subtitle:zone.subtitle,landmark:zone.parkName ?? zone.name,
                         cells:zone.cells,downloadCells:zone.downloadCells,mapShapes:zone.mapShapes,labelBounds:zone.labelBounds,mapLabel:zone.mapLabel,parkID:zone.parkID,parkName:zone.parkName,artwork:zone.artwork)
         }
-        let areas=try index.regions.map(convert)
+        let allAreas=try index.regions.map(convert)
+        let areas:[WorldRegionPack]
+        if useBundledSelection, !WorldBundledMaps.downloadsEnabled, let included=WorldBundledMaps.included {
+            let ids=Set(included.index.includedRegions.map(\.id))
+            areas=allAreas.filter { ids.contains($0.id) }
+        } else { areas=allAreas }
         let legacyParks=try index.parks.map(convert)
         return Library(areas:areas,parks:legacyParks+areas.filter { area in
             area.parkID==area.id && !legacyParks.contains { $0.id==area.id }
@@ -235,6 +241,11 @@ struct WorldRegionDownloadPlan: Sendable {
     /// Opening a completed region is an inventory lookup, not another integrity
     /// scan of the entire terrain payload. Downloads and tile reads verify data.
     static func completed(pack:WorldRegionPack,catalog:WorldCatalog,root:URL,cache:URL,saved:[GeoBounds])->Self? {
+        if let estimate=estimate(pack:pack,catalog:catalog,root:root),
+           WorldBundledMaps.included?.contains(estimate.parts.map(\.region)) == true {
+            return Self(pack:pack,root:root,parts:estimate.parts.map { .init(region:$0.region,missingBytes:0) },
+                        bytes:0,totalBytes:estimate.totalBytes,tileCount:estimate.tileCount)
+        }
         guard let estimate=estimate(pack:pack,catalog:catalog,root:root),saved.count>=estimate.tileCount,
               let data=try? Data(contentsOf:cache.appendingPathComponent("pins.json")),
               let pins=try? JSONDecoder().decode(Set<String>.self,from:data) else { return nil }

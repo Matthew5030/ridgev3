@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-10-31",
-  "status": "Selected areas measured; bundled app implementation and final archive verification pending",
+  "status": "Bundle prepared and checksummed; offline integration checks passed; signed archive and device checks in progress",
   "delivery": "Proposed self-contained App Store app with selected terrain included",
   "catalogSHA256": "ae537c004f467658f599383468ae1d5aea727a6d684d7d26e078f785e7e4ea62",
   "downloadZonesSHA256": "5c6f1a563b237c385216852941eed69bee4027fe18987b87753036669fba7a73",
@@ -86,5 +86,7 @@
     "App Store listing reflects the four included areas and does not promise detailed nationwide coverage"
   ],
   "sourceDataDeleted": false,
-  "submittedToApple": false
+  "submittedToApple": false,
+  "preparedBundleBytes": 2852898090,
+  "coverageCheck": "All four current region shapes report zero missing land rectangles; missing Eryri catalogue cells do not overlap clipped land."
 }

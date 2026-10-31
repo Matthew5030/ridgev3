@@ -431,7 +431,7 @@ struct WorldExploreView: View {
         VStack(alignment:.leading,spacing:8) {
             HStack(spacing:12) {
                 statusKey("Clear · saved",color:RidgeTheme.forest,symbol:"checkmark.circle.fill")
-                statusKey("Shaded · download",color:RidgeTheme.muted,symbol:"arrow.down.circle")
+                statusKey(WorldBundledMaps.downloadsEnabled ? "Shaded · download" : "Shaded · overview only",color:RidgeTheme.muted,symbol:"arrow.down.circle")
                 Spacer(minLength:0)
                 Button { if !world.isSavingOffline { world.cancelDownload() };exploring=false;world.cancelRegionLoad();focusAllRegions() } label: {
                     Image(systemName:"globe.europe.africa")
@@ -439,7 +439,7 @@ struct WorldExploreView: View {
             }
             statusKey("Unavailable terrain",color:Color(red:0.70,green:0.19,blue:0.16),symbol:"exclamationmark.triangle.fill")
             if world.isLoading && world.catalog == nil { ProgressView("Connecting to maps").font(.caption) }
-            else { Text("Zoom into clear terrain · tap shaded areas to download").font(.caption).foregroundStyle(RidgeTheme.muted) }
+            else { Text(WorldBundledMaps.downloadsEnabled ? "Zoom into clear terrain · tap shaded areas to download" : "Zoom into clear terrain · four walking areas included").font(.caption).foregroundStyle(RidgeTheme.muted) }
             if let regionMapError { Text(regionMapError).font(.caption) }
         }.padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
     }

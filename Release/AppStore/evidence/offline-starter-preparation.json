@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "sectionCount": 282,
+  "tileCount": 67987,
+  "catalogSHA256": "a61f350d0dcfd543cdffd2bd0ceb940cfac2407381f7eb7162832509c9d1b687",
+  "regions": [
+    {
+      "id": "park-eryri",
+      "name": "Eryri"
+    },
+    {
+      "id": "area-chilterns-thames-valley",
+      "name": "Chilterns & Thames Valley"
+    },
+    {
+      "id": "park-peak-district",
+      "name": "Peak District"
+    },
+    {
+      "id": "park-lake-district",
+      "name": "Lake District"
+    }
+  ],
+  "unavailableSectionIDs": [
+    "world-z10-x499-y334-c32-r16",
+    "world-z10-x499-y334-c32-r32",
+    "world-z10-x500-y331-c32-r00",
+    "world-z10-x500-y331-c32-r16",
+    "world-z10-x501-y331-c00-r00",
+    "world-z10-x501-y331-c00-r16",
+    "world-z10-x501-y331-c16-r00",
+    "world-z10-x501-y331-c16-r16",
+    "world-z10-x501-y331-c16-r32",
+    "world-z10-x501-y331-c32-r00",
+    "world-z10-x501-y331-c32-r16",
+    "world-z10-x501-y331-c32-r32"
+  ],
+  "bytes": 2852898090,
+  "sourceDataChanged": false,
+  "allPackAndEntryChecksumsVerified": true
+}

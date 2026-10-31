@@ -4,12 +4,14 @@
 <dict>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>RidgeAppleDownloadsEnabled</key>
+    <false/>
     <key>BAAppGroupID</key>
     <string>group.com.bilellaworks.ridge.maps</string>
     <key>BAHasManagedAssetPacks</key>
-    <true/>
+    <false/>
     <key>BAUsesAppleHosting</key>
-    <true/>
+    <false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

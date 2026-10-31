@@ -58,11 +58,12 @@ enum WorldOfflineCoverage {
         for receipt in additions { current[receipt.bounds] = receipt }
         try JSONEncoder().encode(Array(current.values)).write(to:file,options:.atomic)
     }
-    static func savedBounds(at cache: URL) -> [GeoBounds] {
+    static func savedBounds(at cache: URL, includeBundled:Bool = true) -> [GeoBounds] {
         lock.lock(); defer { lock.unlock() }
         let pins = (try? JSONDecoder().decode(Set<String>.self,from:Data(contentsOf:cache.appendingPathComponent("pins.json")))) ?? []
         var present: [Asset:Bool] = [:]
-        return receipts(at:cache).filter { receipt in
+        let included = includeBundled ? (WorldBundledMaps.included?.index.coverage ?? []) : []
+        return included + receipts(at:cache).filter { receipt in
             receipt.bounds.isValid && !receipt.assets.isEmpty && receipt.assets.allSatisfy { asset in
                 if let value = present[asset] { return value }
                 let file=asset.packed == true ? WorldSectionPack.directory(cache).appendingPathComponent(asset.hash+".ridgepack") : cache.appendingPathComponent(asset.hash)
@@ -78,7 +79,7 @@ enum WorldOfflineCoverage {
         var areas:[WorldRegionPack] = []
     }
     static func storageSummary(at cache:URL,areas:[WorldRegionPack],catalog:WorldCatalog?)->StorageSummary {
-        let saved=savedBounds(at:cache)
+        let saved=savedBounds(at:cache,includeBundled:false)
         let partial=Set(((try? FileManager.default.contentsOfDirectory(at:WorldSectionPack.directory(cache),includingPropertiesForKeys:nil)) ?? [])
             .filter { $0.pathExtension=="partial" }.map { $0.deletingPathExtension().lastPathComponent })
         let pending=((try? FileManager.default.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil)) ?? [])
