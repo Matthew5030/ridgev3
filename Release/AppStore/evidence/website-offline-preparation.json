@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-31",
+  "published": false,
+  "changedPage": "public/apps/ridge/index.html",
+  "sha256": "ec3a3ba5dffc4c0e179300855a388dd6f6c04016ff90ae64dc948bff660c38c9",
+  "localBrowserPreviewVerified": true,
+  "scopedRidgeCoverageStatusAndLinkChecks": "passed",
+  "fullSiteValidation": "Failed on pre-existing Chitchat privacy wording assertion; unchanged HEAD also lacks that exact text. Ridge and generic HTML checks before that point passed. No unrelated site content changed.",
+  "publicationApproval": "Required for prepared website copy; app remains unreleased."
+}

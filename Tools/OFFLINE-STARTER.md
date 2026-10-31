@@ -110,5 +110,12 @@ the intended distribution path.
 Remaining owner actions are content-rights confirmation, privacy publication,
 approval of the prepared website copy and approval to submit App Review.
 The unresolved TestFlight account/install error is not proven fixed by this
-upload. No App Review submission or public launch has occurred. The saved
+upload. Build 4 is now available to the owner's internal TestFlight group; the
+phone locked before an Apple-delivered install could be verified. No App Review
+submission or public launch has occurred. The saved
 release setting is manual, so an approval from Apple will not launch it by itself.
+
+The prepared website copy is applied in the isolated `website-publish` worktree
+and verified in a local browser. Ridge-specific checks pass. The full website
+validator stops on an unchanged Chitchat privacy-text assertion; that unrelated
+page has not been changed. See `website-offline-preparation.json` for scope.

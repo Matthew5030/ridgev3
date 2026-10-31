@@ -33,14 +33,15 @@
   "selectedAppStoreVersion": "1.0",
   "selectedBuildVerified": true,
   "githubActions": {
-    "runID": 41204645211,
+    "runID": 41209346659,
     "conclusion": "success",
     "jobs": {
       "walk-planning": "success",
       "camera-and-playback": "success",
       "route-ink": "success",
       "route-terrain-detail": "success"
-    }
+    },
+    "commit": "9d42eecada17c8ab449622ab604aa0017a884016"
   },
   "temporaryDownloadCertificateCleanup": {
     "macTrustRemoved": true,
@@ -54,5 +55,10 @@
     "privacy": "Saved conservative questionnaire; publication pending",
     "DSA": "App Information shows trader for this app; unchanged",
     "agreements": "Free Apps Agreement Active; Business shows updated Paid Applications Schedule available. No agreement accepted."
+  },
+  "testFlightBuild4": {
+    "availableToOwnerInternalGroup": true,
+    "installationVerified": false,
+    "installationCheck": "Phone locked before the build-4 TestFlight retry; development-installed build 4 remains tested on both devices."
   }
 }
