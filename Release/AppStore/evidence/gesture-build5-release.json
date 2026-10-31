@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0",
+  "build": "5",
+  "ipaBytes": 2847851003,
+  "ipaSHA256": "4f43ff2ddcb648726982d15b3589cb0a773a3ed463ee86bc4810e1d963b673c1",
+  "appBytes": 2971448163,
+  "sourceBase": "f6af2b4f0",
+  "gestureFixCommit": "956713f3f",
+  "productionChange": "WorldGestureIntent.swift only",
+  "gestureAndCameraChecksPassed": 473,
+  "githubChecks": {
+    "runID": 41234127269,
+    "conclusion": "success"
+  },
+  "ownerGestureUAT": "Passed: Tilt responds properly",
+  "archiveSucceeded": true,
+  "exportSucceeded": true,
+  "strictPhoneProductSignatureVerified": true,
+  "appleValidation": "VERIFY SUCCEEDED with no errors",
+  "appleUpload": "UPLOAD SUCCEEDED with no errors",
+  "uploadDeliveryUUID": "94a02383-8a9b-4f4c-8969-c4fc73d69f45",
+  "uploadedBytes": 2847851003,
+  "appleDownloadsEnabled": false,
+  "downloaderExtensionEmbedded": false,
+  "includedSections": 282,
+  "mapsUnchanged": true,
+  "phoneInstalled": true,
+  "artifactDirectory": "/Volumes/MLB_EXT_4TB/Ridge Releases/1.0-5",
+  "appReviewSubmitted": false,
+  "processingState": "Awaiting Apple processing",
+  "releaseType": "MANUAL until build 5 is selected, then AFTER_APPROVAL per owner preference"
+}
