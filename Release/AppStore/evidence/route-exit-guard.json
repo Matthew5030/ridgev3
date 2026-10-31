@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "candidateBuild": "6",
+  "status": "Submitted to App Review; automatic release after approval",
+  "behaviour": {
+    "unfinishedRoute": "Offer Save and exit, Discard changes, or Keep editing",
+    "unchangedSavedRoute": "Exit directly without a library rewrite or map reload",
+    "savedRouteEdit": "Compare geometry, waypoints, name and notes with the last finished route",
+    "saveFailure": "Keep the editor and route open with an error",
+    "discardExistingEdit": "Restore the last finished route",
+    "discardNewDraft": "Remove only the new draft"
+  },
+  "checks": {
+    "routeExit": 34,
+    "savedRouteCatalogue": 33,
+    "gestureAndCamera": 473
+  },
+  "preservedGestureFix": "956713f3f",
+  "appStoreSubmitted": true,
+  "sourceCommit": "2fc50df5a0c1e9c3c743d15675d4389776a086ae",
+  "ownerUAT": "Owner explicitly chose Continue without the phone test after a CoreDevice connection failure",
+  "uploadUUID": "433cbfb3-dc8b-434a-b35c-dc402d487dea",
+  "githubChecks": "Passed, run 41237756727",
+  "releaseType": "AFTER_APPROVAL",
+  "submissionID": "4bb328c5-b94d-45c0-8560-bf5502eac73c"
+}

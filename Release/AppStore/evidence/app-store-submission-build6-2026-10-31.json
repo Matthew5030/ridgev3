@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0",
+  "build": "6",
+  "buildID": "433cbfb3-dc8b-434a-b35c-dc402d487dea",
+  "appID": "6827223973",
+  "sourceCommit": "2fc50df5a0c1e9c3c743d15675d4389776a086ae",
+  "sourceBranch": "codex/save-route-and-exit",
+  "sourcePR": "https://github.com/Matthew5030/ridgev3/pull/12",
+  "submissionID": "4bb328c5-b94d-45c0-8560-bf5502eac73c",
+  "submittedAtUTC": "2026-10-31T21:19:28.234Z",
+  "appReviewSubmitted": true,
+  "submissionState": "WAITING_FOR_REVIEW",
+  "appStoreState": "WAITING_FOR_REVIEW",
+  "releaseType": "AFTER_APPROVAL",
+  "releaseTypeReadbackVerified": true,
+  "selectedBuildReadbackVerified": true,
+  "ownerReleaseAuthorization": "Owner requested App Store submission, automatic release and inclusion of the tilt fix before launch; subsequently requested the Explore save/exit behaviour.",
+  "ownerUAT": {
+    "routeExitBuild6": "Skipped at owner request: Continue without the phone test",
+    "gestureBuild5": "Passed: Tilt responds properly"
+  },
+  "checks": {
+    "routeExit": 34,
+    "routeCatalogue": 33,
+    "gestureAndCamera": 473,
+    "githubWorkflow": {
+      "runID": 41237756727,
+      "result": "success"
+    }
+  },
+  "privacy": "Published declaration unchanged: Device ID and Other Usage Data for App Functionality, linked, no tracking. This UI change adds no data collection.",
+  "contentRightsDeclaration": "USES_THIRD_PARTY_CONTENT; owner confirmed the necessary rights before initial submission.",
+  "websiteStatus": "Awaiting Apple review",
+  "testFlightInstallFailureResolved": false,
+  "publiclyReleased": false
+}

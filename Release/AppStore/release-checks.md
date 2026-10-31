@@ -1,6 +1,27 @@
 # Release preparation evidence, 30 October 2026
 
-## Current candidate: offline starter, build 4 (31 October)
+## Current candidate: build 6 (31 October)
+
+Build 1.0 (6) is submitted to Apple with **AFTER_APPROVAL** automatic release.
+The selected build, VALID processing state, review submission and release flag
+were read back through Apple’s API. The current receipt is
+`evidence/app-store-submission-build6-2026-10-31.json`. Build 4’s original
+submission was canceled; build 5 was not submitted.
+
+Build 6 retains the four bundled areas and accepted two-finger tilt fix, and adds
+the Explore save/exit guard. Source: `2fc50df5a`, branch
+`codex/save-route-and-exit`, GitHub PR #12. Native Release archive/export, strict
+signature verification, Apple validation and upload passed. The route-exit
+suite passed 34 checks, saved-route catalogue 33, gesture/camera suite 473;
+GitHub workflow run 41237756727 passed. The owner accepted tilt on build 5
+and explicitly chose to continue without a physical-phone test of build 6
+after the connection dropped. Do not describe build 6 as hardware-UAT passed.
+
+The listing, privacy disclosure, rights confirmation, free UK price and website
+remain the prepared release baseline. TestFlight delivery is still unresolved;
+production App Store installation has not yet been tested.
+
+## Bundled baseline and build-4 history (31 October)
 
 This supersedes the build-3 download-dependent launch plan below. Four selected
 walking areas are now included in the app: Eryri, Lake District, Peak District,
@@ -23,8 +44,8 @@ preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
 - The listing and review notes are saved in App Store Connect for this coverage.
 - App Review submission succeeded on 31 October at 18:43:26 UTC for build 4;
   Apple reports WAITING_FOR_REVIEW. After enabling automatic release, the owner
-  chose to include the two-finger gesture fix before launch. Release is now held
-  as MANUAL, API-verified, pending the replacement build. Submission ID:
+  chose to include the two-finger gesture fix before launch. Release was held
+  as MANUAL while the replacement was prepared; build 6 now supersedes it. Submission ID:
   `8d46cb3f-7210-4809-821f-e690ce7a24d3`. Public release has not occurred.
   Successful Apple-hosted
   downloads are a gate for enabling that future feature, not the starter release.

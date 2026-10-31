@@ -50,103 +50,72 @@ The release flag prevents the first release from probing Apple's asset manager
 on startup. Adding nationwide coverage later does not require replacing routes
 or reinstalling the app. Do not promise those downloads until delivery passes.
 
-## Build, install and finish the release
+## Reproduce the submitted build
 
-From the `texture-study-code` checkout, after preparing the bundle:
+Use the frozen source commit `2fc50df5a` (PR #12), with the prepared starter
+resource available. The submitted build used this archive configuration:
 
 ```sh
 xcodebuild -project 'ridge v3.xcodeproj' -scheme 'ridge v3' \
   -configuration Release -destination 'generic/platform=iOS' \
-  -archivePath '../ReleaseBuilds/1.0-4/Ridge-1.0-4.xcarchive' \
+  -derivedDataPath '/Volumes/MLB_EXT_4TB/Ridge Releases/1.0-6/derived' \
+  -archivePath '/Volumes/MLB_EXT_4TB/Ridge Releases/1.0-6/Ridge-1.0-6.xcarchive' \
+  CURRENT_PROJECT_VERSION=6 \
+  RIDGE_OFFLINE_MAPS_BUNDLE='/Volumes/MLB_EXT_4TB/Ridge Releases/offline-starter/OfflineMaps.bundle' \
   -allowProvisioningUpdates archive
 ```
 
-The prepared archive and export are under `project-ridgeV3/ReleaseBuilds/1.0-4`.
-The app inside the archive is development signed and can be installed on the
-registered iPhone/iPad with Xcode or `xcrun devicectl device install app` while
-unlocked. The distribution export is `export/ridge v3.ipa`. Never uninstall Ridge
-as part of an ordinary update; install over the existing bundle identifier so
-routes and downloaded data stay in the app container. Development installations
-have signing/profile expiry; they are not permanent App Store installations.
+The archive app is development signed for registered devices; the App Store
+export is `1.0-6/export/ridge v3.ipa` under the same external release directory.
+Install ordinary development updates over the existing bundle identifier to
+preserve routes and saved data. Keep enough Mac temporary space for export:
+Xcode's distribution pipeline uses its user temporary directory even when the
+archive and final IPA are on the external drive. Future uploads need a build
+number higher than 6.
 
-App Store version 1.0 is free, UK-only and Waiting for Review. After initially
-requesting automatic release, the owner chose to include the two-finger tilt fix
-before launch. Release is temporarily held as `MANUAL`, verified through Apple.
-Description, promotional text and reviewer notes now describe four included
-areas. The saved screenshot set remains eight real native captures. Product-page
-wording for the offline starter is published, together with matching privacy
-and support pages. The original `Release/AppStore/website-offline-update.patch`
-is retained as a preparation record.
-
-Physical phone/tablet checks, final declarations and owner submission approval
-are complete; build 4 is submitted. No successful Apple-hosted
-terrain download is required for the included-only release; keep that delivery
-feature disabled until separately verified. App Store review and account-service
-availability still depend on Apple. Do not treat a passed upload as approval.
-
-Included packs currently live only in the app bundle. Keep that baseline in the
-first download-enabled update: removing it would remove those local maps, even
-though routes and downloaded data remain. A later smaller-base release needs a
-separate, tested migration/redownload flow. Enabling additional Apple coverage
-alone does not require shrinking or replacing this starter bundle.
-
-Do not reapply the original zero-context product-page patch over the published
-website. Its matching coverage changes and later support/privacy/status updates
-are already committed to the website's main branch.
+Retain the four included areas in the first download-enabled update. Additional
+Apple-hosted coverage does not require shrinking or replacing that baseline.
+A later smaller-base release needs a separate tested migration/redownload flow.
+The product, support and privacy updates are already published; the original
+website patch is a historical preparation record.
 
 ## Current handover, 31 October 2026
 
-Build 1.0 (4) has uploaded, processed as VALID and been selected in the App Store
-draft. It is installed on the registered iPhone and iPad. Core hardware checks
-passed, including owner-confirmed airplane-mode cold opening on both devices;
-native route/GPX/preview checks and the 31-check real-bundle integration results
-are recorded in `Release/AppStore/evidence/offline-starter-*.json`.
+Build **1.0 (6)** is submitted to App Review with **AFTER_APPROVAL** automatic
+release. Its source is `2fc50df5a` on `codex/save-route-and-exit` (GitHub PR #12).
+It retains the bundled offline baseline, the owner-accepted two-finger tilt fix,
+and the Explore save/exit confirmation. An unchanged saved route exits directly;
+unfinished edits can be saved, discarded or kept open. Saves run off the main
+actor; failed writes retain the editor, and leaving keeps the resident map.
 
-The app, prepared maps, archive and IPA are local files and do not depend on an
-AI subscription or a running map server. The full source library remains on
-`MLB_EXT_4TB`; the prepared bundle and signed release artifacts remain under
-`project-ridgeV3/ReleaseBuilds`. Keep those files: Git contains the code and
-reproduction instructions, not the multi-gigabyte map payload. The development
-profile currently expires on 26 October 2027; an App Store installation is still
-the intended distribution path.
+The owner accepted final bundled-build UAT on iPhone/iPad and the gesture fix on
+build 5. The owner explicitly chose to skip the final physical-phone check of
+build 6 after the Mac connection failed. Build 6 passed 34 route-exit, 33 catalogue
+and 473 gesture/camera checks, GitHub workflow 41237756727, native archive/export,
+strict signature verification, Apple validation and upload. Its selected build,
+review receipt and automatic release setting were verified through Apple’s API.
+See `Release/AppStore/evidence/app-store-submission-build6-2026-10-31.json` and
+`build6-release.json` for the current record. Build 4’s earlier submission was
+canceled; build 5 was not submitted. Public availability still depends on Apple.
 
-The owner accepted final iPhone UAT and requested App Store submission on
-31 October. The four-area product page, matching support FAQ and updated privacy
-policy are published and browser-verified. Free UK pricing and
-all eight completed screenshot uploads were verified. The owner explicitly
-confirmed both final Apple declarations. Privacy responses were published and
-the third-party-content/necessary-rights declaration was saved. Apple received
-build 1.0 (4) at 18:43:26 UTC on 31 October 2026; its status is
-**WAITING_FOR_REVIEW**. Release was initially manual; the owner subsequently
-requested automatic release, then explicitly chose to include the gesture fix
-before launch. The current API-verified setting is **MANUAL**, pending the
-replacement build's device check and submission.
-Submission ID:
-`8d46cb3f-7210-4809-821f-e690ce7a24d3`. See
-`Release/AppStore/evidence/app-store-submission-2026-10-31.json` for the current
-submission record.
-The unresolved TestFlight account/install error is not proven fixed by this
-upload. Build 4 is available to the owner's accepted internal tester and is
-IN_BETA_TESTING. On 31 October the owner confirmed the compatible 1.0 (4) build
-still fails with the same “not available” install error. Bundling has not fixed
-TestFlight delivery. Native Console captured the retry at
-2026-10-31 16:12:22.199445 UTC: TestFlight fails while processing the install-start
-response, with `Error Downloading Install Data`, no download progress, TF error
-`-1` and `serverCode=200`. That last field is not independently verified as an
-HTTP status. The underlying cause remains unconfirmed. See
-`Release/AppStore/evidence/testflight-build4-install-failure.json`; raw logs and
-the unsent support update are private in `ReleaseBuilds/1.0-4` outside Git.
-App Review submission has succeeded; public launch has not occurred. The saved
-release setting is **MANUAL** to hold build 4 while the tilt fix is prepared.
-Do not release build 4 or re-enable its automatic release. Build 5 is being
-prepared from the submitted source plus the gesture fix; after its device check,
-replace the submitted build and restore automatic release for the fixed build.
-Keep the current TestFlight case open independently.
+The four-area product/support/privacy pages are published and say Awaiting Apple
+review. Free UK pricing, eight screenshot uploads, published privacy responses
+and the owner-confirmed third-party content rights remain unchanged. The exact
+listing and review notes are in `Release/AppStore/submitted-1.0-6-en-GB.json`.
+Ongoing working-tree changes for future features were excluded from this binary.
 
-The product, support and privacy copy is published from the isolated
-`website-publish` worktree and verified on bilellaworks.com. The homepage,
-catalogue, product page and support page say Awaiting Apple review. Full website
-validation passes against the current main-branch baseline; newer unrelated
-website changes are preserved. See `website-offline-preparation.json` for scope.
-`Release/AppStore/submitted-1.0-4-en-GB.json` freezes the submitted listing copy;
-separate ongoing working-tree changes are not part of the submitted binary.
+The app works without an AI subscription or a running map server. Keep the full
+UK source and prepared starter payload: Git contains code and instructions,
+not the multi-gigabyte maps. Release archives/exports for builds 3–6 and the
+prepared starter now live under `/Volumes/MLB_EXT_4TB/Ridge Releases`; original
+`ReleaseBuilds` paths remain as links. The external drive is needed to reproduce
+the bundled build, not to use the installed app. Build 6 was archived with the
+explicit settings `CURRENT_PROJECT_VERSION=6` and `RIDGE_OFFLINE_MAPS_BUNDLE`
+pointing to the prepared resource. Increment the build number for future uploads.
+
+The TestFlight “not available” failure remains unconfirmed and unresolved.
+Keep Apple Support case 103009501518 open independently. Raw device logs and the
+unsent follow-up remain private outside Git; no new support message was sent.
+Future Apple-hosted map downloads remain disabled until delivery passes a real
+Apple-hosted download and cold-offline test. Keep the included baseline and
+existing IDs when enabling that later feature.
