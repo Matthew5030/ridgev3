@@ -61,6 +61,11 @@ part of store preparation.
 - A final Apple-only build with the retained client removed could warrant a
   narrower declaration, but that is a different implementation and must be
   verified before changing these answers.
+- On 31 October the selected build-4 archive's privacy manifest was inspected:
+  Device ID and Other Usage Data remain linked, for app functionality, with no
+  tracking. The live questionnaire still shows those two saved types and a
+  Publish button. The included-only build disables Apple downloads but retains
+  the protected-client code; the conservative declaration is unchanged.
 
 Sources: [Apple privacy definitions](https://developer.apple.com/app-store/app-privacy-details/),
 [manifest collection fields](https://developer.apple.com/documentation/technotes/tn3184-adding-data-collection-details-to-your-privacy-manifest),

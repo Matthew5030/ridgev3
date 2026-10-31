@@ -12,11 +12,38 @@
   "redUnavailableUKOverlayRemoved": true,
   "screenshot": "offline-starter-map.png",
   "screenshotSHA256": "b55d6f461de116933faee7bbf29bdb6b8c4a357c05577239fb6a80f47bf45927",
-  "physicalDeviceTestPassed": false,
-  "remainingPhysicalChecks": [
-    "Offline cold launch and 3D transition",
-    "Route create/save/reopen and cross-section path routing",
-    "GPX import/export",
-    "Flight preview on iPhone and iPad"
-  ]
+  "physicalDeviceTestPassed": true,
+  "remainingPhysicalChecks": [],
+  "physicalDevices": [
+    {
+      "device": "iPhone 17 Pro Max",
+      "os": "27.2",
+      "build": "4",
+      "installedOverExistingApp": true,
+      "chilterns3DObserved": true,
+      "offlineMap": "Owner confirmed map works offline; connectivity restored after test",
+      "longSavedRouteAndPreview": "Owner confirmed route and preview work",
+      "offlineColdLaunch": "Owner confirmed force-close/reopen and detailed map work with airplane mode on and Wi-Fi off"
+    },
+    {
+      "device": "iPad Pro 12.9-inch (5th generation)",
+      "os": "27.0.1",
+      "build": "4",
+      "installedOverExistingApp": true,
+      "lakeDistrict3DObserved": true,
+      "testRouteName": "Ridge QA - bundled maps",
+      "nativeRoutePlanning": "Three waypoints, 317 m along mapped path near Hart Side",
+      "routeSaveAndCatalogueReopen": true,
+      "existingRoutesRetainedInCatalogue": true,
+      "flightPreviewCompleted": true,
+      "previewScrubAndExit": true,
+      "gpxExport": "Saved locally in On My iPad; visible in import picker",
+      "gpxRoundTrip": true,
+      "gpxReimport": "Imported the exported local GPX; same name, three waypoints and 0.3 km route displayed",
+      "offlineColdLaunch": "Owner confirmed force-close/reopen and detailed map work with airplane mode on and Wi-Fi off"
+    }
+  ],
+  "physicalSmokeTestScope": "Core map, route and preview checks; not exhaustive navigation or performance certification",
+  "connectivityRestored": "Owner confirmed both-device offline test complete; prior question included restoring airplane mode off / Wi-Fi on",
+  "crossSectionRouting": "31-check offline suite calculates a real Chilterns walking segment across two bundled sections using WorldLandscapeStore.joinGraphs and RouteEngine.walkingSegment"
 }

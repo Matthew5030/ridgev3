@@ -44,6 +44,23 @@ import Foundation
         for point in [GeoPoint(latitude:51.8168,longitude:-0.8148),GeoPoint(latitude:51.752,longitude:-0.743),GeoPoint(latitude:51.739,longitude:-0.608)] {
             try check(bounds.contains { $0.contains(point) },"Offline terrain covers the Aylesbury / Chilterns sample at \(point.latitude), \(point.longitude)")
         }
+        // Exercise the real section seam with the same graph join and walking
+        // router used by the app, with network access disabled throughout.
+        let west=catalog.region(at:GeoPoint(latitude:51.752,longitude:-0.743))!
+        let east=catalog.region(at:GeoPoint(latitude:west.bounds.center.latitude,longitude:west.bounds.maxLongitude+0.001))!
+        var parts:[WorldLandscapeStore.Part]=[]
+        for region in [west,east] {
+            let files=WorldSourceStore(cacheURL:cache,allowsNetwork:false)
+            let source=try await files.manifest(address:root.appendingPathComponent(region.path).absoluteString,routing:region.routing,preferCached:true,recoverCoverage:false)
+            let (_,overview,graph)=try await files.contents(of:source)
+            parts.append(.init(source:source,overview:overview,graph:graph,files:files,connected:region.routing != nil))
+        }
+        let joined=try WorldLandscapeStore.joinGraphs(parts)
+        let crossing=try RouteEngine.walkingSegment(from:west.bounds.center,to:east.bounds.center,graph:joined,snapDistance:5000)
+        try check(west.id != east.id && crossing.points.count>2 &&
+                  crossing.points.first!.coordinate.longitude<west.bounds.maxLongitude &&
+                  crossing.points.last!.coordinate.longitude>west.bounds.maxLongitude,
+                  "A real Chilterns walking route crosses a bundled section boundary offline")
         try WorldOfflineCoverage.removeDownloads(in:nil,catalog:catalog,at:cache)
         try check(WorldOfflineCoverage.savedBounds(at:cache).count==bounds.count,"Removing downloaded maps preserves all included terrain")
         let first=catalog.sources[0],asset=first.pack!

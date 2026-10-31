@@ -22,9 +22,13 @@ starter release. See `Tools/OFFLINE-STARTER.md` for the update path.
   route identities and downloader source for a future update.
 - [x] Update local listing and reviewer notes to describe four included areas.
 - [x] Final build 4 archived/exported: 2,971,448,163 app bytes and 2,847,849,543 IPA bytes. Strict signature verification and Apple distribution validation passed. Uploaded successfully; processing status is recorded in evidence.
-- [ ] Final physical iPhone/iPad smoke test: first open, immediate offline terrain,
+- [x] Final physical iPhone/iPad core smoke test: first open, immediate offline terrain,
   route editing/reopening, cross-section routing, GPX import/export and preview.
-- [ ] Save revised listing and select the verified build in App Store Connect.
+  Native iPad UI was observed; the owner confirmed the longer iPhone preview
+  and airplane-mode cold reopening on both. A real section-crossing route also
+  passes the offline integration suite (31 checks; 64 local checks total).
+- [x] Save revised listing and select processed build 4 in App Store Connect.
+  Apple reports VALID; all four production-source GitHub checks passed.
 - [ ] Final privacy/content-rights declarations and Account Holder agreement checks.
 - [ ] Obtain owner approval before App Review submission/publication.
 

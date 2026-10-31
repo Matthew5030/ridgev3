@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+BUNDLE=$(CDPATH= cd -- "${1:?Pass the prepared OfflineMaps.bundle}" && pwd)
 TEST=$(mktemp -d /tmp/ridge-offline-starter-test.XXXXXX)
 trap 'rm -rf "$TEST"' EXIT HUP INT TERM
 xcrun swiftc -swift-version 5 -O -parse-as-library \
@@ -11,6 +12,6 @@ xcrun swiftc -swift-version 5 -O -parse-as-library \
  "$ROOT/ridge v3/Core/RouteEngine.swift" \
  "$ROOT/ridge v3/World/WorldPreview.swift" "$ROOT/ridge v3/World/WorldSource.swift" "$ROOT/ridge v3/Core/ProtectedMapStorage.swift" "$ROOT/ridge v3/World/WorldProtectedAccess.swift" "$ROOT/ridge v3/World/WorldAppleAssets.swift" "$ROOT/ridge v3/World/WorldSectionPack.swift" "$ROOT/ridge v3/World/WorldBundledMaps.swift" "$ROOT/ridge v3/World/WorldOfflineCoverage.swift" "$ROOT/ridge v3/World/WorldCartography.swift" \
  "$ROOT/ridge v3/World/WorldGeometry.swift" "$ROOT/ridge v3/World/WorldCameraTransition.swift" "$ROOT/ridge v3/Core/TerrainNavigation.swift" "$ROOT/ridge v3/World/WorldCatalog.swift" "$ROOT/ridge v3/World/WorldRegionArchive.swift" "$ROOT/ridge v3/World/WorldLandscape.swift" "$ROOT/ridge v3/World/WorldAtlasIndex.swift" "$ROOT/ridge v3/World/WorldDistantTerrain.swift" "$ROOT/ridge v3/World/WorldRegionPacks.swift" "$ROOT/ridge v3/World/WorldModel.swift" "$ROOT/Tests/WorldOfflineStarterTests.swift" -o "$TEST/run"
-ln -s "${1:?Pass the prepared OfflineMaps.bundle}" "$TEST/OfflineMaps.bundle"
+ln -s "$BUNDLE" "$TEST/OfflineMaps.bundle"
 ln -s "$ROOT/ridge v3/Resources/uk-download-zones.json" "$TEST/uk-download-zones.json"
 "$TEST/run" "$ROOT/ridge v3/Resources/uk-download-zones.json"

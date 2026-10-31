@@ -90,3 +90,25 @@ alone does not require shrinking or replacing this starter bundle.
 The prepared product-page patch uses zero context; from a clean website checkout,
 validate it with `git apply --check --unidiff-zero /absolute/path/to/website-offline-update.patch`
 before applying and reviewing the page. Publication still needs owner approval.
+
+## Current handover, 31 October 2026
+
+Build 1.0 (4) has uploaded, processed as VALID and been selected in the App Store
+draft. It is installed on the registered iPhone and iPad. Core hardware checks
+passed, including owner-confirmed airplane-mode cold opening on both devices;
+native route/GPX/preview checks and the 31-check real-bundle integration results
+are recorded in `Release/AppStore/evidence/offline-starter-*.json`.
+
+The app, prepared maps, archive and IPA are local files and do not depend on an
+AI subscription or a running map server. The full source library remains on
+`MLB_EXT_4TB`; the prepared bundle and signed release artifacts remain under
+`project-ridgeV3/ReleaseBuilds`. Keep those files: Git contains the code and
+reproduction instructions, not the multi-gigabyte map payload. The development
+profile currently expires on 26 October 2027; an App Store installation is still
+the intended distribution path.
+
+Remaining owner actions are content-rights confirmation, privacy publication,
+approval of the prepared website copy and approval to submit App Review.
+The unresolved TestFlight account/install error is not proven fixed by this
+upload. No App Review submission or public launch has occurred. The saved
+release setting is manual, so an approval from Apple will not launch it by itself.

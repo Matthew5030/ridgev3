@@ -10,21 +10,33 @@ preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
 
 - Prepared 282 sections / 67,987 tiles; every pack and decompressed entry checksum
   passed. No missing land rectangles in the four current selection shapes.
-- 30 offline-starter integration checks, 16 Apple delivery adapter checks and
-  17 offline-boundary checks pass (63 checks total).
+- 31 offline-starter integration checks, 16 Apple delivery adapter checks and
+  17 offline-boundary checks pass (64 checks total). The starter suite calculates
+  a real walking route across two Chilterns sections with networking disabled.
 - Final build 4 is signed and exported: 2,971,448,163 app bytes, below 4 GB.
   Strict archive signature verification and Apple distribution validation passed.
   The exact 2,847,849,543-byte IPA uploaded successfully; its SHA256 and delivery
-  UUID are in `evidence/offline-starter-release.json`. Apple processing is pending.
+  UUID are in `evidence/offline-starter-release.json`. Apple processing is VALID;
+  build 4 is selected for the version 1.0 draft.
 - Native Simulator checks verified first open, the included-map walkthrough and
   the refined four-area map without the red unavailable-UK overlay.
 - The listing and review notes are saved in App Store Connect for this coverage.
 - No App Review submission/publication has been made. Successful Apple-hosted
   downloads are a gate for enabling that future feature, not the starter release.
-- Physical smoke tests remain outstanding: iPad locked, iPhone unavailable. The
-  Mac locked during native UI checks. Finish those before submission approval.
+- Build 4 is installed over the existing app on both physical devices. iPad
+  Lake District terrain, route creation/save/catalogue reopen, GPX export and
+  reimport, and preview completion/scrubbing/exit were observed. The owner
+  confirmed the longer iPhone route/preview and airplane-mode cold reopening
+  into detailed terrain on both devices. Existing iPad routes remain visible.
+- All four GitHub checks passed for the production-source candidate. The native
+  evidence distinguishes observed checks from owner-reported checks.
+- Removed the temporary local-download test CA trust, certificate, test identity
+  and generated private keys. The phone had no installed test profile.
 - Finish the final privacy/rights declarations, prepare the matching product page,
-  select the processed tested build and obtain owner approval for submission.
+  and obtain owner approval for submission. App Information currently identifies
+  the developer as a trader, with Content Rights unset. Free Apps Agreement is
+  active; Business also displays an updated Paid Applications Schedule for the
+  Account Holder to review. No agreement or rights declaration was accepted.
 
 ## Historical preparation for build 3
 

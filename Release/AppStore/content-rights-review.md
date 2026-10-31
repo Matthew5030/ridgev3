@@ -15,9 +15,17 @@ Keep them in the app and the frozen publication.
 | OpenStreetMap walking network/cartography | Source manifest attribution and Settings credits; ODbL 1.0 / produced-work and database redistribution requirements. |
 | Welsh Government LiDAR | Source manifest credits; Open Government Licence v3.0 attribution. |
 | Copernicus Sentinel-2 ground colouring | Contains modified Copernicus Sentinel data 2025; source-specific Sentinel terms and attribution. |
+| Copernicus DEM GLO-30 | Frozen starter credits include the Copernicus WorldDEM-30 / DLR / Airbus attribution and declare the Copernicus DEM Free & Open licence; check its redistribution and derived-product notice requirements. |
+| Environment Agency 1 m LIDAR composite DTM | Frozen starter credits retain Environment Agency copyright/database rights 2022 and declare OGL 3.0. |
 | Mapzen overview elevations | Tilezen/Joerd upstream attribution lists multiple source datasets and terms; preserve those credits. |
 | Natural Earth geographic overview | Public-domain source; retain the existing attribution. |
-| Other UK pack elevation inputs | Review each frozen pack/source manifest; do not infer that Welsh or overview terms cover all UK sources. |
+| Future UK coverage | Review its source manifests separately before enabling additional areas. |
+
+On 31 October all 282 frozen starter manifests were inspected. Their six unique
+source credits are recorded in `evidence/offline-starter-source-credits.json`.
+This records what the data declares; the owner still needs to confirm the
+app's redistribution obligations. Natural Earth and the more detailed overview
+elevation credits are also retained in native Settings.
 
 Source references already linked by the project:
 
