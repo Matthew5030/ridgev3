@@ -63,6 +63,11 @@ struct ContentView: View {
             if let retry = store.retryPreparation { Button("Retry") { store.errorMessage = nil; retry() } }
                 Button("OK", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+        .confirmationDialog("Save route and exit?", isPresented: $store.showRouteExitConfirmation, titleVisibility: .visible) {
+            Button("Save and exit") { Task { await store.saveRouteAndExplore() } }
+            Button("Discard changes", role: .destructive) { Task { await store.discardRouteEditsAndExplore() } }
+            Button("Keep editing", role: .cancel) { }
+        } message: { Text("Save your route changes before returning to Explore.") }
         .overlay(alignment: .top) {
             if let notice = store.notice, store.activeTerrain == nil && store.tab != .explore {
                 Text(notice).font(.subheadline.weight(.medium)).foregroundStyle(RidgeTheme.paper)
@@ -80,7 +85,7 @@ struct ContentView: View {
     private var tabBar: some View {
         HStack(spacing: 6) {
             ForEach([MainTab.explore, .routes], id: \.self) { tab in
-                Button { store.tab = tab } label: {
+                Button { if tab == .explore { store.requestExplore() } else { store.tab = tab } } label: {
                     HStack(spacing: 8) {
                         Image(systemName: tab == .explore ? "globe.europe.africa" : tab == .areas ? "square.stack.3d.up" : "point.topleft.down.to.point.bottomright.curvepath")
                             .font(.system(size: 18, weight: .medium))

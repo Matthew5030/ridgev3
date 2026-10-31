@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "candidateBuild": "6",
+  "status": "Preparing native Release build; automatic release held",
+  "behaviour": {
+    "unfinishedRoute": "Offer Save and exit, Discard changes, or Keep editing",
+    "unchangedSavedRoute": "Exit directly without a library rewrite or map reload",
+    "savedRouteEdit": "Compare geometry, waypoints, name and notes with the last finished route",
+    "saveFailure": "Keep the editor and route open with an error",
+    "discardExistingEdit": "Restore the last finished route",
+    "discardNewDraft": "Remove only the new draft"
+  },
+  "checks": {
+    "routeExit": 34,
+    "savedRouteCatalogue": 33,
+    "gestureAndCamera": 473
+  },
+  "preservedGestureFix": "956713f3f",
+  "appStoreSubmitted": false
+}
