@@ -132,8 +132,10 @@ On 31 October the API still reported build 3 as valid and in internal testing.
 The per-app beta license exists; that does not verify the account-level beta
 contract discussed in matching Apple forum reports. During an account check the
 Program Agreement warning disappeared, and App Store Connect then showed the
-Free Apps Agreement as Active with an effective date of 31 October. A new device
-installation attempt was requested after this change; its result is pending.
+Free Apps Agreement as Active with an effective date of 31 October. The tester
+then closed/reopened TestFlight and retried build 3, reporting the same unavailable
+app error. The agreement-state change did not resolve the installation failure.
+An escalation for the existing Apple case is prepared but has not been sent.
 No account-level defect or successful repair has been established. See the
 [retry evidence](../Release/AppStore/evidence/testflight-retry-2026-10-30.json).
 
