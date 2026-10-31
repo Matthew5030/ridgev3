@@ -23,14 +23,15 @@
   "appStoreCandidateUploaded": true,
   "distributionArchive": "passed",
   "artifactDirectory": "/Volumes/MLB_EXT_4TB/Ridge Releases/1.0-5",
-  "currentAppStoreBuild": "4",
+  "currentAppStoreBuild": "6",
   "currentAppStoreState": "WAITING_FOR_REVIEW",
-  "currentReleaseType": "MANUAL",
-  "releaseHold": "Owner explicitly chose to include the fix before launch; automatic release is held until replacement submission.",
+  "currentReleaseType": "AFTER_APPROVAL",
+  "releaseHold": "Resolved: accepted tilt fix included in submitted build 6 alongside the Explore save/exit guard.",
   "otherWorkingChangesIncluded": false,
   "flightMathematicsChanged": false,
   "distributionExport": "passed",
   "appleValidation": "passed",
   "uploadDeliveryUUID": "94a02383-8a9b-4f4c-8969-c4fc73d69f45",
-  "processingState": "Awaiting Apple processing"
+  "processingState": "VALID",
+  "includedInSubmittedBuild": "6"
 }

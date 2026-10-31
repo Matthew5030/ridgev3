@@ -29,5 +29,8 @@
   "artifactDirectory": "/Volumes/MLB_EXT_4TB/Ridge Releases/1.0-5",
   "appReviewSubmitted": false,
   "processingState": "Awaiting Apple processing",
-  "releaseType": "MANUAL until build 5 is selected, then AFTER_APPROVAL per owner preference"
+  "releaseType": "MANUAL until build 5 is selected, then AFTER_APPROVAL per owner preference",
+  "processing": "VALID",
+  "supersededByBuild": "6",
+  "supersededReason": "Owner requested the Explore save/exit guard before final submission."
 }

@@ -19,12 +19,18 @@
   },
   "validation": "passed",
   "upload": "passed",
-  "processing": "PROCESSING; asset delivery COMPLETE with no server errors",
-  "appReviewSubmitted": false,
+  "processing": "VALID",
+  "appReviewSubmitted": true,
   "deliveryUUID": "433cbfb3-dc8b-434a-b35c-dc402d487dea",
   "uploadedAt": "2026-10-31T20:51:02Z",
   "ownerUAT": {
     "routeExitBuild6": "Skipped at owner request: Continue without the phone test",
     "gestureBuild5": "Passed: Tilt responds properly"
-  }
+  },
+  "buildID": "433cbfb3-dc8b-434a-b35c-dc402d487dea",
+  "submissionID": "4bb328c5-b94d-45c0-8560-bf5502eac73c",
+  "submissionState": "WAITING_FOR_REVIEW",
+  "submittedAtUTC": "2026-10-31T21:19:28.234Z",
+  "releaseType": "AFTER_APPROVAL",
+  "publiclyReleased": false
 }
