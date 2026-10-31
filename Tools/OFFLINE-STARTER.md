@@ -110,9 +110,12 @@ the intended distribution path.
 The owner accepted final iPhone UAT and requested App Store submission on
 31 October. The four-area product page, matching support FAQ and updated privacy
 policy are published and browser-verified. Free UK pricing, manual release and
-all eight completed screenshot uploads were verified. The final Apple
-privacy-publication/legal and content-rights declarations await owner
-confirmation before submission. See
+all eight completed screenshot uploads were verified. The owner explicitly
+confirmed both final Apple declarations. Privacy responses were published and
+the third-party-content/necessary-rights declaration was saved. Apple received
+build 1.0 (4) at 18:43:26 UTC on 31 October 2026; its status is
+**WAITING_FOR_REVIEW**, with **MANUAL** release retained. Submission ID:
+`8d46cb3f-7210-4809-821f-e690ce7a24d3`. See
 `Release/AppStore/evidence/app-store-submission-2026-10-31.json` for the current
 submission record.
 The unresolved TestFlight account/install error is not proven fixed by this
@@ -126,10 +129,15 @@ response, with `Error Downloading Install Data`, no download progress, TF error
 HTTP status. The underlying cause remains unconfirmed. See
 `Release/AppStore/evidence/testflight-build4-install-failure.json`; raw logs and
 the unsent support update are private in `ReleaseBuilds/1.0-4` outside Git.
-No App Review submission or public launch has occurred. The saved
-release setting is manual, so an approval from Apple will not launch it by itself.
+App Review submission has succeeded; public launch has not occurred. The saved
+release setting is manual, so approval from Apple will not launch it by itself.
+After approval, open the version in App Store Connect and choose Release This
+Version when ready. Keep the current TestFlight case open independently.
 
-The prepared website copy is applied in the isolated `website-publish` worktree
-and verified in a local browser. Ridge-specific checks pass. The full website
-validator stops on an unchanged Chitchat privacy-text assertion; that unrelated
-page has not been changed. See `website-offline-preparation.json` for scope.
+The product, support and privacy copy is published from the isolated
+`website-publish` worktree and verified on bilellaworks.com. The homepage,
+catalogue, product page and support page say Awaiting Apple review. Full website
+validation passes against the current main-branch baseline; newer unrelated
+website changes are preserved. See `website-offline-preparation.json` for scope.
+`Release/AppStore/submitted-1.0-4-en-GB.json` freezes the submitted listing copy;
+separate ongoing working-tree changes are not part of the submitted binary.

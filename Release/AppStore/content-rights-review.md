@@ -1,10 +1,16 @@
 # Content-rights review for the Account Holder
 
+On 31 October 2026 the owner explicitly confirmed both final Apple declarations
+and requested submission. The necessary-rights answer was saved and verified
+through Apple's API as `USES_THIRD_PARTY_CONTENT`. Build 1.0 (4) was submitted
+and is Waiting for Review. This records the owner's confirmation; it does not
+replace the source-specific licence obligations below. No new paid agreement
+was accepted.
+
 Ridge contains third-party map and terrain content. The App Store declaration
-must not say it has no third-party content. The proposed answer is **Yes, it
-contains third-party content, and I have the necessary rights**, only after the
-owner confirms the redistribution terms for the final app and all map packs.
-No rights declaration or licence agreement was accepted during this preparation.
+must not say it has no third-party content. The saved answer is **Yes, it
+contains third-party content, and I have the necessary rights**, following the
+owner's explicit confirmation for the final included-only app.
 
 This is an evidence checklist, not a new grant of rights or legal clearance.
 The source manifests and Settings > Map sources and licences carry credits.

@@ -21,7 +21,10 @@ preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
 - Native Simulator checks verified first open, the included-map walkthrough and
   the refined four-area map without the red unavailable-UK overlay.
 - The listing and review notes are saved in App Store Connect for this coverage.
-- No App Review submission/publication has been made. Successful Apple-hosted
+- App Review submission succeeded on 31 October at 18:43:26 UTC for build 4;
+  Apple reports WAITING_FOR_REVIEW and MANUAL release. Submission ID:
+  `8d46cb3f-7210-4809-821f-e690ce7a24d3`. Public release has not occurred.
+  Successful Apple-hosted
   downloads are a gate for enabling that future feature, not the starter release.
 - Build 4 is installed over the existing app on both physical devices. iPad
   Lake District terrain, route creation/save/catalogue reopen, GPX export and
@@ -43,11 +46,17 @@ preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
   draft has not been sent.
 - Removed the temporary local-download test CA trust, certificate, test identity
   and generated private keys. The phone had no installed test profile.
-- Finish the final privacy/rights declarations, prepare the matching product page,
-  and obtain owner approval for submission. App Information currently identifies
-  the developer as a trader, with Content Rights unset. Free Apps Agreement is
-  active; Business also displays an updated Paid Applications Schedule for the
-  Account Holder to review. No agreement or rights declaration was accepted.
+- The owner accepted final iPhone UAT and explicitly confirmed both final Apple
+  declarations and submission. Privacy is published (Device ID and Other Usage
+  Data, app functionality, linked, no tracking); Content Rights is saved as
+  USES_THIRD_PARTY_CONTENT. Free UK pricing and all eight COMPLETE screenshots
+  were verified. App Information still identifies the developer as a trader.
+- Matching product, support and privacy pages are published; the public website
+  now says Awaiting Apple review. The full static-site validator passes. See
+  `evidence/app-store-submission-2026-10-31.json` for the submission receipt.
+- Free Apps Agreement is active. Business also displays an updated Paid
+  Applications Schedule for the Account Holder to review; no paid agreement
+  was accepted as part of this free-app submission.
 
 ## Historical preparation for build 3
 

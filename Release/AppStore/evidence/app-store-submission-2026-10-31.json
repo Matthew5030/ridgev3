@@ -22,11 +22,17 @@
   "reviewContactComplete": true,
   "signInRequired": false,
   "websitePublished": true,
-  "websiteCommit": "5fdca35",
-  "appReviewSubmitted": false,
-  "submissionState": "Awaiting final Apple privacy/legal and content-rights declarations",
-  "privacyDeclaration": "Prepared Device ID and Other Usage Data; App Functionality; linked; no tracking. Final Publish dialog awaits action-time owner confirmation.",
-  "contentRightsDeclaration": "Prepared third-party-content/necessary-rights answer; awaits owner confirmation.",
+  "websiteCommit": "5945dc5c64d43f033e674f9d300fc5994e07b797",
+  "appReviewSubmitted": true,
+  "submissionState": "WAITING_FOR_REVIEW",
+  "privacyDeclaration": "Published: Device ID and Other Usage Data; App Functionality; linked; no tracking. Browser shows Published by Matthew Bilella.",
+  "contentRightsDeclaration": "USES_THIRD_PARTY_CONTENT",
   "testFlightInstallFailureResolved": false,
-  "rawDeviceLogsPublished": false
+  "rawDeviceLogsPublished": false,
+  "submissionID": "8d46cb3f-7210-4809-821f-e690ce7a24d3",
+  "submittedAtUTC": "2026-10-31T18:43:26.919Z",
+  "ownerDeclarationConfirmation": "Owner explicitly replied Confirm both and submit to the final declaration question.",
+  "websiteStatus": "Awaiting Apple review",
+  "receiptScreenshot": "Private ReleaseBuilds/1.0-4/app-store-waiting-for-review.png outside Git",
+  "publiclyReleased": false
 }

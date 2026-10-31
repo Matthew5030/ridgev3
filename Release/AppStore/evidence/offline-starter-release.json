@@ -13,7 +13,7 @@
   "archiveSucceeded": true,
   "exportSucceeded": true,
   "finalAppleValidation": "VERIFY SUCCEEDED with no errors",
-  "appReviewSubmitted": false,
+  "appReviewSubmitted": true,
   "hardwareSmokeTest": "Passed core smoke checks on both installed build-4 devices. Native iPad route planning/save/reopen, GPX round-trip and flight observed; owner confirmed longer iPhone route/preview and airplane-mode cold reopen on both. See native evidence for scope.",
   "testCounts": {
     "offlineStarter": 31,
@@ -51,8 +51,8 @@
     "iPhoneProfilePresent": false
   },
   "ownerDeclarations": {
-    "contentRights": "Not set; mandatory Yes/necessary-rights answer awaits owner confirmation",
-    "privacy": "Saved conservative questionnaire; publication pending",
+    "contentRights": "Owner explicitly confirmed; saved and API-verified USES_THIRD_PARTY_CONTENT",
+    "privacy": "Owner explicitly confirmed; published Device ID and Other Usage Data for app functionality, linked, no tracking",
     "DSA": "App Information shows trader for this app; unchanged",
     "agreements": "Free Apps Agreement Active; Business shows updated Paid Applications Schedule available. No agreement accepted."
   },
@@ -71,5 +71,10 @@
   },
   "ownerFinalUATAccepted": true,
   "ownerFinalUATEvidence": "app-store-submission-2026-10-31.json",
-  "websiteReleaseCopyPublished": true
+  "websiteReleaseCopyPublished": true,
+  "appReviewState": "WAITING_FOR_REVIEW",
+  "appReviewSubmissionID": "8d46cb3f-7210-4809-821f-e690ce7a24d3",
+  "submittedAtUTC": "2026-10-31T18:43:26.919Z",
+  "publiclyReleased": false,
+  "releaseType": "MANUAL"
 }
