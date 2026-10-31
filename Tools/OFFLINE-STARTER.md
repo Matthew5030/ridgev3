@@ -86,3 +86,7 @@ first download-enabled update: removing it would remove those local maps, even
 though routes and downloaded data remain. A later smaller-base release needs a
 separate, tested migration/redownload flow. Enabling additional Apple coverage
 alone does not require shrinking or replacing this starter bundle.
+
+The prepared product-page patch uses zero context; from a clean website checkout,
+validate it with `git apply --check --unidiff-zero /absolute/path/to/website-offline-update.patch`
+before applying and reviewing the page. Publication still needs owner approval.
