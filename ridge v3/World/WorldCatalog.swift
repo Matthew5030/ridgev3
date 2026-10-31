@@ -4,13 +4,18 @@ import Foundation
 enum WorldLibrary {
     /// A live check, deliberately independent of the offline catalogue cache.
     static func checkConnection(root: URL) async throws -> Int {
+        if WorldAppleAssets.handles(root), !WorldBundledMaps.downloadsEnabled, let included=WorldBundledMaps.included { return included.catalog.sources.count }
+        if WorldAppleAssets.handles(root) {
+            return try JSONDecoder().decode(WorldCatalog.self,from:await WorldAppleAssets.shared.catalogData()).sources.count
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 8
         configuration.timeoutIntervalForResource = 12
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
-        let request = URLRequest(url: root.appendingPathComponent("catalog.json"), cachePolicy: .reloadIgnoringLocalCacheData)
+        var request = URLRequest(url: root.appendingPathComponent("catalog.json"), cachePolicy: .reloadIgnoringLocalCacheData)
+        request=try await WorldProtectedAccess.shared.authorised(request)
         do {
             let (file, response) = try await session.download(for: request)
             defer { try? FileManager.default.removeItem(at: file) }
@@ -39,11 +44,11 @@ enum WorldLibrary {
             throw RidgeError.message("Cannot reach \(root.host ?? "the server"). \(help) \(error.localizedDescription) (\(error.errorCode))")
         }
     }
-    static let defaultMode = "local"
+    static let defaultMode = "cloud"
     static let defaultLocalServer = "http://Matthews-MacBook-Pro.local:8787/world/"
-    static let cloud = "https://pub-a3a39b39506c41c5b291f2f895122777.r2.dev/pilot-2026-10-07/"
+    static var cloud:String { WorldAppleAssets.root.absoluteString }
     static func root(mode: String, local: String) throws -> URL {
-        if mode != "local" { return URL(string: cloud)! }
+        if mode != "local" || (!WorldBundledMaps.downloadsEnabled && WorldBundledMaps.included != nil) { return URL(string: cloud)! }
         let text = local.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var parts = URLComponents(string: text), ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
               parts.host != nil, parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil else {
@@ -139,6 +144,10 @@ actor WorldCatalogStore {
         try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
     }
     func open(root: URL, preferCached: Bool = false) async throws -> WorldCatalog {
+        if WorldAppleAssets.handles(root), !WorldBundledMaps.downloadsEnabled {
+            guard let included=WorldBundledMaps.included else { throw RidgeError.message("The included maps could not be opened. Reinstall Ridge to restore them.") }
+            return included.catalog
+        }
         let url = root.appendingPathComponent("catalog.json")
         let saved = cache.appendingPathComponent(AdaptiveTerrainCodec.hash(Data(url.absoluteString.utf8)) + ".catalog")
         func decode(_ data: Data) throws -> WorldCatalog {
@@ -149,9 +158,17 @@ actor WorldCatalogStore {
         // offline, the fallback below still opens them conservatively.
         if preferCached, let data=try? Data(contentsOf:saved),let value=try? decode(data),
            value.packVersion==1,value.sources.allSatisfy({ $0.pack != nil && ($0.missingTerrain != nil || $0.tileCount==256) }) { return value }
+        // A later download-enabled version still opens its included baseline
+        // immediately; WorldModel refreshes the remote catalogue in the background.
+        if preferCached, WorldAppleAssets.handles(root), let included=WorldBundledMaps.included { return included.catalog }
         do {
+            if WorldAppleAssets.handles(root) {
+                let data=try await WorldAppleAssets.shared.catalogData(),value=try decode(data)
+                try data.write(to:saved,options:.atomic);return value
+            }
             var request = URLRequest(url: url); request.timeoutInterval = 10
-            let (file, response) = try await URLSession.shared.download(for: request)
+            let authorised=try await WorldProtectedAccess.shared.authorised(request)
+            let (file, response) = try await URLSession.shared.download(for: authorised)
             defer { try? FileManager.default.removeItem(at: file) }
             try Task.checkCancellation()
             guard (response as? HTTPURLResponse)?.statusCode == 200,
@@ -163,6 +180,7 @@ actor WorldCatalogStore {
         } catch {
             try Task.checkCancellation()
             if let data = try? Data(contentsOf: saved), let value = try? decode(data) { return value }
+            if WorldAppleAssets.handles(root), let included=WorldBundledMaps.included { return included.catalog }
             throw error
         }
     }

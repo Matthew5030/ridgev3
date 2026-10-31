@@ -15,6 +15,9 @@ import simd
         try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:80,y:125),b:CGPoint(x:320,y:125)) == .transform,"Off-centre pinch must not tilt")
         try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:110,y:80),b:CGPoint(x:290,y:120)) == .transform,"Twist must not enter viewing-angle mode")
         try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:130,y:104),b:CGPoint(x:330,y:104)) == .angle,"Horizontal two-finger drag changes heading")
+        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:100,y:112),b:b) == .undecided,"A leading finger must not turn a vertical drag into a twist")
+        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:100,y:105),b:CGPoint(x:300,y:106)) == .angle,"A short coordinated drag should respond before eight points")
+        try check(WorldGestureIntent.resolve(startA:a,startB:b,a:CGPoint(x:130,y:100),b:b) == .transform,"An anchored-finger pinch remains available")
         // Both orientations and both zoom directions, with a moving midpoint.
         for direction in [-1.0,1.0] {
             for angle in stride(from:0.0,to:6.28,by:0.2) {
@@ -70,6 +73,43 @@ import simd
             try check(rotation>0.09 && rotation<0.11,"Twisting reports the signed incremental heading change")
             try check(scale>1 && scale<1.02,"Twisting preserves its small independent scale change")
         } else { try check(false,"Twist continues as a camera transform") }
+        // Touch updates need not arrive together. A leading finger briefly
+        // changes the span/twist even when both fingers are dragging vertically.
+        for offset in [CGPoint(x:80,y:0),CGPoint(x:60,y:60),CGPoint(x:0,y:100),CGPoint(x:200,y:0)] {
+            for direction in [-1.0,1.0] {
+                motion=WorldGestureMotion()
+                var first=finger(1,100,100),second=finger(2,100+offset.x,100+offset.y)
+                _=motion.update([first,second])
+                first.point.y+=9*direction
+                _=motion.update([first,second])
+                try check(motion.intent == .undecided,"Wait for the second finger instead of locking staggered movement into zoom")
+                second.point.y+=9*direction
+                _=motion.update([first,second])
+                try check(motion.intent == .angle,"Staggered vertical dragging recognizes tilt at every finger orientation")
+                for _ in 0..<12 {
+                    first.point.y+=9*direction
+                    let firstStep=motion.update([first,second])
+                    second.point.y+=9*direction
+                    let secondStep=motion.update([first,second])
+                    try check(firstStep == .angle(0,4.5*direction) && secondStep == .angle(0,4.5*direction),"Uneven touch delivery cannot steal an established tilt")
+                }
+            }
+        }
+        // A completed pinch can become a tilt while both fingers stay down.
+        motion=WorldGestureMotion()
+        _=motion.update([finger(1,100,100),finger(2,300,100)])
+        _=motion.update([finger(1,80,100),finger(2,320,100)])
+        _=motion.update([finger(1,70,100),finger(2,330,100)])
+        try check(motion.update([finger(1,70,112),finger(2,330,112)]) == .rebase && motion.intent == .angle,"A settled pinch releases its zoom lock for coordinated dragging")
+        try check(motion.update([finger(1,70,122),finger(2,330,122)]) == .angle(0,10),"Pinch-to-tilt does not replay earlier translation")
+        motion=WorldGestureMotion()
+        _=motion.update([finger(1,100,100),finger(2,300,100)])
+        _=motion.update([finger(1,80,100),finger(2,320,100)])
+        for i in 1...12 {
+            if case .zoom=motion.update([finger(1,80-8*Double(i),100+12*Double(i)),finger(2,320+8*Double(i),100+12*Double(i))]) {
+                try check(motion.intent == .transform,"An ongoing pinch with a moving midpoint remains zoom")
+            } else { try check(false,"A deliberate moving pinch must not become tilt") }
+        }
         motion=WorldGestureMotion();motion.rotateWithOneFinger=true
         _=motion.update([finger(1,100,100)])
         _=motion.update([finger(1,110,100)])

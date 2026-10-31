@@ -6,16 +6,39 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		99D40201206E38AC92F39154 /* RidgeMapDownloader.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F3CDB5E60DBDB01B6D134A31; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		6EE7DF89CA521F915F8E167F /* Embed Foundation Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = "$(CONTENTS_FOLDER_PATH)/Extensions"; dstSubfolderSpec = 16; files = (99D40201206E38AC92F39154, ); name = "Embed Foundation Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		C5B2A0DF8B019AD86759B8C3 = {isa = PBXContainerItemProxy; containerPortal = 70DA17673056DDF7006F6FCF; proxyType = 1; remoteGlobalIDString = 706C1B0C9851BF4D8EFD3116; remoteInfo = RidgeMapDownloader; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		7319DA30FF9AA23BFEA654DD = {isa = PBXTargetDependency; target = 706C1B0C9851BF4D8EFD3116; targetProxy = C5B2A0DF8B019AD86759B8C3; };
+/* End PBXTargetDependency section */
+
 /* Begin PBXFileReference section */
 		70DA176F3056DDF8006F6FCF /* ridge v3.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ridge v3.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F3CDB5E60DBDB01B6D134A31 /* RidgeMapDownloader.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RidgeMapDownloader.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+        090EBEB9337E73B2D1EC81CB = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Resources/WorldAtlas.bundle, ); target = 70DA176E3056DDF8006F6FCF; };
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		70DA17713056DDF8006F6FCF /* ridge v3 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+            exceptions = (090EBEB9337E73B2D1EC81CB, );
 			path = "ridge v3";
 			sourceTree = "<group>";
 		};
+		ACFA6B47822174238D6BF242 /* RidgeMapDownloader */ = {isa = PBXFileSystemSynchronizedRootGroup; path = RidgeMapDownloader; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -26,6 +49,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		75DDA32FEC9D715550245115 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -33,6 +57,7 @@
 			isa = PBXGroup;
 			children = (
 				70DA17713056DDF8006F6FCF /* ridge v3 */,
+                ACFA6B47822174238D6BF242 /* RidgeMapDownloader */,
 				70DA17703056DDF8006F6FCF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +66,7 @@
 			isa = PBXGroup;
 			children = (
 				70DA176F3056DDF8006F6FCF /* ridge v3.app */,
+                F3CDB5E60DBDB01B6D134A31 /* RidgeMapDownloader.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -56,6 +82,7 @@
 				70DA176B3056DDF8006F6FCF /* Sources */,
 				70DA176C3056DDF8006F6FCF /* Frameworks */,
 				70DA176D3056DDF8006F6FCF /* Resources */,
+                59E2233334D955AD50956424 /* StageBundledOverview */,
 			);
 			buildRules = (
 			);
@@ -71,6 +98,18 @@
 			productReference = 70DA176F3056DDF8006F6FCF /* ridge v3.app */;
 			productType = "com.apple.product-type.application";
 		};
+		706C1B0C9851BF4D8EFD3116 /* RidgeMapDownloader */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = BC8A529DB9088C2F604C7043;
+            buildPhases = (E832D7F996A6294C39155809, 75DDA32FEC9D715550245115, 2110FE14115572B4862E6C3A, );
+            buildRules = ();
+            dependencies = ();
+            fileSystemSynchronizedGroups = (ACFA6B47822174238D6BF242, );
+            name = RidgeMapDownloader;
+            productName = RidgeMapDownloader;
+            productReference = F3CDB5E60DBDB01B6D134A31;
+            productType = "com.apple.product-type.extensionkit-extension";
+        };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -101,6 +140,7 @@
 			projectRoot = "";
 			targets = (
 				70DA176E3056DDF8006F6FCF /* ridge v3 */,
+                706C1B0C9851BF4D8EFD3116 /* RidgeMapDownloader */,
 			);
 		};
 /* End PBXProject section */
@@ -113,6 +153,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		2110FE14115572B4862E6C3A = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -128,6 +169,18 @@
 			shellPath = /bin/sh;
 			shellScript = "for bundle in WorldContext WorldAtlas; do\n  if [ ! -f \"$SRCROOT/ridge v3/Resources/$bundle.bundle/index.json\" ]; then\n    echo \"error: Missing $bundle bundled terrain. Restore Resources/$bundle.bundle (including sparse checkout paths) before building.\" >&2\n    exit 1\n  fi\ndone\n";
 		};
+        59E2233334D955AD50956424 /* StageBundledOverview */ = {
+            isa = PBXShellScriptBuildPhase;
+            alwaysOutOfDate = 1;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ("$(SRCROOT)/ridge v3/Resources/WorldAtlas.bundle", "$(SRCROOT)/Tools/stage_bundled_overview.py", );
+            name = "StageBundledOverview";
+            outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/WorldAtlas.bundle", "$(DERIVED_FILE_DIR)/RidgeBundledOverview", );
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/sh;
+            shellScript = "python3 \"$SRCROOT/Tools/stage_bundled_overview.py\"\npython3 \"$SRCROOT/Tools/stage_offline_starter.py\"\n";
+        };
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -138,6 +191,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E832D7F996A6294C39155809 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -263,7 +317,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = J8M4ND59V4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -272,6 +326,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/RidgeInfo.plist;
 				CODE_SIGN_ENTITLEMENTS = Config/Ridge.entitlements;
+				RIDGE_APP_ATTEST_ENVIRONMENT = development;
+                RIDGE_BUNDLED_ATLAS_MAX_ZOOM = 11;
+                ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = Ridge;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show your position on terrain you have saved offline.";
@@ -286,7 +343,7 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -313,7 +370,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = J8M4ND59V4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -322,6 +379,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/RidgeInfo.plist;
 				CODE_SIGN_ENTITLEMENTS = Config/Ridge.entitlements;
+				RIDGE_APP_ATTEST_ENVIRONMENT = production;
+                RIDGE_BUNDLED_ATLAS_MAX_ZOOM = 11;
+                ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = Ridge;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show your position on terrain you have saved offline.";
@@ -336,7 +396,7 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -357,6 +417,48 @@
 			};
 			name = Release;
 		};
+		07D581FE5E0348F346413EF7 = {isa = XCBuildConfiguration; buildSettings = {
+            APPLICATION_EXTENSION_API_ONLY = YES;
+            CODE_SIGN_STYLE = Automatic;
+            CODE_SIGN_ENTITLEMENTS = Config/RidgeMapDownloader.entitlements;
+            CURRENT_PROJECT_VERSION = 4;
+            DEVELOPMENT_TEAM = J8M4ND59V4;
+            GENERATE_INFOPLIST_FILE = YES;
+            INFOPLIST_FILE = Config/RidgeMapDownloaderInfo.plist;
+            INFOPLIST_KEY_CFBundleDisplayName = "Ridge Map Downloads";
+            IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+            LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+            MARKETING_VERSION = 1.0;
+            PRODUCT_BUNDLE_IDENTIFIER = "Bilella-Works.ridge-v3.MapDownloader";
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            REGISTER_APP_GROUPS = YES;
+            SDKROOT = iphoneos;
+            SKIP_INSTALL = YES;
+            SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+            SWIFT_VERSION = 5.0;
+            TARGETED_DEVICE_FAMILY = "1,2";
+        }; name = Debug; };
+		576D086285820F9B0F76E43F = {isa = XCBuildConfiguration; buildSettings = {
+            APPLICATION_EXTENSION_API_ONLY = YES;
+            CODE_SIGN_STYLE = Automatic;
+            CODE_SIGN_ENTITLEMENTS = Config/RidgeMapDownloader.entitlements;
+            CURRENT_PROJECT_VERSION = 4;
+            DEVELOPMENT_TEAM = J8M4ND59V4;
+            GENERATE_INFOPLIST_FILE = YES;
+            INFOPLIST_FILE = Config/RidgeMapDownloaderInfo.plist;
+            INFOPLIST_KEY_CFBundleDisplayName = "Ridge Map Downloads";
+            IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+            LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+            MARKETING_VERSION = 1.0;
+            PRODUCT_BUNDLE_IDENTIFIER = "Bilella-Works.ridge-v3.MapDownloader";
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            REGISTER_APP_GROUPS = YES;
+            SDKROOT = iphoneos;
+            SKIP_INSTALL = YES;
+            SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+            SWIFT_VERSION = 5.0;
+            TARGETED_DEVICE_FAMILY = "1,2";
+        }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -378,6 +480,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		BC8A529DB9088C2F604C7043 = {isa = XCConfigurationList; buildConfigurations = (07D581FE5E0348F346413EF7, 576D086285820F9B0F76E43F, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = 70DA17673056DDF7006F6FCF /* Project object */;

@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-31",
+  "published": true,
+  "changedPage": "public/apps/ridge/index.html",
+  "sha256": "2086013c366991a36d99f808fda06790fa15a95eccc4fefbdd45e1e544d07b24",
+  "localBrowserPreviewVerified": true,
+  "scopedRidgeCoverageStatusAndLinkChecks": "passed",
+  "fullSiteValidation": "Passed Scripts/validate-site.sh after the final Ridge status, support and privacy updates.",
+  "publicationApproval": "Owner requested App Store submission and all release work on 31 October 2026.",
+  "changedPages": [
+    "public/apps/ridge/index.html",
+    "public/apps/ridge/privacy/index.html",
+    "public/support/index.html (Ridge only)",
+    "public/index.html (Ridge status only)",
+    "public/apps/index.html (Ridge status only)",
+    "Scripts/validate-site.sh (existing Ridge status assertion)"
+  ],
+  "websiteCommit": "5945dc5c64d43f033e674f9d300fc5994e07b797",
+  "productionBranch": "main",
+  "liveBrowserVerification": {
+    "productFourIncludedAreas": true,
+    "privacyEffectiveDate": "2026-10-31",
+    "privacyIncludedMapsAndDisabledAdditionalDownloads": true,
+    "appStoreSupportURLRedirectAndBundledMapsFAQ": true,
+    "appStillUnreleased": true
+  },
+  "publicURL": "https://bilellaworks.com/apps/ridge/",
+  "publicStatus": "Awaiting Apple review",
+  "liveStatusBrowserVerified": true
+}

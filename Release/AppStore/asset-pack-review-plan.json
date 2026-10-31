@@ -1,0 +1,830 @@
+{
+  "appID": "6827223973",
+  "prepared": "2026-10-27",
+  "submissionAuthorized": false,
+  "verifiedCurrentVersions": 100,
+  "note": "Apple documents at most 10 distinct packs per review submission. These are proposed batches only; no pack has been submitted for public review. Confirm toolchain/pack eligibility before using.",
+  "batches": [
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-108",
+        "versionID": "1eb95bd8-631b-4c0b-83aa-8968708f3a67",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-107",
+        "versionID": "a497ba95-48f6-4fbd-b6b2-e29f1ec96fe8",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-106",
+        "versionID": "c45341d6-8b5e-4976-b347-08b77b45175b",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-105",
+        "versionID": "5f4b8ef5-55c1-4f66-8b14-c0e0f249ff5c",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-104",
+        "versionID": "1103f1cb-7337-41b8-8838-bdbdaffdeea1",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-103",
+        "versionID": "7870bfff-6893-4f02-aec3-afbaa5b9113d",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-102",
+        "versionID": "a5e98db6-e6a6-45c6-98bd-9f9b04f8ba2d",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-250-101",
+        "versionID": "5ed9421c-1c7b-4bf8-9b07-c1558c3a0211",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-115",
+        "versionID": "43265f32-71b7-4e5f-a9fd-62a1036f22c9",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-113",
+        "versionID": "e3a21de9-7811-42fd-8d5c-92a484727aa7",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-108",
+        "versionID": "b4ee68f7-87a3-447a-990c-6751ddb554b7",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-114",
+        "versionID": "3f702edf-2e1c-4d82-a324-d4beb1392f1c",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-112",
+        "versionID": "920b83a5-45d6-46bd-a483-e07bcc88e2db",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-111",
+        "versionID": "788b1001-da6a-4e18-8e6f-7c73abc8d2a0",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-110",
+        "versionID": "9180e4aa-c140-4d9e-a0d8-8a5bdd1b1648",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-107",
+        "versionID": "adbbe3ea-648c-44e0-b834-63efc4109668",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-106",
+        "versionID": "cb62c878-f3f5-4444-b1c7-b50139ffc89c",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-105",
+        "versionID": "30022844-3657-48e1-82ce-01738a9bdd6d",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-104",
+        "versionID": "6eb7191f-0089-463c-8984-961fde6b4daf",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-103",
+        "versionID": "3c59e495-d81f-41ad-b2df-97c725bcaa36",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-102",
+        "versionID": "9bb1e14d-5406-4964-b4bd-c6548809e3d2",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-249-101",
+        "versionID": "2029d0e1-f023-40ce-9904-7284102fd376",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-115",
+        "versionID": "adbe7cbf-4f2a-4214-a83e-ebb8bb856085",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-114",
+        "versionID": "2cb08322-a979-43f2-a049-b5beea639c7a",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-113",
+        "versionID": "33cfd9d3-c459-4fb8-8867-1921f21b727a",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-112",
+        "versionID": "d0b6b208-aa23-41af-ba31-87414fbfd136",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-109",
+        "versionID": "6db591a4-71b0-42c0-9926-5e455a88d5c2",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-108",
+        "versionID": "14857dd0-dfbf-4e43-ab38-f232e7e92471",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-107",
+        "versionID": "7652a6da-232e-4066-9b3e-3074f11e0573",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-106",
+        "versionID": "9b29eb3d-23ae-4f15-9bb1-f63eac9a278b",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-105",
+        "versionID": "778d61a8-95f8-4e20-a4d9-f6b998c5d3b9",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-104",
+        "versionID": "daecd566-2edd-40cf-a3e6-b2d1827f727d",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-103",
+        "versionID": "7221e618-7cdc-4d24-865b-544e1459e169",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-102",
+        "versionID": "6530c547-b153-46ac-930a-f4236f1d26bb",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-248-101",
+        "versionID": "78e36b66-b4f6-4e7e-9037-0bca7b74890c",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-115",
+        "versionID": "43fe22ab-120a-4eac-8895-0681ce08ea4c",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-109",
+        "versionID": "99921e27-9f03-48cb-b4a1-5a081baa1a9d",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-108",
+        "versionID": "a7e58581-eb19-4dfd-bd06-13a7b946cd6b",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-107",
+        "versionID": "8064f54e-9336-414e-a8df-688eaefbfa9d",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-105",
+        "versionID": "28e77f70-1e0f-4d5f-8b2c-d9f9b1da7544",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-106",
+        "versionID": "6ca44540-127f-4d0d-907e-2b828b58fc62",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-104",
+        "versionID": "39e2d223-4307-4f89-afa4-3833da3494db",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-103",
+        "versionID": "6b5e9f94-6bae-4173-b23a-5f6ba47527fb",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-102",
+        "versionID": "12756aae-8e56-4303-8328-4c070617d59f",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-247-101",
+        "versionID": "7eed552b-50f6-4316-b2b6-f8a19272d637",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-104",
+        "versionID": "0f066a22-b854-4c87-89ca-07b885f28bb6",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-115",
+        "versionID": "cb709b3b-de31-4250-8d0d-81a3bfd526d9",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-109",
+        "versionID": "a1dee3d6-4c62-4930-8929-97f2cd2054fd",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-108",
+        "versionID": "cb20cdb3-fa11-4681-8b93-62c8761fcf46",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-107",
+        "versionID": "2e8937d8-163a-4bd3-8a73-5437987e4df6",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-106",
+        "versionID": "412c1836-1b0a-40f1-9522-e90011384011",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-105",
+        "versionID": "797012e4-bb6f-452d-afba-87ab91d95d3a",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-245-109",
+        "versionID": "3d3c1010-bfb5-47a7-b318-26729e716e0e",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-102",
+        "versionID": "028af2f3-29c2-436e-b221-f47c873628a5",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-103",
+        "versionID": "96d76cba-b9b6-4812-9704-4791eb300187",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-246-101",
+        "versionID": "aa623303-be31-4f44-a088-1b21a048df69",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-245-104",
+        "versionID": "5711d641-46dc-4128-ae64-70605135d201",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-245-107",
+        "versionID": "af9ff415-e631-4daa-838c-86f2e648da1e",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-245-108",
+        "versionID": "6eb61cf1-c937-4829-936c-79ec2cfb9c12",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-245-103",
+        "versionID": "cf16df33-9ebb-44d1-9d2b-837735f251e6",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-245-102",
+        "versionID": "08cce20d-7a16-4121-824f-9e3502d366ba",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-244-109",
+        "versionID": "943bb461-5fbf-4e3e-9efd-e4329957d288",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-244-108",
+        "versionID": "0370b560-3bcc-48db-821b-cf6bf5adcf75",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-terrain-243-103",
+        "versionID": "869d1528-a4d2-4384-8ef5-b29ba45e8894",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-086-057",
+        "versionID": "758db200-ab84-45b8-aa7b-436c084e2af8",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-086-056",
+        "versionID": "311eb624-15d7-42eb-bab0-74d2f61d57dd",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-086-055",
+        "versionID": "d161bce1-d9b1-4423-8a4e-b2f5d5b6dcd2",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-085-057",
+        "versionID": "6551ff24-87e0-4c84-b660-4c81af765a48",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-085-056",
+        "versionID": "8f20ea01-ba39-4fee-bab8-e954755ddb17",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-085-055",
+        "versionID": "7897a45c-b650-42e0-83f4-d5cdfc898991",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-085-054",
+        "versionID": "0c883134-fbb9-4b91-94f4-a206835a0c96",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-057",
+        "versionID": "140ea91b-7976-41cc-b4d4-29ad0083dc1a",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-056",
+        "versionID": "4d11bab2-8319-4d6a-a284-6496a59edc78",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-055",
+        "versionID": "c7a78785-b0c9-4a24-8f77-70a3a22f8d54",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-054",
+        "versionID": "2b6aae1c-22a5-4d7d-9d2f-ec1c615bbb56",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-053",
+        "versionID": "8c881cf5-c738-4aa6-93fa-d19d314dd664",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-052",
+        "versionID": "e80c914c-a674-4310-bdf2-ab19bf817c38",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-051",
+        "versionID": "d3a602e7-f370-4669-9d39-6f809da82a0f",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-050",
+        "versionID": "9942b43d-dc13-4d93-ae5c-fc4c9f213025",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-049",
+        "versionID": "0e30d86c-97c4-45b8-b889-4b75e90c4f20",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-084-048",
+        "versionID": "7de05190-7e2a-46f6-bcc9-2c321a82f841",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-057",
+        "versionID": "845a2a2d-3c5b-4024-acf4-4fbd45149546",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-056",
+        "versionID": "33cd1711-85f7-4760-ba88-5be3864bba56",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-055",
+        "versionID": "e79344f1-c47e-4cc8-ba99-316d38aa35bf",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-054",
+        "versionID": "896f257e-d0e1-4e0e-b40d-211570aae9a1",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-053",
+        "versionID": "46f69a88-c8f2-46f8-b2b4-df821a5c928e",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-050",
+        "versionID": "fe80366d-b3c9-45f3-b962-ebace2082ad5",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-051",
+        "versionID": "2a7ce498-096d-4db1-97bf-65ab9955f445",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-083-052",
+        "versionID": "7ab42762-7b43-4b98-8678-1b5a70ef0e06",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-057",
+        "versionID": "ce26809e-46ec-483a-96c4-9988c7f6304a",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ],
+    [
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-056",
+        "versionID": "86a359ed-f851-47b5-a014-804d3505a4f4",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-053",
+        "versionID": "30405b61-96d3-4e00-bc62-f4dea6cafbab",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-054",
+        "versionID": "76461ede-9be1-47ae-93ce-9c71874a4889",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-050",
+        "versionID": "04831825-3478-430f-a8e6-89465d28a337",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-081-054",
+        "versionID": "79521a9e-a76e-4693-9532-9de577322671",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-051",
+        "versionID": "a200dcc0-e782-4649-a6f9-d2fa637c890b",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-082-052",
+        "versionID": "eceb1dd0-83f7-461f-b2c8-d33467fad567",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-081-053",
+        "versionID": "bd854114-2415-4ef1-9084-fbd81f6d0a2b",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-081-052",
+        "versionID": "701d1f7c-ea92-4dde-9d82-f8217ad1a472",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      },
+      {
+        "assetPackIdentifier": "ridge-uk-v1-metadata-081-051",
+        "versionID": "4b3eea74-979b-4702-a8f5-49dd8e6a82cc",
+        "version": "2",
+        "state": "COMPLETE",
+        "matchesVerifiedPublication": true,
+        "archived": false
+      }
+    ]
+  ],
+  "liveVersionsRechecked": "2026-10-30"
+}

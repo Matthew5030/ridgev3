@@ -1,0 +1,33 @@
+{
+  "verified": "2026-10-30",
+  "appID": "6827223973",
+  "versionID": "7da0b06c-8f6b-403d-a6ff-87b25acbc36b",
+  "localizationID": "809ca356-5365-455c-810e-8f9da5dcd800",
+  "appStoreState": "PREPARE_FOR_SUBMISSION",
+  "releaseType": "MANUAL",
+  "matchingFields": {
+    "description": true,
+    "keywords": true,
+    "supportURL": true,
+    "marketingURL": true,
+    "promotionalText": true
+  },
+  "matchingAppInfo": {
+    "name": true,
+    "subtitle": true
+  },
+  "categories": [
+    "NAVIGATION",
+    "TRAVEL"
+  ],
+  "privacyPolicyURL": "https://bilellaworks.com/apps/ridge/privacy/",
+  "reviewerContactComplete": true,
+  "privateContactValuesIncluded": false,
+  "signInRequired": false,
+  "availabilityCountries": [
+    "GBR"
+  ],
+  "availabilityStatus": "Available on App Release",
+  "preOrder": false,
+  "availabilityAssumption": "UK-first, matching the current map catalogue; editable before submission."
+}

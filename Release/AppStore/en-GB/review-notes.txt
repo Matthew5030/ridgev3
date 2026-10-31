@@ -1,0 +1,14 @@
+Ridge 1.0 (4) — offline starter release
+
+No sign-in or purchase is required. No separate map download is needed. The UK overview and detailed terrain / walking paths for Eryri, Lake District, Peak District, and Chilterns & Thames Valley are included with the app. Coverage gaps are shown on the map. Apple-hosted downloads are disabled in this release and no managed asset pack approval is needed for its included maps.
+
+Suggested review:
+1. Complete or skip the first-open walkthrough.
+2. On Explore, zoom into clear terrain in one of the four included areas. The 2D map transitions to 3D. You can do this without network connectivity.
+3. Tap Plan your route and add waypoints. Review distance, elevation, ascent and descent. Finish editing; the route saves in Routes.
+4. Preview the route's flight; pause and scrub, then return to editing.
+5. Open Before you go for walking pace, breaks, finish-time estimates, notes and a packing checklist.
+6. Reopen the saved route, import a GPX from Files and export through the system share sheet.
+7. Settings lists included maps and map/data credits. Removing downloaded maps preserves included maps and saved routes.
+
+This is a planning and terrain-preview app, without live turn-by-turn navigation or background location tracking. Location access is optional. The current features are free during early access and feedback is optional. The included map data uses the same stable section identities as the future download backend; enabling additional coverage later will be an app update.

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-31",
+  "status": "Final build 4 signed, exported, Apple-validated and uploaded; device smoke tests blocked by device/Mac locks",
+  "delivery": "Proposed self-contained App Store app with selected terrain included",
+  "catalogSHA256": "ae537c004f467658f599383468ae1d5aea727a6d684d7d26e078f785e7e4ea62",
+  "downloadZonesSHA256": "5c6f1a563b237c385216852941eed69bee4027fe18987b87753036669fba7a73",
+  "selectedRegions": [
+    {
+      "id": "park-eryri",
+      "name": "Eryri",
+      "requestedSectionCount": 85,
+      "availableSectionCount": 73,
+      "terrainPackBytes": 1111456185,
+      "sourceMetadataBytes": 22480136,
+      "unavailableSectionIDs": [
+        "world-z10-x499-y334-c32-r16",
+        "world-z10-x499-y334-c32-r32",
+        "world-z10-x500-y331-c32-r00",
+        "world-z10-x500-y331-c32-r16",
+        "world-z10-x501-y331-c00-r00",
+        "world-z10-x501-y331-c00-r16",
+        "world-z10-x501-y331-c16-r00",
+        "world-z10-x501-y331-c16-r16",
+        "world-z10-x501-y331-c16-r32",
+        "world-z10-x501-y331-c32-r00",
+        "world-z10-x501-y331-c32-r16",
+        "world-z10-x501-y331-c32-r32"
+      ]
+    },
+    {
+      "id": "park-lake-district",
+      "name": "Lake District",
+      "requestedSectionCount": 84,
+      "availableSectionCount": 84,
+      "terrainPackBytes": 605145175,
+      "sourceMetadataBytes": 27801751,
+      "unavailableSectionIDs": []
+    },
+    {
+      "id": "park-peak-district",
+      "name": "Peak District",
+      "requestedSectionCount": 59,
+      "availableSectionCount": 59,
+      "terrainPackBytes": 536741718,
+      "sourceMetadataBytes": 20945404,
+      "unavailableSectionIDs": []
+    },
+    {
+      "id": "area-chilterns-thames-valley",
+      "name": "Chilterns & Thames Valley",
+      "requestedSectionCount": 66,
+      "availableSectionCount": 66,
+      "terrainPackBytes": 496191272,
+      "sourceMetadataBytes": 23317329,
+      "unavailableSectionIDs": []
+    }
+  ],
+  "uniqueAvailableSections": 282,
+  "terrainPackBytes": 2749534350,
+  "sourceMetadataBytes": 94544620,
+  "unavailableSectionIDs": [
+    "world-z10-x499-y334-c32-r16",
+    "world-z10-x499-y334-c32-r32",
+    "world-z10-x500-y331-c32-r00",
+    "world-z10-x500-y331-c32-r16",
+    "world-z10-x501-y331-c00-r00",
+    "world-z10-x501-y331-c00-r16",
+    "world-z10-x501-y331-c16-r00",
+    "world-z10-x501-y331-c16-r16",
+    "world-z10-x501-y331-c16-r32",
+    "world-z10-x501-y331-c32-r00",
+    "world-z10-x501-y331-c32-r16",
+    "world-z10-x501-y331-c32-r32"
+  ],
+  "sizeExclusions": [
+    "App executable and extensions",
+    "Bundled UK overview and demonstration resources",
+    "Additional indexes and any conversion/import overhead"
+  ],
+  "requiredChecks": [
+    "Final uncompressed app bundle below Apple 4 GB limit",
+    "Resolve or explicitly represent unavailable Eryri boundary sections; preserve existing source data",
+    "Verify coverage around Aylesbury and intended Chiltern walks",
+    "First launch and offline route planning, terrain rendering, saved-route reopen and flight preview on iPhone and iPad",
+    "App Store listing reflects the four included areas and does not promise detailed nationwide coverage"
+  ],
+  "sourceDataDeleted": false,
+  "submittedToApple": false,
+  "preparedBundleBytes": 2852898090,
+  "coverageCheck": "All four current region shapes report zero missing land rectangles; missing Eryri catalogue cells do not overlap clipped land.",
+  "finalAppBytes": 2971448163,
+  "finalIPABytes": 2847849543
+}

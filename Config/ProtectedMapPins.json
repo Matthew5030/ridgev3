@@ -1,0 +1,35 @@
+{
+  "retrieved": "2026-10-25",
+  "pins": [
+    {
+      "subject": "C=US, O=Google Trust Services LLC, CN=GTS Root R1",
+      "spki": "hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=",
+      "source": "https://pki.goog/roots.pem"
+    },
+    {
+      "subject": "C=US, O=Google Trust Services LLC, CN=GTS Root R2",
+      "spki": "Vfd95BwDeSQo+NUYxVEEIlvkOlWY2SalKK1lPhzOx78=",
+      "source": "https://pki.goog/roots.pem"
+    },
+    {
+      "subject": "C=US, O=Google Trust Services LLC, CN=GTS Root R3",
+      "spki": "QXnt2YHvdHR3tJYmQIr0Paosp6t/nggsEGD4QJZ3Q0g=",
+      "source": "https://pki.goog/roots.pem"
+    },
+    {
+      "subject": "C=US, O=Google Trust Services LLC, CN=GTS Root R4",
+      "spki": "mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=",
+      "source": "https://pki.goog/roots.pem"
+    },
+    {
+      "subject": "C=US, O=Internet Security Research Group, CN=ISRG Root X1",
+      "spki": "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",
+      "source": "https://letsencrypt.org/certs/isrgrootx1.pem"
+    },
+    {
+      "subject": "C=US, O=Internet Security Research Group, CN=ISRG Root X2",
+      "spki": "diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=",
+      "source": "https://letsencrypt.org/certs/isrg-root-x2.pem"
+    }
+  ]
+}

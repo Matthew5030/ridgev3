@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-31",
+  "sectionsInspected": 282,
+  "credits": [
+    {
+      "name": "OpenStreetMap",
+      "attribution": "\u00a9 OpenStreetMap contributors",
+      "license": "Open Data Commons Open Database License 1.0",
+      "url": "https://www.openstreetmap.org/copyright"
+    },
+    {
+      "name": "Mapzen Terrain Tiles global Skadi composite",
+      "attribution": "Mapzen Terrain Tiles and contributing elevation datasets",
+      "license": "Mixed open elevation sources; attribution retained from Tilezen Joerd",
+      "url": "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+    },
+    {
+      "name": "Welsh Government 1 m LiDAR DTM",
+      "attribution": "Contains Welsh Government information licensed under the Open Government Licence v3.0.",
+      "license": "Open Government Licence 3.0",
+      "url": "https://datamap.gov.wales/maps/lidar-viewer/"
+    },
+    {
+      "name": "Copernicus Sentinel-2",
+      "attribution": "Contains modified Copernicus Sentinel data 2025. Satellite-guided illustrative ground colours.",
+      "license": "Copernicus Sentinel data terms",
+      "url": "https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2"
+    },
+    {
+      "name": "Copernicus DEM GLO-30",
+      "attribution": "Produced using Copernicus WorldDEM-30 \u00a9 DLR e.V. 2010-2014 and \u00a9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.",
+      "license": "Copernicus DEM Free & Open licence",
+      "url": "https://registry.opendata.aws/copernicus-dem/"
+    },
+    {
+      "name": "Environment Agency LIDAR Composite DTM 1 m",
+      "attribution": "\u00a9 Environment Agency copyright and/or database right 2022. All rights reserved.",
+      "license": "Open Government Licence 3.0",
+      "url": "https://environment.data.gov.uk/dataset/13787b9a-26a4-4775-8523-806d13af58fc"
+    }
+  ],
+  "scope": "Credits declared in frozen starter manifests; owner must confirm applicable redistribution terms. Bundled overview credits are also shown in Settings."
+}

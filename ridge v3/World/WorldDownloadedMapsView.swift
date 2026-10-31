@@ -18,6 +18,13 @@ struct WorldDownloadedMapsView:View {
     var body:some View {
         NavigationStack {
             List {
+                if WorldBundledMaps.included != nil {
+                    Section("Included with Ridge") {
+                        Text("Eryri · Lake District · Peak District · Chilterns & Thames Valley")
+                        Text("Ready offline. Included maps stay available when you remove downloads.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section {
                     LabeledContent("Map files",value:summary == nil ? "—" : RidgeTheme.bytes(totalBytes))
                     Text("Includes saved maps and unfinished downloads. Your routes stay when you remove maps.")

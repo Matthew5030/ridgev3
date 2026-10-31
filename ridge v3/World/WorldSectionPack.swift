@@ -23,7 +23,7 @@ enum WorldSectionPack {
         return bytes>pack.byteCount || (missing.count>=32 && Double(bytes)>=Double(pack.byteCount)*0.7)
     }
     static func remainingBytes(_ pack:WorldMapAsset,cache:URL)->Int64 {
-        let saved=(try? partial(pack,cache:cache).resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? 0
+        let saved=(try? ProtectedMapStorage.logicalSize(partial(pack,cache:cache))) ?? 0
         return Int64(pack.byteCount-(saved<=pack.byteCount ? saved : 0))
     }
     static func valid(_ asset:WorldMapAsset)->Bool {
@@ -36,8 +36,11 @@ enum WorldSectionPack {
     static func reference(_ sourceID:String,cache:URL)->URL { directory(cache).appendingPathComponent(AdaptiveTerrainCodec.hash(Data(sourceID.utf8))+".json") }
     static func open(sourceID:String,cache:URL)->Reader? {
         guard let data=try? Data(contentsOf:reference(sourceID,cache:cache)),
-              let installed=try? JSONDecoder().decode(Installed.self,from:data),installed.sourceID==sourceID else { return nil }
-        return try? Reader(url:file(installed.container?.asset ?? installed.asset,cache:cache),asset:installed.asset,sourceID:sourceID,container:installed.container)
+              let installed=try? JSONDecoder().decode(Installed.self,from:data),installed.sourceID==sourceID else {
+            return WorldBundledMaps.included?.reader(id:sourceID)
+        }
+        return (try? Reader(url:file(installed.container?.asset ?? installed.asset,cache:cache),asset:installed.asset,sourceID:sourceID,container:installed.container))
+            ?? WorldBundledMaps.included?.reader(id:sourceID)
     }
     static func install(_ asset:WorldMapAsset,sourceID:String,cache:URL,container:Container?=nil) throws {
         let ref=Installed(sourceID:sourceID,asset:asset,container:container)
@@ -53,16 +56,16 @@ enum WorldSectionPack {
         let physicalAsset:WorldMapAsset
         private let start:Int
         private let partial:Bool
-        private let handle:FileHandle
+        private let handle:ProtectedMapStorage.Reader
         private var verifiedStamp:Date?
         init(url:URL,asset:WorldMapAsset,sourceID:String,partial:Bool=false,container:Container?=nil) throws {
             guard valid(asset) else { throw RidgeError.message("Invalid section pack.") }
             let physical=container?.asset ?? asset,start=container?.offset ?? 0
             guard start>=0,start<=physical.byteCount-asset.byteCount,
                   container == nil || (validRegion(physical) && start>=12) else { throw RidgeError.message("Invalid region section range.") }
-            let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
+            let size=try ProtectedMapStorage.logicalSize(url)
             guard partial ? size<=physical.byteCount : size==physical.byteCount else { throw RidgeError.message("Incomplete section pack.") }
-            let handle=try FileHandle(forReadingFrom:url)
+            let handle=try ProtectedMapStorage.Reader(url:url)
             do {
                 try handle.seek(toOffset:UInt64(start))
                 let header=try handle.read(upToCount:12) ?? Data()
@@ -102,7 +105,7 @@ enum WorldSectionPack {
         func verify() throws {
             let attributes=try FileManager.default.attributesOfItem(atPath:url.path)
             let modified=attributes[.modificationDate] as? Date
-            let size=(attributes[.size] as? NSNumber)?.intValue ?? 0
+            let size=try ProtectedMapStorage.logicalSize(url)
             guard partial ? size>=start+asset.byteCount && size<=physicalAsset.byteCount : size==physicalAsset.byteCount else { throw RidgeError.message("Incomplete section pack.") }
             if let verifiedStamp,verifiedStamp==modified { return }
             try handle.seek(toOffset:UInt64(start))
@@ -125,7 +128,8 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
     private let expected:Int64
     private let initial:Int64
     private let notify:AsyncStream<Progress>.Continuation
-    private var output:FileHandle?
+    private var output:ProtectedMapStorage.Writer?
+    private let encrypt:Bool
     private var session:URLSession?
     private var task:URLSessionDataTask?
     private var continuation:CheckedContinuation<Int64,Error>?
@@ -134,10 +138,10 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
     private var lastReport=Date.distantPast
     private let lock=NSLock()
     private var cancelled=false
-    init(target:URL,expected:Int64,initial:Int64,notify:AsyncStream<Progress>.Continuation) {
-        self.target=target;self.expected=expected;self.initial=initial;self.notify=notify
+    init(target:URL,expected:Int64,initial:Int64,encrypt:Bool,notify:AsyncStream<Progress>.Continuation) {
+        self.target=target;self.expected=expected;self.initial=initial;self.notify=notify;self.encrypt=encrypt
     }
-    func start(url:URL,continuation:CheckedContinuation<Int64,Error>) {
+    func start(request:URLRequest,continuation:CheckedContinuation<Int64,Error>) {
         lock.lock();defer { lock.unlock() }
         if cancelled { notify.finish();continuation.resume(throwing:CancellationError());return }
         self.continuation=continuation
@@ -148,11 +152,9 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
         let queue=OperationQueue();queue.maxConcurrentOperationCount=1;queue.qualityOfService = .utility
         let session=URLSession(configuration:configuration,delegate:self,delegateQueue:queue)
         self.session=session
-        var request=URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:30)
-        request.setValue("identity",forHTTPHeaderField:"Accept-Encoding")
-        if initial>0 { request.setValue("bytes=\(initial)-",forHTTPHeaderField:"Range") }
         let task=session.dataTask(with:request);self.task=task;task.resume()
     }
+    func urlSession(_ session:URLSession,task:URLSessionTask,willPerformHTTPRedirection response:HTTPURLResponse,newRequest request:URLRequest,completionHandler:@escaping (URLRequest?)->Void) { completionHandler(encrypt ? nil : request) }
     func cancel() {
         lock.lock();cancelled=true;let activeTask=self.task;lock.unlock();activeTask?.cancel()
     }
@@ -165,9 +167,7 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
             } else if http.statusCode==200 { received=0 }
             else { throw RidgeError.message("Pack download failed (HTTP \(http.statusCode)).") }
             guard response.expectedContentLength == -1 || response.expectedContentLength==expected-received else { throw RidgeError.message("Incorrect pack download length.") }
-            if !FileManager.default.fileExists(atPath:target.path) { FileManager.default.createFile(atPath:target.path,contents:nil) }
-            let output=try FileHandle(forWritingTo:target);self.output=output
-            try output.truncate(atOffset:UInt64(received));try output.seek(toOffset:UInt64(received))
+            let output=try ProtectedMapStorage.Writer(url:target,expected:Int(expected),encrypt:encrypt,initial:Int(received));self.output=output
             notify.yield(.init(received:received,transferred:0));completionHandler(.allow)
         } catch { failure=error;completionHandler(.cancel) }
     }
@@ -178,11 +178,12 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
             try output.write(contentsOf:data);received+=Int64(data.count);transferred+=Int64(data.count)
             let now=Date()
             if now.timeIntervalSince(lastReport)>=0.08 || received==expected {
-                lastReport=now;notify.yield(.init(received:received,transferred:transferred))
+                lastReport=now;notify.yield(.init(received:Int64(output.committedLength),transferred:transferred))
             }
         } catch { failure=error;dataTask.cancel() }
     }
     func urlSession(_ session:URLSession,task:URLSessionTask,didCompleteWithError error:Error?) {
+        if error==nil,failure==nil { do { try output?.finish() } catch { failure=error } }
         try? output?.close();output=nil
         notify.finish()
         if let error=failure ?? error { continuation?.resume(throwing:error) }
@@ -191,20 +192,29 @@ private final class WorldPackHTTP:NSObject,URLSessionDataDelegate,@unchecked Sen
         continuation=nil;session.finishTasksAndInvalidate();self.session=nil
     }
     static func download(url:URL,asset:WorldMapAsset,cache:URL,progress:@escaping @Sendable (Int64,Int64) async -> Void) async throws -> Int64 {
+        if WorldAppleAssets.handles(url) {
+            return try await WorldAppleAssets.shared.copySection(url:url,asset:asset,cache:cache,progress:progress)
+        }
         guard WorldSectionPack.valid(asset) || WorldSectionPack.validRegion(asset) else { throw RidgeError.message("Invalid section pack.") }
         let directory=WorldSectionPack.directory(cache)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         let target=WorldSectionPack.partial(asset,cache:cache)
-        let existing=Int64((try? target.resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? 0)
+        let encrypt=WorldProtectedAccess.protected(url)
+        if encrypt,FileManager.default.fileExists(atPath:target.path),(!ProtectedMapStorage.isEncrypted(target) || (try? ProtectedMapStorage.expectedSize(target)) != asset.byteCount) { try FileManager.default.removeItem(at:target) }
+        let existing=Int64((try? ProtectedMapStorage.logicalSize(target)) ?? 0)
         if existing==asset.byteCount { await progress(existing,0);return 0 }
         if existing>asset.byteCount { try FileManager.default.removeItem(at:target) }
         let initial=existing>asset.byteCount ? 0 : existing
         let (stream,notifications)=AsyncStream<Progress>.makeStream(bufferingPolicy:.bufferingNewest(1))
-        let delegate=WorldPackHTTP(target:target,expected:Int64(asset.byteCount),initial:initial,notify:notifications)
+        let delegate=WorldPackHTTP(target:target,expected:Int64(asset.byteCount),initial:initial,encrypt:encrypt,notify:notifications)
+        var request=URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:30)
+        request.setValue("identity",forHTTPHeaderField:"Accept-Encoding")
+        if initial>0 { request.setValue("bytes=\(initial)-",forHTTPHeaderField:"Range") }
+        request=try await WorldProtectedAccess.shared.authorised(request)
         let reports=Task { for await value in stream { await progress(value.received,value.transferred) } }
         do {
             let count=try await withTaskCancellationHandler {
-                try await withCheckedThrowingContinuation { continuation in delegate.start(url:url,continuation:continuation) }
+                try await withCheckedThrowingContinuation { continuation in delegate.start(request:request,continuation:continuation) }
             } onCancel: { delegate.cancel() }
             await reports.value;try Task.checkCancellation();return count
         } catch { await reports.value;throw error }

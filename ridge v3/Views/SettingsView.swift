@@ -34,10 +34,18 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                if !WorldBundledMaps.downloadsEnabled {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Included offline maps").font(RidgeTheme.sectionTitle)
+                        Text("Eryri, Lake District, Peak District, and Chilterns & Thames Valley.")
+                        Text("Your maps and walking paths are included with Ridge. Zoom into an included area to explore in 3D and plan a route, even without a signal. The UK overview remains available elsewhere.")
+                            .font(.caption).foregroundStyle(RidgeTheme.muted)
+                    }
+                } else {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map source").font(RidgeTheme.sectionTitle)
                     Picker("Map source", selection: $selectedMapMode) {
-                        Text("Cloud").tag("cloud")
+                        Text("Apple downloads").tag("cloud")
                         Text("Local network").tag("local")
                     }.pickerStyle(.segmented)
                     if selectedMapMode == "local" {
@@ -46,7 +54,7 @@ struct SettingsView: View {
                             .accessibilityLabel("Local map server")
                         Text("Use the Mac serving your external drive. Keep it running and connect to the same network.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     } else {
-                        Text("Terrain loads as you explore. Cloud coverage currently includes the Snowdon pilot.").font(.caption).foregroundStyle(RidgeTheme.muted)
+                        Text("Download map areas from Apple before your trip. Saved areas work offline. The bundled overview and Snowdon demo are available immediately.").font(.caption).foregroundStyle(RidgeTheme.muted)
                     }
                     Button(action: saveSourceAndDismiss) {
                         Label("Save map source", systemImage: "checkmark")
@@ -65,6 +73,7 @@ struct SettingsView: View {
                     if let sourceError { Text(sourceError).font(.footnote).foregroundStyle(RidgeTheme.orange) }
                     Text("Download a region, then zoom into it to explore in 3D. Saved terrain works without a connection.").font(.caption).foregroundStyle(RidgeTheme.muted)
                 }
+                }
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Getting started").font(RidgeTheme.sectionTitle)
                     Button { showWalkthrough = true } label: {
@@ -77,6 +86,7 @@ struct SettingsView: View {
                 offlineSection
                 legendSection
                 storageSection
+                RidgeSupportSection()
                 estimatesSection
                 attributionSection
                 HStack {

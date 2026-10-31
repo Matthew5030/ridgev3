@@ -1,0 +1,98 @@
+[
+  {
+    "id": "9b000019-6ef2-8ba5-800a-bd1960c43260",
+    "setID": "fc099edc-e950-402d-9003-a368d481f7fe",
+    "type": "APP_IPHONE_67",
+    "file": "iphone-6.9/04-saved-routes.png",
+    "sha256": "69911df1dbe2794ecf26a35c100f3060993f6c174e025f2f60f216d799b0011e",
+    "md5": "907adb0757a1d1eef67aaea972ee0a58",
+    "bytes": 1132221,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "5a400019-6ef2-8ba5-800e-e07403317872",
+    "setID": "fc099edc-e950-402d-9003-a368d481f7fe",
+    "type": "APP_IPHONE_67",
+    "file": "iphone-6.9/01-terrain-and-route.png",
+    "sha256": "82672034ee22777d0bfbdf41b50023aeb43e3acdb4b7df0e1049ab0b8bdf2664",
+    "md5": "1b7d347992938dc84276b741ecaba48d",
+    "bytes": 3749696,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "8cc00019-6ef2-8ba5-802f-0bf70d13740d",
+    "setID": "fc099edc-e950-402d-9003-a368d481f7fe",
+    "type": "APP_IPHONE_67",
+    "file": "iphone-6.9/02-flight-preview.png",
+    "sha256": "78e514a905f798320dc4694eb1b4f85444820bff161165c766da3203c678531b",
+    "md5": "bf0114d2d6eb03b9713a505210c8970e",
+    "bytes": 1268686,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "81400019-6ef2-8ba5-8013-a44a59941e0d",
+    "setID": "fc099edc-e950-402d-9003-a368d481f7fe",
+    "type": "APP_IPHONE_67",
+    "file": "iphone-6.9/03-before-you-go.png",
+    "sha256": "490e5b546424121a5b7d6964a58892a79325e2e88954ae43251ddcfac9dab50b",
+    "md5": "c6096f64b7fefaf11ca961098c2370a9",
+    "bytes": 334097,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "60000019-6ef2-8ba5-8005-72ad21bca215",
+    "setID": "fc099edc-e950-402d-9003-a368d481f7fe",
+    "type": "APP_IPHONE_67",
+    "file": "iphone-6.9/05-waypoints-and-elevation.png",
+    "sha256": "eb31cb33c495051bdb555114dbf007c590c44f405fbbca67c4267cca9bad475a",
+    "md5": "46c11c5cf46fd0ce019d22f634efb21f",
+    "bytes": 178861,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "28000019-6ef2-8ba5-8007-dac7aaab1390",
+    "setID": "aba0a31e-146c-4f76-bea2-7bd58f8479b1",
+    "type": "APP_IPAD_PRO_3GEN_129",
+    "file": "ipad-13/01-terrain-and-route.png",
+    "sha256": "ac8f02697cee0943f0c0319a11306dd9fc5bf1cf868cc155bb50c044141fe699",
+    "md5": "db9c39f268a3b12bf28e696235818f7e",
+    "bytes": 4634254,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "4d800019-6ef2-8ba5-803b-f05bdca2d8fa",
+    "setID": "aba0a31e-146c-4f76-bea2-7bd58f8479b1",
+    "type": "APP_IPAD_PRO_3GEN_129",
+    "file": "ipad-13/02-flight-preview.png",
+    "sha256": "f5e125696bca3484595f9b199aa09aa7026b2a03289c05d3d984ddb2fb9572ee",
+    "md5": "0cd3a49e00c3a59fda8ad78cb4c4bd53",
+    "bytes": 2017677,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  },
+  {
+    "id": "0c800019-6ef2-8ba5-8034-596e1cab85ce",
+    "setID": "aba0a31e-146c-4f76-bea2-7bd58f8479b1",
+    "type": "APP_IPAD_PRO_3GEN_129",
+    "file": "ipad-13/03-before-you-go.png",
+    "sha256": "6df0cb051eab357b83badf5acf69da9ce3ed2559aa0e50a417990689ccccd644",
+    "md5": "36bc51dbf5bc39a9b4ef31a587911634",
+    "bytes": 2689068,
+    "state": "COMPLETE",
+    "errors": [],
+    "verified": "2026-10-30"
+  }
+]

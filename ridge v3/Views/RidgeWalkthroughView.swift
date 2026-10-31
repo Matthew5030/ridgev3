@@ -137,7 +137,7 @@ private enum WalkthroughStep: Int, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .explore: return "Search for a place, then pinch to zoom. In a saved area, keep zooming to glide into 3D."
-        case .offline: return "Choose an area and download its terrain and walking paths before heading out. Saved maps work without a signal."
+        case .offline: return WorldBundledMaps.downloadsEnabled ? "Choose an area and download its terrain and walking paths before heading out. Saved maps work without a signal." : "Eryri, the Lake District, Peak District and Chilterns & Thames Valley are included. Their terrain and walking paths are ready without a download or a signal."
         case .plan: return "Tap Plan your route, then tap the map to add waypoints. Open route details to edit your stops and see the elevation."
         case .preview: return "Tap Preview route for a fly-through of your walk. Scrub along the elevation profile to explore a section, then return to editing."
         }
@@ -145,7 +145,7 @@ private enum WalkthroughStep: Int, CaseIterable, Identifiable {
     var tip: String {
         switch self {
         case .explore: return "One finger to move. Two fingers to tilt or turn."
-        case .offline: return "See the download size before you start."
+        case .offline: return WorldBundledMaps.downloadsEnabled ? "See the download size before you start." : "Zoom into an included area and start planning."
         case .plan: return "Find your saved walks in Routes."
         case .preview: return "Drag to look around. Let go to rejoin the glide."
         }

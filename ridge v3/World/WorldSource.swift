@@ -260,16 +260,26 @@ actor WorldSourceStore {
             if !stageForDownload, (preferCached || !allowsNetwork), let raw = try? Data(contentsOf:cached),
                let saved = try? JSONDecoder().decode(WorldSource.self,from:raw), (try? saved.validate()) != nil {
                 manifest = raw
+            } else if WorldAppleAssets.handles(url), let included=WorldBundledMaps.included,
+                      included.index.sections[try WorldAppleAssets.sectionID(url)] != nil,
+                      !WorldBundledMaps.downloadsEnabled || !allowsNetwork {
+                manifest = try included.metadata(id:WorldAppleAssets.sectionID(url))
             } else {
                 guard allowsNetwork else { throw RidgeError.message("This map index is missing. Download the area again while connected.") }
                 do {
+                    let raw:Data
+                    if WorldAppleAssets.handles(url) {
+                        raw=try await WorldAppleAssets.shared.sourceData(url)
+                    } else {
                     var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData); request.timeoutInterval = 15
-                    let (temporary, response) = try await URLSession.shared.download(for: request)
+                    let authorised=try await WorldProtectedAccess.shared.authorised(request)
+                    let (temporary, response) = try await URLSession.shared.download(for: authorised)
                     defer { try? FileManager.default.removeItem(at: temporary) }
                     let size = try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max
                     guard size < 16_000_000 else { throw RidgeError.message("World index is too large.") }
-                    let raw = try Data(contentsOf: temporary)
+                    raw = try Data(contentsOf: temporary)
                     guard let http = response as? HTTPURLResponse, http.statusCode == 200, raw.count < 16_000_000 else { throw RidgeError.message("The world source could not be read.") }
+                    }
                     let source = try JSONDecoder().decode(WorldSource.self, from: raw); try source.validate()
                     if stageForDownload {
                         // A refresh must not replace the offline index until its
@@ -446,13 +456,13 @@ actor WorldSourceStore {
             let url=base.isFileURL ? base.appendingPathComponent(asset.file) : cache.appendingPathComponent(asset.sha256)
             let key=url.absoluteString+"|"+asset.sha256
             guard let values=try? url.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey,.creationDateKey]),
-                  values.fileSize==asset.byteCount else { verifiedFiles.removeValue(forKey:key);continue }
+                  (try? ProtectedMapStorage.logicalSize(url))==asset.byteCount else { verifiedFiles.removeValue(forKey:key);continue }
             let stamp: VerifiedFile?
             if let modified=values.contentModificationDate,let created=values.creationDate {
                 stamp=VerifiedFile(size:asset.byteCount,modified:modified,created:created)
             } else { stamp=nil }
             if let stamp,verifiedFiles[key]==stamp { hashes.insert(asset.sha256);continue }
-            if let data=try? Data(contentsOf:url),data.count==asset.byteCount,AdaptiveTerrainCodec.hash(data)==asset.sha256 {
+            if let data=try? ProtectedMapStorage.read(url),data.count==asset.byteCount,AdaptiveTerrainCodec.hash(data)==asset.sha256 {
                 hashes.insert(asset.sha256);verifiedFiles[key]=stamp
             } else { verifiedFiles.removeValue(forKey:key) }
         }
@@ -478,6 +488,9 @@ actor WorldSourceStore {
     func checkDownloadConnection() async throws {
         guard !base.isFileURL else { return }
         guard allowsNetwork else { throw RidgeError.message("This map source is offline. Choose a download source in Settings.") }
+        if WorldAppleAssets.handles(base) {
+            _ = try await WorldAppleAssets.shared.catalogData();return
+        }
         let configuration=URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity=false
         configuration.timeoutIntervalForRequest=6
@@ -487,6 +500,7 @@ actor WorldSourceStore {
         var request=URLRequest(url:base.appendingPathComponent("world.json"),cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:6)
         request.httpMethod="HEAD"
         do {
+            request=try await WorldProtectedAccess.shared.authorised(request)
             let (_,response)=try await session.data(for:request)
             try Task.checkCancellation()
             guard let http=response as? HTTPURLResponse,http.statusCode==200 else {
@@ -508,7 +522,12 @@ actor WorldSourceStore {
                 + [tile.map, WorldMapAsset(file:tile.mesh.path,byteCount:tile.mesh.byteCount,sha256:tile.mesh.sha256)]
         } + Self.assets(tiles:tiles,source:source,surroundings:surroundings)
         let assets = ordered.filter { seen.insert($0.sha256).inserted }
-        let cached=try cachedAssetHashes(for:assets)
+        var cached=try cachedAssetHashes(for:assets)
+        if WorldAppleAssets.handles(base),allowsNetwork,!assets.allSatisfy({ cached.contains($0.sha256) }) {
+            try await WorldAppleAssets.shared.prepareSection(id:source.id,cache:cache)
+            sectionPack=WorldSectionPack.open(sourceID:source.id,cache:cache)
+            cached=try cachedAssetHashes(for:assets)
+        }
         if let sectionPack,assets.allSatisfy({ sectionPack.contains($0) && cached.contains($0.sha256) }) {
             pins=try Self.reserve([sectionPack.physicalAsset.sha256],cache:cache)
             try recordSavedCoverage(tiles,source:source,coverageID:coverageID)
@@ -601,7 +620,7 @@ actor WorldSourceStore {
                 let packed=sectionPack.flatMap { $0.contains(asset) ? $0.physicalAsset : nil }
                 let hash=packed?.sha256 ?? asset.sha256,bytes=packed?.byteCount ?? asset.byteCount
                 let file=packed.map { WorldSectionPack.file($0,cache:cache) } ?? cache.appendingPathComponent(hash)
-                let value=hash.count==64 && hash.allSatisfy(\.isHexDigit) && pins.contains(hash) && (try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize)==bytes
+                let value=hash.count==64 && hash.allSatisfy(\.isHexDigit) && pins.contains(hash) && (try? ProtectedMapStorage.logicalSize(file))==bytes
                 present[asset.sha256]=value;return value
             }) else { return nil }
             let receipts=assets.map { asset -> WorldOfflineCoverage.Asset in
@@ -643,7 +662,7 @@ actor WorldSourceStore {
             do { return try sectionPack.read(asset) }
             catch { self.sectionPack=nil } // A repair may have replaced the open inode.
         }
-        if let data = try? Data(contentsOf: saved), checked(data) {
+        if let data = try? ProtectedMapStorage.read(saved), checked(data) {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: saved.path); return data
         }
         // Another download actor can install a pack while this landscape lives.
@@ -651,14 +670,20 @@ actor WorldSourceStore {
             sectionPack=installed;return try installed.read(asset)
         }
         guard allowsNetwork else { throw RidgeError.message("A downloaded map file is missing. Download this area again while connected.") }
+        if WorldAppleAssets.handles(base) {
+            let data=try await WorldAppleAssets.shared.readAsset(asset,base:base,cache:cache)
+            sectionPack=packedSourceID.flatMap { WorldSectionPack.open(sourceID:$0,cache:cache) }
+            return data
+        }
         var request = URLRequest(url: base.appendingPathComponent(asset.file)); request.timeoutInterval = 20
-        let (temporary, response) = try await URLSession.shared.download(for: request)
+        let authorised=try await WorldProtectedAccess.shared.authorised(request)
+                    let (temporary, response) = try await URLSession.shared.download(for: authorised)
         defer { try? FileManager.default.removeItem(at: temporary) }
         try Task.checkCancellation()
         guard try temporary.resourceValues(forKeys:[.fileSizeKey]).fileSize == asset.byteCount else { throw RidgeError.message("Incomplete map download.") }
         let data = try Data(contentsOf: temporary)
         guard (response as? HTTPURLResponse)?.statusCode == 200, checked(data) else { throw RidgeError.message("A map file is incomplete. Move back to retry.") }
-        try data.write(to: saved, options: .atomic)
+        if WorldProtectedAccess.protected(base) { try ProtectedMapStorage.write(data,to:saved) } else { try data.write(to:saved,options:.atomic) }
         // Explicit downloads reserve these files before transfer. Scanning the
         // whole cache every few MB cannot evict them and becomes quadratic for
         // regional packs. Only opportunistic, unpinned writes need cache pruning.

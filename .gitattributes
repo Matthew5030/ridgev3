@@ -1,2 +1,4 @@
 ridge[[:space:]]v3/Resources/**/*.bin filter=lfs diff=lfs merge=lfs -text
 ridge[[:space:]]v3/Resources/**/*.png filter=lfs diff=lfs merge=lfs -text
+# Prepared cross-repository patch includes an encoded PNG; review its HTML evidence.
+Release/AppStore/website-update.patch -diff

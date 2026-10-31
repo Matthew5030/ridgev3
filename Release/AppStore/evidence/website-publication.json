@@ -1,0 +1,22 @@
+{
+  "published": "2026-10-30",
+  "approvedByOwner": true,
+  "websiteRepository": "Matthew5030/bilella-works-website",
+  "pullRequest": "https://github.com/Matthew5030/bilella-works-website/pull/1",
+  "sourceCommit": "c255d48",
+  "productionCommit": "c5539a65bcdee9084c667e73b71eec3b0fd02425",
+  "productionDeploymentID": "0c8e0579-f6b9-41a9-bcce-fdf3afcfa108",
+  "deploymentResult": "Cloudflare Pages: SUCCESS",
+  "validation": "Complete static-site validator and git diff --check passed",
+  "liveBrowserChecks": {
+    "https://bilellaworks.com/apps/ridge/": "Updated feature copy, real app icon, In development status",
+    "https://bilellaworks.com/apps/ridge/support/": "Redirects to /support/#ridge; new download guidance verified",
+    "https://bilellaworks.com/apps/ridge/privacy/": "Effective 30 October 2026; offline search, Apple downloads and alternative security service disclosures verified",
+    "https://bilellaworks.com/privacy/": "Ridge summary matches updated policy"
+  },
+  "unrelatedLocalWebsiteChanges": "Preserved; publication used an isolated checkout of latest origin/main",
+  "appSubmission": false,
+  "assetPackSubmission": false,
+  "appReleased": false,
+  "appStorePrivacyDraftPublished": false
+}

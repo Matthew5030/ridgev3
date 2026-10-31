@@ -1,0 +1,17 @@
+/Users/matthewbilella/Documents/ChatGPT/project-ridgeV3/texture-study-code/ridge v3/Core/TerrainBudget.swift:100:73: warning: 'mac2' was deprecated in macOS 27.0: renamed to 'MTLGPUFamily.apple7' [#DeprecatedDeclaration]
+ 98 |             context.recommendedGPUWorkingSet = workingSet > 0 ? workingSet : nil
+ 99 |             context.maximumBufferLength = bufferLength > 0 ? bufferLength : nil
+100 |             if device.supportsFamily(.apple7) || device.supportsFamily(.mac2) {
+    |                                                                         |- warning: 'mac2' was deprecated in macOS 27.0: renamed to 'MTLGPUFamily.apple7' [#DeprecatedDeclaration]
+    |                                                                         `- note: use 'MTLGPUFamily.apple7' instead
+101 |                 context.gpuTier = .modern
+102 |             } else if device.supportsFamily(.apple1) {
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+Ground colour 1024px render: 0.0211639404296875 seconds (Mac)
+Ground colour: legacy fallback, orientation, masking, ink, gutters and validation passed
+Travel simulation: 703 completed replacements, no texture holes
+4K saved-map raster: 0.46498799324035645 seconds (Mac)
+Adaptive backdrop: 39817892 geometry bytes, 23105762 CPU mesh/bucket payload bytes, 0.6041809320449829 seconds off main thread
+Overhead preview prepared in 1.0476900339126587 seconds
+PASS 9465 assertions; maximum estimated mesh 201324442 bytes; textures with mips 163315704 bytes; 256 source tiles
