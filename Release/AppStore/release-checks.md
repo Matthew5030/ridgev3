@@ -30,6 +30,17 @@ preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
   into detailed terrain on both devices. Existing iPad routes remain visible.
 - All four GitHub checks passed for the production-source candidate. The native
   evidence distinguishes observed checks from owner-reported checks.
+- TestFlight build 1.0 (4) is VALID / IN_BETA_TESTING, in the internal group with
+  an ACCEPTED tester. The owner's screenshot confirms build 4 and compatibility;
+  the owner reports the same “not available” error after tapping Install.
+  The included-only payload has therefore not resolved Apple-delivered install
+  failure. Native Console captured the failed retry at 16:12:22.199445 UTC:
+  `Error Downloading Install Data`, `ProcessingInstallInitiateResponse`, no
+  download progress, TF error `-1` / `serverCode=200` (not independently verified
+  as an HTTP status). The underlying cause remains unconfirmed. The redacted
+  evidence is in `evidence/testflight-build4-install-failure.json`; raw logs remain
+  private outside Git. Keep case 103009501518 open; the updated friendly support
+  draft has not been sent.
 - Removed the temporary local-download test CA trust, certificate, test identity
   and generated private keys. The phone had no installed test profile.
 - Finish the final privacy/rights declarations, prepare the matching product page,

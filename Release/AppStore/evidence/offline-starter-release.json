@@ -28,7 +28,7 @@
   "uploadedBytes": 2847849543,
   "appStoreProcessingState": "VALID",
   "exportInfoVerified": true,
-  "internalBetaState": "READY_FOR_BETA_TESTING",
+  "internalBetaState": "IN_BETA_TESTING",
   "externalBetaState": "READY_FOR_BETA_SUBMISSION",
   "selectedAppStoreVersion": "1.0",
   "selectedBuildVerified": true,
@@ -59,6 +59,14 @@
   "testFlightBuild4": {
     "availableToOwnerInternalGroup": true,
     "installationVerified": false,
-    "installationCheck": "Phone locked before the build-4 TestFlight retry; development-installed build 4 remains tested on both devices."
+    "installationCheck": "Owner confirmed the correct compatible 1.0 (4) build still fails with the same \u201cnot available\u201d error on 31 October 2026.",
+    "failureConfirmedAtUTC": "2026-10-31T16:05:13Z",
+    "causeConfirmed": false,
+    "perAppBetaLicenseReadHTTPStatus": 200,
+    "testerState": "ACCEPTED",
+    "deviceLogCapture": "Captured in native Console on the connected iPhone at 2026-10-31T16:12:22.199445Z; streaming paused afterwards. Raw logs remain private outside Git.",
+    "deviceLogEvidence": "testflight-build4-install-failure.json",
+    "failureStage": "ProcessingInstallInitiateResponse",
+    "serverFailureReason": "Error Downloading Install Data"
   }
 }

@@ -110,9 +110,17 @@ the intended distribution path.
 Remaining owner actions are content-rights confirmation, privacy publication,
 approval of the prepared website copy and approval to submit App Review.
 The unresolved TestFlight account/install error is not proven fixed by this
-upload. Build 4 is now available to the owner's internal TestFlight group; the
-phone locked before an Apple-delivered install could be verified. No App Review
-submission or public launch has occurred. The saved
+upload. Build 4 is available to the owner's accepted internal tester and is
+IN_BETA_TESTING. On 31 October the owner confirmed the compatible 1.0 (4) build
+still fails with the same “not available” install error. Bundling has not fixed
+TestFlight delivery. Native Console captured the retry at
+2026-10-31 16:12:22.199445 UTC: TestFlight fails while processing the install-start
+response, with `Error Downloading Install Data`, no download progress, TF error
+`-1` and `serverCode=200`. That last field is not independently verified as an
+HTTP status. The underlying cause remains unconfirmed. See
+`Release/AppStore/evidence/testflight-build4-install-failure.json`; raw logs and
+the unsent support update are private in `ReleaseBuilds/1.0-4` outside Git.
+No App Review submission or public launch has occurred. The saved
 release setting is manual, so an approval from Apple will not launch it by itself.
 
 The prepared website copy is applied in the isolated `website-publish` worktree
