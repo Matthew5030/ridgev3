@@ -1,7 +1,7 @@
 import Foundation
 
-/// Decide from both fingers, rather than interpreting the first moving finger
-/// as a tilt. Once chosen, the mode is stable until a clear pinch takes over.
+/// Treat coordinated travel as angle adjustment, tolerating uneven finger
+/// arrival. Pinches and twists need deliberate relative movement.
 enum WorldGestureIntent {
     case undecided, angle, transform
 
@@ -12,11 +12,17 @@ enum WorldGestureIntent {
         let spanChange = abs(hypot(current.x,current.y)-length)
         let angle = atan2(current.y,current.x)-atan2(start.y,start.x)
         let rotation = abs(atan2(sin(angle),cos(angle)))
-        if spanChange > max(6,length*0.035) || rotation > 0.055 { return .transform }
         let da=CGPoint(x:a.x-startA.x,y:a.y-startA.y),db=CGPoint(x:b.x-startB.x,y:b.y-startB.y)
         let la=hypot(da.x,da.y),lb=hypot(db.x,db.y)
-        let parallel=la>4 && lb>4 && da.x*db.x+da.y*db.y>0.7*la*lb
-        if parallel && hypot((da.x+db.x)/2,(da.y+db.y)/2)>8 { return .angle }
+        let bothMoved=la>3 && lb>3
+        let parallel=bothMoved && da.x*db.x+da.y*db.y>0.7*la*lb
+        let travel=hypot((da.x+db.x)/2,(da.y+db.y)/2)
+        let twistTravel=rotation*length/2
+        // A leading finger creates apparent rotation, especially with a narrow
+        // grip. Coherent dragging gets priority over small spacing changes.
+        if parallel && travel>4 && spanChange<=max(12,length*0.06) && twistTravel<10 { return .angle }
+        if spanChange>max(12,length*0.06) && (bothMoved || spanChange>max(24,length*0.12)) { return .transform }
+        if rotation>0.075 && twistTravel>10 && (bothMoved || twistTravel>20) { return .transform }
         return .undecided
     }
 }
@@ -85,13 +91,24 @@ struct WorldGestureMotion {
             let startAngle=atan2(start[1].point.y-start[0].point.y,start[1].point.x-start[0].point.x)
             let nowAngle=atan2(p[1].point.y-p[0].point.y,p[1].point.x-p[0].point.x)
             let twist=abs(atan2(sin(nowAngle-startAngle),cos(nowAngle-startAngle)))
-            if (abs(Self.span(p)/Self.span(start)-1)>0.10 && abs(Self.span(p)-Self.span(start))>12) || twist>0.10 {
-                intent = .transform;return .rebase
+            let length=Self.span(start)
+            if abs(Self.span(p)-length)>max(16,length*0.12) || (twist>0.12 && twist*length/2>12) {
+                intent = .transform;start=p;return .rebase
             }
             let a=Self.midpoint(previous),b=Self.midpoint(p)
             if rotateWithOneFinger { return .pan(a,b) }
             return angleStep(CGPoint(x:b.x-a.x,y:b.y-a.y))
         }
+        // Zoom must not own the rest of the touch sequence. Once relative
+        // movement settles, a clear coordinated drag can adjust the angle.
+        // The larger travel threshold avoids hopping modes during a pinch.
+        let next=WorldGestureIntent.resolve(startA:start[0].point,startB:start[1].point,a:p[0].point,b:p[1].point)
+        if next == .angle {
+            let a=Self.midpoint(start),b=Self.midpoint(p)
+            if hypot(b.x-a.x,b.y-a.y)>8 {
+                intent = .angle;start=p;return .rebase
+            }
+        } else if next == .transform { start=p }
         let before=atan2(previous[1].point.y-previous[0].point.y,previous[1].point.x-previous[0].point.x)
         let after=atan2(p[1].point.y-p[0].point.y,p[1].point.x-p[0].point.x)
         let rotation=atan2(sin(after-before),cos(after-before))
