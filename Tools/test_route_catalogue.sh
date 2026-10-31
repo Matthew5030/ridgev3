@@ -18,6 +18,7 @@ xcrun swiftc -swift-version 6 -parse-as-library \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/AreaCropper.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/AreaExtension.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteEngine.swift" \
+  "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteTripPlan.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/GPXCodec.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/RouteStore.swift" \
   "$RIDGE_PROJECT_ROOT/ridge v3/Core/AtlasAreaPlanner.swift" \

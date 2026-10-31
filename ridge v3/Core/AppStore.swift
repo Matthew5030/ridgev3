@@ -15,7 +15,17 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
     var worldTerrain: LoadedTerrain?
     var worldRouteFocus: GeoPoint?
     var activeTerrain: LoadedTerrain?
-    var activeRoute: RidgeRoute?
+    var activeRoute: RidgeRoute? {
+        didSet {
+            if activeRoute?.id != oldValue?.id {
+                routeExitBaseline = activeRoute.flatMap { route in routes.first { $0.id == route.id } }
+                showRouteExitConfirmation = false
+            }
+        }
+    }
+    var showRouteExitConfirmation = false
+    // Background recovery saves must not turn an unfinished edit into a user-confirmed save.
+    @ObservationIgnored private var routeExitBaseline: RidgeRoute?
     var editing = false
     var planningMode: RoutePlanningMode = .paths
     var camera = TerrainCameraCommand()
@@ -774,9 +784,66 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
     func finishRoute() {
         guard !isRouting else { return }
         editing = false; movingWaypoint = nil; insertingWaypoint = nil; selectedPoint = nil
+        routeExitBaseline = activeRoute
         savePlanningSession()
         if activeRoute?.points.isEmpty != false { activeRoute = nil; toast("Empty route discarded.") }
         else { toast("Route saved on this device.") }
+    }
+
+    var routeNeedsExitConfirmation: Bool {
+        guard var route = activeRoute else { return false }
+        guard let baseline = routeExitBaseline, baseline.id == route.id else { return !route.points.isEmpty }
+        // Dates and terrain-window IDs can change without an edit to the walk.
+        route.createdAt = baseline.createdAt; route.modifiedAt = baseline.modifiedAt; route.regionID = baseline.regionID
+        return route != baseline
+    }
+
+    func requestExplore() {
+        guard !isRouting, !isPreparing else { toast("Wait for the current route change to finish."); return }
+        if routeNeedsExitConfirmation { showRouteExitConfirmation = true }
+        else { exitRouteToExplore() }
+    }
+
+    @discardableResult
+    func saveRouteAndExplore() async -> Bool {
+        guard !isRouting, !isPreparing else { return false }
+        showRouteExitConfirmation = false
+        if let route = activeRoute {
+            isRouting = true
+            defer { isRouting = false }
+            guard await persist(route), activeRoute == route else { return false }
+        }
+        exitRouteToExplore()
+        return true
+    }
+
+    @discardableResult
+    func discardRouteEditsAndExplore() async -> Bool {
+        guard !isRouting, !isPreparing else { return false }
+        showRouteExitConfirmation = false
+        if let route = activeRoute {
+            isRouting = true
+            defer { isRouting = false }
+            if let baseline = routeExitBaseline {
+                guard await persist(baseline), activeRoute == route else { return false }
+            } else {
+                do { try await routeStore.delete(id: route.id) }
+                catch RouteError.missingRoute { }
+                catch { errorMessage = "Your changes could not be discarded. Your route is still open: \(error.localizedDescription)"; return false }
+                routes.removeAll { $0.id == route.id }
+                guard activeRoute == route else { return false }
+            }
+        }
+        exitRouteToExplore()
+        return true
+    }
+
+    private func exitRouteToExplore() {
+        activeRoute = nil; editing = false; selectedPoint = nil; movingWaypoint = nil; insertingWaypoint = nil
+        undoStack = []; redoStack = []; routeSaved = false; showRouteExitConfirmation = false
+        worldRouteFocus = nil; isWorldBrowsing = true; tab = .explore
+        // Retain the resident terrain and camera: leaving the editor should not reload the map.
+        savePlanningSession()
     }
 
     func closeLoop() {
@@ -873,7 +940,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
         Task {
             defer { isRouting = false }
             guard await persist(updated) else { return }
-            if activeRoute?.id == updated.id { activeRoute = updated }
+            if activeRoute?.id == updated.id { activeRoute = updated; routeExitBaseline?.name = updated.name }
             // Geometry undo should not undo a separately saved rename.
             for index in undoStack.indices where undoStack[index].id == updated.id { undoStack[index].name = updated.name }
             for index in redoStack.indices where redoStack[index].id == updated.id { redoStack[index].name = updated.name }
@@ -888,7 +955,7 @@ enum MainTab: String, CaseIterable { case explore = "Explore", areas = "Packs", 
         Task {
             defer { isRouting = false }
             guard await persist(route) else { return }
-            if activeRoute?.id == route.id { activeRoute = route }
+            if activeRoute?.id == route.id { activeRoute = route; routeExitBaseline?.notes = route.notes }
             for index in undoStack.indices where undoStack[index].id == route.id { undoStack[index].notes = route.notes }
             for index in redoStack.indices where redoStack[index].id == route.id { redoStack[index].notes = route.notes }
         }

@@ -6,7 +6,7 @@ on:
       - 'ridge v3/**'
       - 'Tests/**'
       - 'Tools/test_world_*.sh'
-      - 'Tools/test_route_trip_plan.sh'
+      - 'Tools/test_route_*.sh'
       - '.github/workflows/route-preview.yml'
 
 permissions:
@@ -26,6 +26,12 @@ jobs:
           lfs: false
       - name: Walking estimates, itineraries, checklist persistence and route sorting
         run: sh Tools/test_route_trip_plan.sh
+      - name: Saved route reopening and route exit persistence
+        run: |
+          sh Tools/test_route_catalogue.sh
+          sh Tools/test_route_exit.sh
+      - name: Two-finger tilt, pinch and camera gestures
+        run: sh Tools/test_world_gestures.sh
   camera-and-playback:
     runs-on: macos-15
     timeout-minutes: 15
