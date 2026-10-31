@@ -76,5 +76,8 @@
   "appReviewSubmissionID": "8d46cb3f-7210-4809-821f-e690ce7a24d3",
   "submittedAtUTC": "2026-10-31T18:43:26.919Z",
   "publiclyReleased": false,
-  "releaseType": "MANUAL"
+  "releaseType": "AFTER_APPROVAL",
+  "initialSubmissionReleaseType": "MANUAL",
+  "automaticReleaseOwnerRequested": true,
+  "automaticReleaseAPIReadbackVerified": true
 }

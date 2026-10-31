@@ -69,14 +69,16 @@ as part of an ordinary update; install over the existing bundle identifier so
 routes and downloaded data stay in the app container. Development installations
 have signing/profile expiry; they are not permanent App Store installations.
 
-The App Store draft remains version 1.0, free, UK-only with manual release.
+App Store version 1.0 is free, UK-only and Waiting for Review. At the owner's
+request, release is now automatic after approval (`AFTER_APPROVAL`).
 Description, promotional text and reviewer notes now describe four included
 areas. The saved screenshot set remains eight real native captures. Product-page
-wording for the offline starter is prepared in
-`Release/AppStore/website-offline-update.patch` and is not yet published.
+wording for the offline starter is published, together with matching privacy
+and support pages. The original `Release/AppStore/website-offline-update.patch`
+is retained as a preparation record.
 
-Before submission, finish the physical phone/tablet checks and final declarations,
-select the processed build, and get owner approval. No successful Apple-hosted
+Physical phone/tablet checks, final declarations and owner submission approval
+are complete; build 4 is submitted. No successful Apple-hosted
 terrain download is required for the included-only release; keep that delivery
 feature disabled until separately verified. App Store review and account-service
 availability still depend on Apple. Do not treat a passed upload as approval.
@@ -87,9 +89,9 @@ though routes and downloaded data remain. A later smaller-base release needs a
 separate, tested migration/redownload flow. Enabling additional Apple coverage
 alone does not require shrinking or replacing this starter bundle.
 
-The prepared product-page patch uses zero context; from a clean website checkout,
-validate it with `git apply --check --unidiff-zero /absolute/path/to/website-offline-update.patch`
-before applying and reviewing the page. Publication still needs owner approval.
+Do not reapply the original zero-context product-page patch over the published
+website. Its matching coverage changes and later support/privacy/status updates
+are already committed to the website's main branch.
 
 ## Current handover, 31 October 2026
 
@@ -109,12 +111,14 @@ the intended distribution path.
 
 The owner accepted final iPhone UAT and requested App Store submission on
 31 October. The four-area product page, matching support FAQ and updated privacy
-policy are published and browser-verified. Free UK pricing, manual release and
+policy are published and browser-verified. Free UK pricing and
 all eight completed screenshot uploads were verified. The owner explicitly
 confirmed both final Apple declarations. Privacy responses were published and
 the third-party-content/necessary-rights declaration was saved. Apple received
 build 1.0 (4) at 18:43:26 UTC on 31 October 2026; its status is
-**WAITING_FOR_REVIEW**, with **MANUAL** release retained. Submission ID:
+**WAITING_FOR_REVIEW**. Release was initially manual; the owner subsequently
+requested automatic release, saved and API-verified as **AFTER_APPROVAL**.
+Submission ID:
 `8d46cb3f-7210-4809-821f-e690ce7a24d3`. See
 `Release/AppStore/evidence/app-store-submission-2026-10-31.json` for the current
 submission record.
@@ -130,9 +134,9 @@ HTTP status. The underlying cause remains unconfirmed. See
 `Release/AppStore/evidence/testflight-build4-install-failure.json`; raw logs and
 the unsent support update are private in `ReleaseBuilds/1.0-4` outside Git.
 App Review submission has succeeded; public launch has not occurred. The saved
-release setting is manual, so approval from Apple will not launch it by itself.
-After approval, open the version in App Store Connect and choose Release This
-Version when ready. Keep the current TestFlight case open independently.
+release setting is **AFTER_APPROVAL**, so Apple will release this version
+automatically after approval. No manual Release This Version action is required.
+Keep the current TestFlight case open independently.
 
 The product, support and privacy copy is published from the isolated
 `website-publish` worktree and verified on bilellaworks.com. The homepage,

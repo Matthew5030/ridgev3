@@ -7,7 +7,7 @@
   "ownerFinalUAT": "Owner accepted the release candidate after testing it on iPhone and instructed submission; individual final UAT steps were not observed.",
   "sameInstalledBuildVerified": true,
   "buildProcessingState": "VALID",
-  "releaseType": "MANUAL",
+  "releaseType": "AFTER_APPROVAL",
   "priceGBP": "0.00",
   "availableTerritories": [
     "GBR"
@@ -34,5 +34,8 @@
   "ownerDeclarationConfirmation": "Owner explicitly replied Confirm both and submit to the final declaration question.",
   "websiteStatus": "Awaiting Apple review",
   "receiptScreenshot": "Private ReleaseBuilds/1.0-4/app-store-waiting-for-review.png outside Git",
-  "publiclyReleased": false
+  "publiclyReleased": false,
+  "initialSubmissionReleaseType": "MANUAL",
+  "automaticReleaseOwnerRequested": true,
+  "automaticReleaseAPIReadbackVerified": true
 }
