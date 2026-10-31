@@ -123,8 +123,18 @@ terrain or bundled content alone cannot demonstrate a fresh managed download.
 Use the ordinary scheme without the local folder for subsequent TestFlight tests.
 
 On 30 October the private **Ridge Local Apple Maps** scheme was configured and
-the signed development build installed. The first Xcode run stopped waiting for
-the phone to unlock; the on-device managed download remains unverified. See the
+the signed development build installed. After an unlocked run, bootstrap pack
+lookup and manifest refresh repeatedly timed out. A standalone Apple `ba-serve`
+test with temporary HTTPS trust was prepared, but no fresh on-device managed
+download has passed yet. This remains separate from the TestFlight install error.
+
+On 31 October the API still reported build 3 as valid and in internal testing.
+The per-app beta license exists; that does not verify the account-level beta
+contract discussed in matching Apple forum reports. During an account check the
+Program Agreement warning disappeared, and App Store Connect then showed the
+Free Apps Agreement as Active with an effective date of 31 October. A new device
+installation attempt was requested after this change; its result is pending.
+No account-level defect or successful repair has been established. See the
 [retry evidence](../Release/AppStore/evidence/testflight-retry-2026-10-30.json).
 
 Apple documents the folder option in the

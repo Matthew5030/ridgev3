@@ -38,7 +38,7 @@
     "screenVerified": "First-launch Ridge walkthrough visible on the real iPhone",
     "localManagedAssetDownloadVerified": false,
     "liveAppleDeliveryVerified": false,
-    "remainingSetup": "Local Xcode scheme is configured; awaiting unlocked iPhone run and a fresh managed-asset download."
+    "remainingSetup": "Xcode local managed-asset lookup and manifest refresh timed out; standalone test prepared but no fresh managed download verified."
   },
   "localManagedAssetTest": {
     "scheme": "Ridge Local Apple Maps",
@@ -51,8 +51,36 @@
     "deviceBuildAndInstall": "Succeeded",
     "firstXcodeRun": "Stopped while waiting for the iPhone to unlock",
     "deviceHub": "Not responding; restarted through Activity Monitor and live device-control window recovered",
-    "deviceDownloadResult": "Pending an unlocked iPhone run",
+    "deviceDownloadResult": "After an unlocked Xcode run, bootstrap lookup and manifest refresh repeatedly timed out. Standalone ba-serve test prepared; on-device transfer remains unverified.",
     "liveAppleDeliveryVerified": false,
-    "productionAppConfigurationChanged": false
+    "productionAppConfigurationChanged": false,
+    "standaloneTest": {
+      "temporaryCertificateAuthorized": true,
+      "macCertificateTrustApproved": true,
+      "signedPhoneProfileValidated": true,
+      "phoneProfileInstallResult": "Blocked by device locked error; no completed installation verified",
+      "freshManagedDownloadVerified": false,
+      "deviceAvailabilityOn20261031": "Device could not fulfill CoreDevice connectivity/power assertion requirements."
+    }
+  },
+  "accountRecheck20261031": {
+    "build3ProcessingState": "VALID",
+    "build3InternalBuildState": "IN_BETA_TESTING",
+    "build3Expired": false,
+    "perAppBetaLicenseReadHTTPStatus": 200,
+    "teamBetaContractState": "Not established by per-app license read; BETA_CONTRACT_MISSING has not been observed for Ridge.",
+    "appMinimumOSVersion": "26.0",
+    "downloaderMinimumOSVersion": "26.0",
+    "initialFreeAppsAgreement": "Active (New Agreement Available)",
+    "refreshedFreeAppsAgreement": "Active, effective 31 October 2026",
+    "programAgreementWarningAfterReview": "No longer visible; agent clicked Review agreement, not Accept. Cause of state change not established.",
+    "paidAppsAgreement": "Active (New Agreement Available)",
+    "retryAfterAgreementRefresh": "Requested; awaiting tester result",
+    "followUpPrepared": true,
+    "followUpSent": false,
+    "relatedReports": [
+      "https://developer.apple.com/forums/thread/841482",
+      "https://developer.apple.com/forums/thread/814565"
+    ]
   }
 }
