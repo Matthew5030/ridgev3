@@ -135,7 +135,8 @@ Program Agreement warning disappeared, and App Store Connect then showed the
 Free Apps Agreement as Active with an effective date of 31 October. The tester
 then closed/reopened TestFlight and retried build 3, reporting the same unavailable
 app error. The agreement-state change did not resolve the installation failure.
-An escalation for the existing Apple case is prepared but has not been sent.
+A friendly follow-up was sent on 31 October through the existing Apple support
+case (103009501518). Apple confirmed receipt; a response is pending.
 No account-level defect or successful repair has been established. See the
 [retry evidence](../Release/AppStore/evidence/testflight-retry-2026-10-30.json).
 

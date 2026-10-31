@@ -19,7 +19,7 @@
   "networkComparison": "User reports the retry still fails; network at the failed attempt was not independently recorded.",
   "appleSupportCase": "103009501518",
   "followUpPrepared": true,
-  "followUpSent": false,
+  "followUpSent": true,
   "causeConfirmed": false,
   "testFlightClientReset": {
     "removedVersion": "4.4.1 (697.1)",
@@ -77,11 +77,19 @@
     "paidAppsAgreement": "Active (New Agreement Available)",
     "retryAfterAgreementRefresh": "User reports the same \u201cnot available or doesn\u2019t exist\u201d installation error after closing/reopening TestFlight and retrying Ridge 1.0 (3).",
     "followUpPrepared": true,
-    "followUpSent": false,
+    "followUpSent": true,
     "relatedReports": [
       "https://developer.apple.com/forums/thread/841482",
       "https://developer.apple.com/forums/thread/814565"
     ],
     "agreementRefreshResolvedInstallFailure": false
+  },
+  "followUpConfirmation": {
+    "date": "2026-10-31",
+    "caseID": "103009501518",
+    "channel": "Existing Apple Developer Support case email form",
+    "confirmed": true,
+    "confirmationText": "Thanks for contacting us. We\u2019ll review your message and get back to you as soon as possible.",
+    "tone": "Friendly request for help; no escalation request."
   }
 }
