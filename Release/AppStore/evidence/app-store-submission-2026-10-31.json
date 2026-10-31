@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0",
+  "build": "4",
+  "buildID": "ef5e966d-faf1-433c-aa3d-b3ef00299ae1",
+  "appID": "6827223973",
+  "ownerFinalUAT": "Owner accepted the release candidate after testing it on iPhone and instructed submission; individual final UAT steps were not observed.",
+  "sameInstalledBuildVerified": true,
+  "buildProcessingState": "VALID",
+  "releaseType": "MANUAL",
+  "priceGBP": "0.00",
+  "availableTerritories": [
+    "GBR"
+  ],
+  "macDistributionEnabled": false,
+  "visionProDistributionEnabled": false,
+  "screenshots": {
+    "iPhone": 5,
+    "iPad": 3,
+    "allDeliveryComplete": true
+  },
+  "reviewContactComplete": true,
+  "signInRequired": false,
+  "websitePublished": true,
+  "websiteCommit": "5fdca35",
+  "appReviewSubmitted": false,
+  "submissionState": "Awaiting final Apple privacy/legal and content-rights declarations",
+  "privacyDeclaration": "Prepared Device ID and Other Usage Data; App Functionality; linked; no tracking. Final Publish dialog awaits action-time owner confirmation.",
+  "contentRightsDeclaration": "Prepared third-party-content/necessary-rights answer; awaits owner confirmation.",
+  "testFlightInstallFailureResolved": false,
+  "rawDeviceLogsPublished": false
+}

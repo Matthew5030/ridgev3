@@ -1,10 +1,25 @@
 {
   "date": "2026-10-31",
-  "published": false,
+  "published": true,
   "changedPage": "public/apps/ridge/index.html",
-  "sha256": "ec3a3ba5dffc4c0e179300855a388dd6f6c04016ff90ae64dc948bff660c38c9",
+  "sha256": "c3977006f72c50bed52e32fed7f0fb6807b73af015a9f7a0e9e1ca3d3d6883ed",
   "localBrowserPreviewVerified": true,
   "scopedRidgeCoverageStatusAndLinkChecks": "passed",
-  "fullSiteValidation": "Failed on pre-existing Chitchat privacy wording assertion; unchanged HEAD also lacks that exact text. Ridge and generic HTML checks before that point passed. No unrelated site content changed.",
-  "publicationApproval": "Required for prepared website copy; app remains unreleased."
+  "fullSiteValidation": "Passed Scripts/validate-site.sh on the current website baseline, including the Ridge-only product, support and privacy changes.",
+  "publicationApproval": "Owner requested App Store submission and all release work on 31 October 2026.",
+  "changedPages": [
+    "public/apps/ridge/index.html",
+    "public/apps/ridge/privacy/index.html",
+    "public/support/index.html (Ridge FAQ only)"
+  ],
+  "websiteCommit": "5fdca35",
+  "productionBranch": "main",
+  "liveBrowserVerification": {
+    "productFourIncludedAreas": true,
+    "privacyEffectiveDate": "2026-10-31",
+    "privacyIncludedMapsAndDisabledAdditionalDownloads": true,
+    "appStoreSupportURLRedirectAndBundledMapsFAQ": true,
+    "appStillUnreleased": true
+  },
+  "publicURL": "https://bilellaworks.com/apps/ridge/"
 }

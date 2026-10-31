@@ -68,5 +68,8 @@
     "deviceLogEvidence": "testflight-build4-install-failure.json",
     "failureStage": "ProcessingInstallInitiateResponse",
     "serverFailureReason": "Error Downloading Install Data"
-  }
+  },
+  "ownerFinalUATAccepted": true,
+  "ownerFinalUATEvidence": "app-store-submission-2026-10-31.json",
+  "websiteReleaseCopyPublished": true
 }

@@ -107,8 +107,14 @@ reproduction instructions, not the multi-gigabyte map payload. The development
 profile currently expires on 26 October 2027; an App Store installation is still
 the intended distribution path.
 
-Remaining owner actions are content-rights confirmation, privacy publication,
-approval of the prepared website copy and approval to submit App Review.
+The owner accepted final iPhone UAT and requested App Store submission on
+31 October. The four-area product page, matching support FAQ and updated privacy
+policy are published and browser-verified. Free UK pricing, manual release and
+all eight completed screenshot uploads were verified. The final Apple
+privacy-publication/legal and content-rights declarations await owner
+confirmation before submission. See
+`Release/AppStore/evidence/app-store-submission-2026-10-31.json` for the current
+submission record.
 The unresolved TestFlight account/install error is not proven fixed by this
 upload. Build 4 is available to the owner's accepted internal tester and is
 IN_BETA_TESTING. On 31 October the owner confirmed the compatible 1.0 (4) build
