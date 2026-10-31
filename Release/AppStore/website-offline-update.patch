@@ -1,0 +1,17 @@
+--- a/public/apps/ridge/index.html
++++ b/public/apps/ridge/index.html
+@@ -32,11 +32,11 @@
+         </dl>
+ 
+         <div class="store-product-copy-grid">
+-          <section><h2>About this app</h2><p>Ridge is being built to make the shape of a walking route easier to understand. Routes sit directly on a 3D terrain model, so climbs, descents, ridges and valleys can be inspected before setting out.</p><p>The current build includes a UK overview and a Snowdon demonstration. Download additional areas from Apple before your trip, then explore terrain, edit routes and preview the journey offline.</p></section>
+-          <section><h2>Current build</h2><ul><li>Create routes from a place, coordinate or map point</li><li>Import and export GPX files</li><li>Edit waypoints with local walking-route calculation</li><li>Download map and terrain areas for offline use</li><li>Preview a route with a banked FPV fly-through and elevation scrubbing</li><li>Set walking pace and breaks, estimate a finish time and keep a packing checklist</li><li>Review route legs, saved-map coverage and your own notes</li></ul></section>
++          <section><h2>About this app</h2><p>Ridge is being built to make the shape of a walking route easier to understand. Routes sit directly on a 3D terrain model, so climbs, descents, ridges and valleys can be inspected before setting out.</p><p>The first release includes a UK overview plus detailed terrain and walking paths for Eryri, Lake District, Peak District, and Chilterns &amp; Thames Valley. Explore these areas, edit routes and preview the journey offline, without a separate map download.</p></section>
++          <section><h2>Current build</h2><ul><li>Create routes from a place, coordinate or map point</li><li>Import and export GPX files</li><li>Edit waypoints with local walking-route calculation</li><li>Explore four included walking areas offline</li><li>Preview a route with a banked FPV fly-through and elevation scrubbing</li><li>Set walking pace and breaks, estimate a finish time and keep a packing checklist</li><li>Review route legs, saved-map coverage and your own notes</li></ul></section>
+         </div>
+ 
+-        <section class="store-product-privacy"><div><p class="eyebrow">Privacy</p><h2>No account, advertising or behavioural analytics.</h2><p>Your route library stays on your device. The overview and place search work offline; additional map downloads use Apple services. Optional alternative sources and support are explained in the policy.</p></div><a href="/apps/ridge/privacy/">Read privacy policy <span aria-hidden="true">→</span></a></section>
++        <section class="store-product-privacy"><div><p class="eyebrow">Privacy</p><h2>No account, advertising or behavioural analytics.</h2><p>Your route library stays on your device. The overview, place search and four included walking areas work offline. Optional alternative sources and support are explained in the policy.</p></div><a href="/apps/ridge/privacy/">Read privacy policy <span aria-hidden="true">→</span></a></section>
+         <p class="product-disclaimer">Ridge is being tested before its first release. The current features are free during early access; future pricing may change and feedback is optional. Ridge helps you plan and inspect terrain; it does not provide live turn-by-turn navigation. Map detail and coverage vary by area.</p>
+       </div>
+     </div>

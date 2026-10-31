@@ -1,5 +1,34 @@
 # Release preparation evidence, 30 October 2026
 
+## Current candidate: offline starter, build 4 (31 October)
+
+This supersedes the build-3 download-dependent launch plan below. Four selected
+walking areas are now included in the app: Eryri, Lake District, Peak District,
+and Chilterns & Thames Valley. The full UK library and Apple delivery source are
+preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
+`offline-starter-*` evidence files for the current release candidate.
+
+- Prepared 282 sections / 67,987 tiles; every pack and decompressed entry checksum
+  passed. No missing land rectangles in the four current selection shapes.
+- 30 offline-starter integration checks, 16 Apple delivery adapter checks and
+  17 offline-boundary checks pass (63 checks total).
+- Final build 4 is signed and exported: 2,971,448,163 app bytes, below 4 GB.
+  Strict archive signature verification and Apple distribution validation passed.
+  The exact 2,847,849,543-byte IPA uploaded successfully; its SHA256 and delivery
+  UUID are in `evidence/offline-starter-release.json`. Apple processing is pending.
+- Native Simulator checks verified first open, the included-map walkthrough and
+  the refined four-area map without the red unavailable-UK overlay.
+- The listing and review notes are saved in App Store Connect for this coverage.
+- No App Review submission/publication has been made. Successful Apple-hosted
+  downloads are a gate for enabling that future feature, not the starter release.
+- Physical smoke tests remain outstanding: iPad locked, iPhone unavailable. The
+  Mac locked during native UI checks. Finish those before submission approval.
+- Finish the final privacy/rights declarations, prepare the matching product page,
+  select the processed tested build and obtain owner approval for submission.
+
+## Historical preparation for build 3
+
+
 ## Completed
 
 - English (UK) name, subtitle, description, promotional text, keywords, support

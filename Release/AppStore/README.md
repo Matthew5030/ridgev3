@@ -21,8 +21,7 @@ starter release. See `Tools/OFFLINE-STARTER.md` for the update path.
 - [x] Preserve the full UK source library, published Apple pack registry, existing
   route identities and downloader source for a future update.
 - [x] Update local listing and reviewer notes to describe four included areas.
-- [ ] Finish signed build 4 archive, measure final uncompressed size below 4 GB,
-  export App Store IPA, verify signatures and run Apple distribution validation.
+- [x] Final build 4 archived/exported: 2,971,448,163 app bytes and 2,847,849,543 IPA bytes. Strict signature verification and Apple distribution validation passed. Uploaded successfully; processing status is recorded in evidence.
 - [ ] Final physical iPhone/iPad smoke test: first open, immediate offline terrain,
   route editing/reopening, cross-section routing, GPX import/export and preview.
 - [ ] Save revised listing and select the verified build in App Store Connect.

@@ -49,3 +49,40 @@ Installed downloaded packs take precedence over the immutable baseline.
 The release flag prevents the first release from probing Apple's asset manager
 on startup. Adding nationwide coverage later does not require replacing routes
 or reinstalling the app. Do not promise those downloads until delivery passes.
+
+## Build, install and finish the release
+
+From the `texture-study-code` checkout, after preparing the bundle:
+
+```sh
+xcodebuild -project 'ridge v3.xcodeproj' -scheme 'ridge v3' \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath '../ReleaseBuilds/1.0-4/Ridge-1.0-4.xcarchive' \
+  -allowProvisioningUpdates archive
+```
+
+The prepared archive and export are under `project-ridgeV3/ReleaseBuilds/1.0-4`.
+The app inside the archive is development signed and can be installed on the
+registered iPhone/iPad with Xcode or `xcrun devicectl device install app` while
+unlocked. The distribution export is `export/ridge v3.ipa`. Never uninstall Ridge
+as part of an ordinary update; install over the existing bundle identifier so
+routes and downloaded data stay in the app container. Development installations
+have signing/profile expiry; they are not permanent App Store installations.
+
+The App Store draft remains version 1.0, free, UK-only with manual release.
+Description, promotional text and reviewer notes now describe four included
+areas. The saved screenshot set remains eight real native captures. Product-page
+wording for the offline starter is prepared in
+`Release/AppStore/website-offline-update.patch` and is not yet published.
+
+Before submission, finish the physical phone/tablet checks and final declarations,
+select the processed build, and get owner approval. No successful Apple-hosted
+terrain download is required for the included-only release; keep that delivery
+feature disabled until separately verified. App Store review and account-service
+availability still depend on Apple. Do not treat a passed upload as approval.
+
+Included packs currently live only in the app bundle. Keep that baseline in the
+first download-enabled update: removing it would remove those local maps, even
+though routes and downloaded data remain. A later smaller-base release needs a
+separate, tested migration/redownload flow. Enabling additional Apple coverage
+alone does not require shrinking or replacing this starter bundle.

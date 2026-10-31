@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0",
+  "build": "4",
+  "bundleID": "Bilella-Works.ridge-v3",
+  "appBytes": 2971448163,
+  "ipaBytes": 2847849543,
+  "ipaSHA256": "c51a30c3e4e8e8ccec50f5bf968929b50cc35c428b09a4dec81ee8e61e023753",
+  "appleDownloadsEnabled": false,
+  "hasManagedAssetPacks": false,
+  "usesAppleHosting": false,
+  "downloaderExtensionEmbedded": false,
+  "archiveSucceeded": true,
+  "exportSucceeded": true,
+  "finalAppleValidation": "VERIFY SUCCEEDED with no errors",
+  "appReviewSubmitted": false,
+  "hardwareSmokeTest": "Blocked by locked iPad/unavailable iPhone; Mac locked during native UI checks",
+  "testCounts": {
+    "offlineStarter": 30,
+    "appleAdapter": 16,
+    "offlineBoundaries": 17
+  },
+  "profileExpiry": "2027-10-26T15:21:58Z",
+  "archiveSignatureVerification": "codesign --verify --deep --strict passed",
+  "uploadStatus": "UPLOAD SUCCEEDED with no errors",
+  "uploadDeliveryUUID": "ef5e966d-faf1-433c-aa3d-b3ef00299ae1",
+  "uploadedBytes": 2847849543,
+  "appStoreProcessingState": "Not yet returned by builds API after upload",
+  "exportInfoVerified": true
+}
