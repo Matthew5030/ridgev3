@@ -69,8 +69,9 @@ as part of an ordinary update; install over the existing bundle identifier so
 routes and downloaded data stay in the app container. Development installations
 have signing/profile expiry; they are not permanent App Store installations.
 
-App Store version 1.0 is free, UK-only and Waiting for Review. At the owner's
-request, release is now automatic after approval (`AFTER_APPROVAL`).
+App Store version 1.0 is free, UK-only and Waiting for Review. After initially
+requesting automatic release, the owner chose to include the two-finger tilt fix
+before launch. Release is temporarily held as `MANUAL`, verified through Apple.
 Description, promotional text and reviewer notes now describe four included
 areas. The saved screenshot set remains eight real native captures. Product-page
 wording for the offline starter is published, together with matching privacy
@@ -117,7 +118,9 @@ confirmed both final Apple declarations. Privacy responses were published and
 the third-party-content/necessary-rights declaration was saved. Apple received
 build 1.0 (4) at 18:43:26 UTC on 31 October 2026; its status is
 **WAITING_FOR_REVIEW**. Release was initially manual; the owner subsequently
-requested automatic release, saved and API-verified as **AFTER_APPROVAL**.
+requested automatic release, then explicitly chose to include the gesture fix
+before launch. The current API-verified setting is **MANUAL**, pending the
+replacement build's device check and submission.
 Submission ID:
 `8d46cb3f-7210-4809-821f-e690ce7a24d3`. See
 `Release/AppStore/evidence/app-store-submission-2026-10-31.json` for the current
@@ -134,8 +137,10 @@ HTTP status. The underlying cause remains unconfirmed. See
 `Release/AppStore/evidence/testflight-build4-install-failure.json`; raw logs and
 the unsent support update are private in `ReleaseBuilds/1.0-4` outside Git.
 App Review submission has succeeded; public launch has not occurred. The saved
-release setting is **AFTER_APPROVAL**, so Apple will release this version
-automatically after approval. No manual Release This Version action is required.
+release setting is **MANUAL** to hold build 4 while the tilt fix is prepared.
+Do not release build 4 or re-enable its automatic release. Build 5 is being
+prepared from the submitted source plus the gesture fix; after its device check,
+replace the submitted build and restore automatic release for the fixed build.
 Keep the current TestFlight case open independently.
 
 The product, support and privacy copy is published from the isolated

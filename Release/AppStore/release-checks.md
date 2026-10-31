@@ -22,8 +22,9 @@ preserved for a future update. See `Tools/OFFLINE-STARTER.md` and the
   the refined four-area map without the red unavailable-UK overlay.
 - The listing and review notes are saved in App Store Connect for this coverage.
 - App Review submission succeeded on 31 October at 18:43:26 UTC for build 4;
-  Apple reports WAITING_FOR_REVIEW. The owner subsequently requested automatic
-  release, saved and API-verified as AFTER_APPROVAL. Submission ID:
+  Apple reports WAITING_FOR_REVIEW. After enabling automatic release, the owner
+  chose to include the two-finger gesture fix before launch. Release is now held
+  as MANUAL, API-verified, pending the replacement build. Submission ID:
   `8d46cb3f-7210-4809-821f-e690ce7a24d3`. Public release has not occurred.
   Successful Apple-hosted
   downloads are a gate for enabling that future feature, not the starter release.

@@ -7,7 +7,7 @@
   "ownerFinalUAT": "Owner accepted the release candidate after testing it on iPhone and instructed submission; individual final UAT steps were not observed.",
   "sameInstalledBuildVerified": true,
   "buildProcessingState": "VALID",
-  "releaseType": "AFTER_APPROVAL",
+  "releaseType": "MANUAL",
   "priceGBP": "0.00",
   "availableTerritories": [
     "GBR"
@@ -37,5 +37,9 @@
   "publiclyReleased": false,
   "initialSubmissionReleaseType": "MANUAL",
   "automaticReleaseOwnerRequested": true,
-  "automaticReleaseAPIReadbackVerified": true
+  "automaticReleaseAPIReadbackVerified": true,
+  "automaticReleaseHeldForGestureFix": true,
+  "releaseHoldOwnerApproval": "Owner chose Include the fix before launch on 31 October 2026.",
+  "releaseHoldAPIReadbackVerified": true,
+  "replacementBuildPending": "Build 5: responsive two-finger tilt; physical-device check pending."
 }
